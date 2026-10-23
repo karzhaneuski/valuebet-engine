@@ -1460,7 +1460,7 @@ dependencies = [
 requires-dist = [
     { name = "pandas" },
     { name = "requests" },
-    { name = "soccerdata" },
+    { name = "soccerdata", specifier = "==2026.43.0" },
 ]
 
 [[package]]
