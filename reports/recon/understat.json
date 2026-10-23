@@ -1,0 +1,284 @@
+{
+  "ENG-Premier League": {
+    "league": "ENG-Premier League",
+    "read_schedule_total_s": 2.6,
+    "ok": true,
+    "seasons": {
+      "2223": {
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2022-08-05 19:00:00",
+        "last_game": "2023-05-28 15:30:00"
+      },
+      "2324": {
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2023-08-11 19:00:00",
+        "last_game": "2024-05-19 15:00:00"
+      },
+      "2425": {
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2024-08-16 19:00:00",
+        "last_game": "2025-05-25 15:00:00"
+      },
+      "2526": {
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2025-08-15 19:00:00",
+        "last_game": "2026-05-24 15:00:00"
+      },
+      "2627": {
+        "n_matches": 380,
+        "n_results": 70,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2026-08-21 19:00:00",
+        "last_game": "2027-05-30 15:00:00"
+      },
+      "2021/22 (direct)": {
+        "ok": true,
+        "source": "direct getLeagueData API",
+        "elapsed_s": 0.5,
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2021-08-13 19:00:00",
+        "last_game": "2022-05-22 15:00:00"
+      }
+    }
+  },
+  "ESP-La Liga": {
+    "league": "ESP-La Liga",
+    "read_schedule_total_s": 2.7,
+    "ok": true,
+    "seasons": {
+      "2223": {
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2022-08-12 19:00:00",
+        "last_game": "2023-06-04 18:00:00"
+      },
+      "2324": {
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2023-08-11 17:30:00",
+        "last_game": "2024-05-26 19:00:00"
+      },
+      "2425": {
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2024-08-15 17:00:00",
+        "last_game": "2025-05-25 19:00:00"
+      },
+      "2526": {
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2025-08-15 17:00:00",
+        "last_game": "2026-05-24 19:00:00"
+      },
+      "2627": {
+        "n_matches": 380,
+        "n_results": 88,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2026-08-15 17:30:00",
+        "last_game": "2027-05-30 15:00:00"
+      },
+      "2021/22 (direct)": {
+        "ok": true,
+        "source": "direct getLeagueData API",
+        "elapsed_s": 0.5,
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2021-08-13 19:00:00",
+        "last_game": "2022-05-22 20:00:00"
+      }
+    }
+  },
+  "ITA-Serie A": {
+    "league": "ITA-Serie A",
+    "read_schedule_total_s": 3.2,
+    "ok": true,
+    "seasons": {
+      "2223": {
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2022-08-13 16:30:00",
+        "last_game": "2023-06-04 19:00:00"
+      },
+      "2324": {
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2023-08-19 16:30:00",
+        "last_game": "2024-06-02 16:00:00"
+      },
+      "2425": {
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2024-08-17 16:30:00",
+        "last_game": "2025-05-25 18:45:00"
+      },
+      "2526": {
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2025-08-23 16:30:00",
+        "last_game": "2026-05-24 18:45:00"
+      },
+      "2627": {
+        "n_matches": 380,
+        "n_results": 70,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2026-08-22 16:30:00",
+        "last_game": "2027-05-30 13:00:00"
+      },
+      "2021/22 (direct)": {
+        "ok": true,
+        "source": "direct getLeagueData API",
+        "elapsed_s": 0.6,
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 0.997,
+        "first_game": "2021-08-21 16:30:00",
+        "last_game": "2022-05-22 19:00:00"
+      }
+    }
+  },
+  "GER-Bundesliga": {
+    "league": "GER-Bundesliga",
+    "read_schedule_total_s": 2.7,
+    "ok": true,
+    "seasons": {
+      "2223": {
+        "n_matches": 306,
+        "n_results": 306,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2022-08-05 18:30:00",
+        "last_game": "2023-05-27 13:30:00"
+      },
+      "2324": {
+        "n_matches": 306,
+        "n_results": 306,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2023-08-18 18:30:00",
+        "last_game": "2024-05-18 13:30:00"
+      },
+      "2425": {
+        "n_matches": 306,
+        "n_results": 306,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2024-08-23 18:30:00",
+        "last_game": "2025-05-17 13:30:00"
+      },
+      "2526": {
+        "n_matches": 306,
+        "n_results": 306,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2025-08-22 18:30:00",
+        "last_game": "2026-05-16 13:30:00"
+      },
+      "2627": {
+        "n_matches": 306,
+        "n_results": 54,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2026-08-28 18:30:00",
+        "last_game": "2027-05-22 13:30:00"
+      },
+      "2021/22 (direct)": {
+        "ok": true,
+        "source": "direct getLeagueData API",
+        "elapsed_s": 0.8,
+        "n_matches": 306,
+        "n_results": 306,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2021-08-13 18:30:00",
+        "last_game": "2022-05-14 13:30:00"
+      }
+    }
+  },
+  "FRA-Ligue 1": {
+    "league": "FRA-Ligue 1",
+    "read_schedule_total_s": 2.8,
+    "ok": true,
+    "seasons": {
+      "2223": {
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2022-08-05 19:00:00",
+        "last_game": "2023-06-03 17:00:00"
+      },
+      "2324": {
+        "n_matches": 306,
+        "n_results": 306,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2023-08-12 18:00:00",
+        "last_game": "2024-05-19 19:00:00"
+      },
+      "2425": {
+        "n_matches": 306,
+        "n_results": 306,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2024-08-16 18:45:00",
+        "last_game": "2025-05-17 19:00:00"
+      },
+      "2526": {
+        "n_matches": 306,
+        "n_results": 306,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2025-08-15 18:45:00",
+        "last_game": "2026-05-17 19:00:00"
+      },
+      "2627": {
+        "n_matches": 306,
+        "n_results": 63,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2026-08-21 18:45:00",
+        "last_game": "2027-05-29 13:00:00"
+      },
+      "2021/22 (direct)": {
+        "ok": true,
+        "source": "direct getLeagueData API",
+        "elapsed_s": 0.9,
+        "n_matches": 380,
+        "n_results": 380,
+        "xg_fill_among_results": 1.0,
+        "first_game": "2021-08-06 19:00:00",
+        "last_game": "2022-05-21 19:00:00"
+      }
+    }
+  },
+  "_schedule_columns": [
+    "league",
+    "season",
+    "game",
+    "league_id",
+    "season_id",
+    "game_id",
+    "date",
+    "home_team_id",
+    "away_team_id",
+    "home_team",
+    "away_team",
+    "away_team_code",
+    "home_team_code",
+    "home_goals",
+    "away_goals",
+    "home_xg",
+    "away_xg",
+    "is_result",
+    "has_data",
+    "url"
+  ]
+}
