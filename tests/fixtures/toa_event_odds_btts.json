@@ -1,0 +1,110 @@
+{
+ "id": "d0202960708a442401d7fcbd74a0183",
+ "sport_key": "soccer_epl",
+ "sport_title": "EPL",
+ "commence_time": "2026-10-23T19:00:00Z",
+ "home_team": "Ipswich Town",
+ "away_team": "Nottingham Forest",
+ "bookmakers": [
+  {
+   "key": "mybookieag",
+   "title": "MyBookie.ag",
+   "markets": [
+    {
+     "key": "btts",
+     "last_update": "2026-10-23T17:44:29Z",
+     "outcomes": [
+      {
+       "name": "Yes",
+       "price": 1.6
+      },
+      {
+       "name": "No",
+       "price": 2.24
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "onexbet",
+   "title": "1xBet",
+   "markets": [
+    {
+     "key": "btts",
+     "last_update": "2026-10-23T17:44:54Z",
+     "outcomes": [
+      {
+       "name": "Yes",
+       "price": 1.6
+      },
+      {
+       "name": "No",
+       "price": 2.22
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "williamhill",
+   "title": "William Hill",
+   "markets": [
+    {
+     "key": "btts",
+     "last_update": "2026-10-23T17:44:54Z",
+     "outcomes": [
+      {
+       "name": "Yes",
+       "price": 1.57
+      },
+      {
+       "name": "No",
+       "price": 2.3
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "pinnacle",
+   "title": "Pinnacle",
+   "markets": [
+    {
+     "key": "btts",
+     "last_update": "2026-10-23T17:45:16Z",
+     "outcomes": [
+      {
+       "name": "Yes",
+       "price": 1.62
+      },
+      {
+       "name": "No",
+       "price": 2.39
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "matchbook",
+   "title": "Matchbook",
+   "markets": [
+    {
+     "key": "btts",
+     "last_update": "2026-10-23T17:45:20Z",
+     "outcomes": [
+      {
+       "name": "Yes",
+       "price": 1.65
+      },
+      {
+       "name": "No",
+       "price": 2.5
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

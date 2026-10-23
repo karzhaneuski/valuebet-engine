@@ -1,0 +1,36 @@
+{
+ "soccer_epl": [
+  {
+   "id": "soccer_epl-ev1",
+   "commence_time": "2026-10-23T19:00:00Z",
+   "home_team": "Ipswich Town",
+   "away_team": "Nottingham Forest"
+  },
+  {
+   "id": "soccer_epl-ev2",
+   "commence_time": "2026-10-24T11:30:00Z",
+   "home_team": "Aston Villa",
+   "away_team": "Manchester City"
+  },
+  {
+   "id": "soccer_epl-ev3",
+   "commence_time": "2026-10-24T14:00:00Z",
+   "home_team": "Arsenal",
+   "away_team": "Everton"
+  }
+ ],
+ "soccer_uefa_champs_league": [
+  {
+   "id": "soccer_uefa_champs_league-ev1",
+   "commence_time": "2026-11-03T17:45:00Z",
+   "home_team": "Galatasaray",
+   "away_team": "VfB Stuttgart"
+  },
+  {
+   "id": "soccer_uefa_champs_league-ev2",
+   "commence_time": "2026-11-03T17:45:00Z",
+   "home_team": "Shakhtar Donetsk",
+   "away_team": "Sporting Lisbon"
+  }
+ ]
+}

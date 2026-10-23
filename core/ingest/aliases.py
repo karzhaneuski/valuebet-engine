@@ -52,7 +52,8 @@ FD_KNOWN_ABBREVIATIONS: dict[str, str] = {
     "ment": "ment",
 }
 
-STOP_TOKENS = {"fc", "cf", "sc", "afc", "acd", "cd", "club", "de", "the"}
+# "club"/"de" are NOT stop tokens: Athletic Club vs Racing Club
+STOP_TOKENS = {"fc", "cf", "sc", "afc", "acd", "cd", "the"}
 
 
 def normalize(name: str) -> str:
@@ -93,6 +94,9 @@ class AliasMatcher:
         exact = self._aliases.get((source, name))
         if exact is not None:
             return AliasMatch(matched=self._names[exact], method="exact")
+        # deterministic normalization is trusted cross-source (it is a
+        # fixed abbreviation table, not similarity); anything weaker is
+        # fuzzy and stays report-only
         norm = normalize(name)
         hit = self._by_norm.get(norm)
         if hit is not None:

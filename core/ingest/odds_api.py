@@ -104,10 +104,9 @@ class OddsApiClient:
                         s.flush()
                         report.matches_created += 1
                 # postponement: commence shifted by more than cfg minutes
-                if match.commence_time_utc is not None:
-                    shift = abs(
-                        (commence - match.commence_time_utc).total_seconds()
-                        / 60)
+                stored = _as_utc(match.commence_time_utc)
+                if stored is not None:
+                    shift = abs((commence - stored).total_seconds() / 60)
                     if shift > cfg.shift_min and \
                             match.status in ("scheduled",
                                              "postponed_suspected"):
@@ -128,8 +127,9 @@ class OddsApiClient:
             for m in existing:
                 if m.toa_event_id in seen_event_ids or m.status != "scheduled":
                     continue
-                if m.commence_time_utc and horizon_start < \
-                        m.commence_time_utc <= now + dt.timedelta(days=7):
+                stored_m = _as_utc(m.commence_time_utc)
+                if stored_m and horizon_start < \
+                        stored_m <= now + dt.timedelta(days=7):
                     m.status = "postponed_suspected"
                     report.postponed_suspected += 1
         return report
@@ -198,9 +198,10 @@ class OddsApiClient:
                 match = s.scalars(select(Match).where(
                     Match.toa_event_id == eid)).first()
                 actual = None
-                if match is not None and match.commence_time_utc:
-                    actual = int(
-                        (match.commence_time_utc - now).total_seconds() / 60)
+                stored = _as_utc(
+                    match.commence_time_utc if match else None)
+                if stored is not None:
+                    actual = int((stored - now).total_seconds() / 60)
                 for bk in ev.get("bookmakers", []):
                     for mkt in bk.get("markets", []):
                         if mkt.get("key") != market:
@@ -228,6 +229,7 @@ class OddsApiClient:
                                 price=Decimal(str(price)), tier=tier,
                                 planned_offset_min=planned_min,
                                 actual_offset_min=actual,
+                                source="toa",
                                 captured_at_utc=now))
                             written += 1
         if dropped_lines:
@@ -282,6 +284,14 @@ class OddsApiClient:
                 match.status = "finished"
         return {"completed_seen": sum(1 for e in body if e.get("completed")),
                 "results_written": written}
+
+
+def _as_utc(value: dt.datetime | None) -> dt.datetime | None:
+    """SQLite returns naive datetimes even for timezone-aware columns; our
+    convention is UTC everywhere."""
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=dt.UTC)
 
 
 def _to_int(value: str | None) -> int | None:
