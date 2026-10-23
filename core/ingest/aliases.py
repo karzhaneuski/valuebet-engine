@@ -76,12 +76,22 @@ def normalize(name: str) -> str:
 
 
 def _is_subsequence(short: str, long: str) -> bool:
-    """True when short's tokens appear in long as a contiguous block."""
+    """True when short's tokens appear in long as a contiguous block,
+    where a short token may also be a PREFIX of the long token ("inter"
+    matches both "inter milan" and "internacional" — the ambiguity is
+    handled by the single-candidate rule)."""
     s_tokens = short.split()
     l_tokens = long.split()
     n = len(s_tokens)
-    return any(l_tokens[i:i + n] == s_tokens
-               for i in range(len(l_tokens) - n + 1))
+
+    def block_ok(start: int) -> bool:
+        for j, tok in enumerate(s_tokens):
+            lt = l_tokens[start + j]
+            if lt != tok and not lt.startswith(tok):
+                return False
+        return True
+
+    return any(block_ok(i) for i in range(len(l_tokens) - n + 1))
 
 
 def token_set(name: str) -> set[str]:
