@@ -231,3 +231,28 @@ requirements (not validated in phase 0).
 are excluded from the main loop by agreed policy; the fallback keeps the
 reasoning slot upgradeable when a stable pro returns.
 
+
+## 2026-10-23 — Phase 1 (review S4): football-data row matching rule
+
+**Decision** (requirement for phase 2): football-data.co.uk rows are matched
+to `matches` by **the team pair within a league season** (home/away aliases);
+`Date`+`Time` columns are parsed as **Europe/London local time and converted
+to UTC**; the date is used only as a ±1-day validation check of the pairing,
+never as the join key. Phase-0 evidence: Understat placeholder days and TOA
+commence times differ from CSV dates by up to a day; a date-joined match
+would double-count or miss postponed games. The same rule is duplicated in
+the phase-2 task text in PROMPTS.md.
+
+**Reason**: review S4; there is no stable fixture id in the CSVs, and dates
+alone are unreliable (postponements, placeholder kickoffs).
+
+## 2026-10-23 — Phase 1 (review S9): local package renamed mcp/ → mcp_server/
+
+**Decision**: the MCP service package is `mcp_server/` (module
+`mcp_server.main`), not `mcp/`. This deviates from the SPEC §9 layout block
+(`mcp/ MCP-сервер`) so that the official MCP Python SDK (package name `mcp`,
+phase 8) can be imported without being shadowed. Compose, CI, Dockerfile and
+tests use the new path.
+
+**Reason**: a local `mcp/` package shadows the SDK of the same name; the
+rename is the smallest change that keeps both importable.

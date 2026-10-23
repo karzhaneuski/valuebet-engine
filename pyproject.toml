@@ -46,7 +46,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["core", "api", "mcp", "tests"]
+files = ["core", "api", "mcp_server", "tests"]
 exclude = ["scripts/"]
 plugins = ["pydantic.mypy"]
 warn_unused_ignores = true

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from api.main import app as api_app
 from core.scheduler.main import app as scheduler_app
-from mcp.main import app as mcp_app
+from mcp_server.main import app as mcp_app
 
 
 def test_api_health() -> None:
