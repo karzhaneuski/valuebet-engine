@@ -19,10 +19,13 @@ target_metadata = Base.metadata
 
 
 def database_url() -> str:
-    """DB URL: -x db=... overrides config.yaml (used by tests)."""
+    """DB URL precedence: -x db=... > DATABASE_URL env > config.yaml."""
     x_args = context.get_x_argument(as_dictionary=True)
     if "db" in x_args:
         return x_args["db"]
+    import os
+    if os.environ.get("DATABASE_URL"):
+        return os.environ["DATABASE_URL"]
     return load_config().database.url
 
 

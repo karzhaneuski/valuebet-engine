@@ -9,7 +9,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/app/data
+      - db-data:/app/data
     environment:
       DATABASE_URL: sqlite:///./data/valuebet.db
     healthcheck:
@@ -23,7 +23,7 @@ services:
     image: valuebet-engine:dev
     command: uvicorn core.scheduler.main:app --host 0.0.0.0 --port 8001
     volumes:
-      - ./data:/app/data
+      - db-data:/app/data
     environment:
       DATABASE_URL: sqlite:///./data/valuebet.db
     healthcheck:
@@ -35,9 +35,9 @@ services:
 
   mcp:
     image: valuebet-engine:dev
-    command: uvicorn mcp.main:app --host 0.0.0.0 --port 8002
+    command: uvicorn mcp_server.main:app --host 0.0.0.0 --port 8002
     volumes:
-      - ./data:/app/data
+      - db-data:/app/data
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8002/health')\""]
       interval: 30s
@@ -56,3 +56,6 @@ services:
       timeout: 5s
       retries: 3
     restart: unless-stopped
+
+volumes:
+  db-data:
