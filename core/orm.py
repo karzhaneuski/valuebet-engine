@@ -37,6 +37,13 @@ class Base(DeclarativeBase):
     pass
 
 
+def sa_enum(*values: str, name: str) -> Enum:
+    """Portable enum: VARCHAR + CHECK constraint (SQLite has no native enum)."""
+    return Enum(*values, name=name, native_enum=False, create_constraint=True,
+                validate_strings=True)
+
+
+
 # --- enums ------------------------------------------------------------------
 
 LEAGUE_SOURCES = ("understat", "football_data", "toa", "api_football")
@@ -75,7 +82,7 @@ class TeamAlias(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
-    source: Mapped[str] = mapped_column(Enum(*LEAGUE_SOURCES, name="alias_source"))
+    source: Mapped[str] = mapped_column(sa_enum(*LEAGUE_SOURCES, name="alias_source"))
     alias: Mapped[str] = mapped_column(String(120))
 
 
@@ -95,9 +102,9 @@ class Match(Base):
     # authoritative kickoff: TOA commence_time (docs/decisions.md, S5)
     commence_time_utc: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     kickoff_source: Mapped[str] = mapped_column(
-        Enum(*KICKOFF_SOURCES, name="kickoff_source"))
+        sa_enum(*KICKOFF_SOURCES, name="kickoff_source"))
     status: Mapped[str] = mapped_column(
-        Enum(*MATCH_STATUSES, name="match_status"), default="scheduled")
+        sa_enum(*MATCH_STATUSES, name="match_status"), default="scheduled")
 
     home_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
     away_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
@@ -139,17 +146,17 @@ class OddsSnapshot(Base):
     toa_event_id: Mapped[str] = mapped_column(String(60))
     match_id: Mapped[int | None] = mapped_column(ForeignKey("matches.id"))
     bookmaker: Mapped[str] = mapped_column(String(60))
-    market: Mapped[str] = mapped_column(Enum(*ODD_MARKETS, name="odd_market"))
+    market: Mapped[str] = mapped_column(sa_enum(*ODD_MARKETS, name="odd_market"))
     # line for totals/alternate_totals (2.5 etc.); NULL for btts/correct_score
     line: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
     # 'Over'/'Under'/'Yes'/'No', or 'H2|A0' for correct_score outcomes
     outcome: Mapped[str] = mapped_column(String(40))
     price: Mapped[Decimal] = mapped_column(Numeric(8, 3))
-    tier: Mapped[str] = mapped_column(Enum(*ODD_TIERS, name="odd_tier"))
+    tier: Mapped[str] = mapped_column(sa_enum(*ODD_TIERS, name="odd_tier"))
     # phase-5 firing discipline (docs/decisions.md, final round S1)
     planned_offset_min: Mapped[int | None] = mapped_column(Integer)
     actual_offset_min: Mapped[int | None] = mapped_column(Integer)
-    source: Mapped[str] = mapped_column(Enum(*ODD_SOURCES, name="odd_source"))
+    source: Mapped[str] = mapped_column(sa_enum(*ODD_SOURCES, name="odd_source"))
     captured_at_utc: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
 
 
@@ -163,9 +170,9 @@ class PlayerAvailability(Base):
     match_id: Mapped[int | None] = mapped_column(ForeignKey("matches.id"))
     player: Mapped[str] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(
-        Enum(*PLAYER_STATUSES, name="player_status"))
+        sa_enum(*PLAYER_STATUSES, name="player_status"))
     source: Mapped[str] = mapped_column(
-        Enum(*PLAYER_SOURCES, name="player_source"))
+        sa_enum(*PLAYER_SOURCES, name="player_source"))
     source_url: Mapped[str | None] = mapped_column(String(500))
     quote_summary: Mapped[str | None] = mapped_column(Text)
     detected_at_utc: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
@@ -196,7 +203,7 @@ class Recommendation(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
-    market: Mapped[str] = mapped_column(Enum(*ODD_MARKETS, name="reco_market"))
+    market: Mapped[str] = mapped_column(sa_enum(*ODD_MARKETS, name="reco_market"))
     line: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
     outcome: Mapped[str] = mapped_column(String(40))
     odds: Mapped[Decimal] = mapped_column(Numeric(8, 3))
@@ -205,15 +212,15 @@ class Recommendation(Base):
     kelly_quarter_capped: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
     flags: Mapped[str] = mapped_column(String(200), default="")
     variant: Mapped[str] = mapped_column(
-        Enum(*RECO_VARIANTS, name="reco_variant"), default="base")
+        sa_enum(*RECO_VARIANTS, name="reco_variant"), default="base")
     # CLV provenance per docs/decisions.md (CLV metric definition)
     clv: Mapped[Decimal | None] = mapped_column(Numeric(7, 4))
     clv_source: Mapped[str | None] = mapped_column(
-        Enum(*CLV_SOURCES, name="clv_source"))
+        sa_enum(*CLV_SOURCES, name="clv_source"))
     # final edge is computed against Fortuna (manual input until it appears
     # in an API) — docs/decisions.md (S10)
     final_odds_source: Mapped[str | None] = mapped_column(
-        Enum(*FINAL_ODDS_SOURCES, name="final_odds_source"))
+        sa_enum(*FINAL_ODDS_SOURCES, name="final_odds_source"))
     created_at_utc: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
 
 

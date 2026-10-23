@@ -1,8 +1,8 @@
 """initial schema
 
-Revision ID: bc1b70abccfd
+Revision ID: 6f073a9d4637
 Revises: 
-Create Date: 2026-10-23 21:43:43.022216
+Create Date: 2026-10-23 21:56:41.345021
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = 'bc1b70abccfd'
+revision: str = '6f073a9d4637'
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -69,8 +69,8 @@ def upgrade() -> None:
     sa.Column('season', sa.Integer(), nullable=False),
     sa.Column('date_utc', sa.Date(), nullable=False),
     sa.Column('commence_time_utc', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('kickoff_source', sa.Enum('toa', 'understat_placeholder', name='kickoff_source'), nullable=False),
-    sa.Column('status', sa.Enum('scheduled', 'postponed_suspected', 'postponed', 'finished', 'void', name='match_status'), nullable=False),
+    sa.Column('kickoff_source', sa.Enum('toa', 'understat_placeholder', name='kickoff_source', native_enum=False, create_constraint=True), nullable=False),
+    sa.Column('status', sa.Enum('scheduled', 'postponed_suspected', 'postponed', 'finished', 'void', name='match_status', native_enum=False, create_constraint=True), nullable=False),
     sa.Column('home_team_id', sa.Integer(), nullable=False),
     sa.Column('away_team_id', sa.Integer(), nullable=False),
     sa.Column('understat_id', sa.String(length=60), nullable=True),
@@ -87,7 +87,7 @@ def upgrade() -> None:
     op.create_table('team_aliases',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('team_id', sa.Integer(), nullable=False),
-    sa.Column('source', sa.Enum('understat', 'football_data', 'toa', 'api_football', name='alias_source'), nullable=False),
+    sa.Column('source', sa.Enum('understat', 'football_data', 'toa', 'api_football', name='alias_source', native_enum=False, create_constraint=True), nullable=False),
     sa.Column('alias', sa.String(length=120), nullable=False),
     sa.ForeignKeyConstraint(['team_id'], ['teams.id'], ),
     sa.PrimaryKeyConstraint('id'),
@@ -117,14 +117,14 @@ def upgrade() -> None:
     sa.Column('toa_event_id', sa.String(length=60), nullable=False),
     sa.Column('match_id', sa.Integer(), nullable=True),
     sa.Column('bookmaker', sa.String(length=60), nullable=False),
-    sa.Column('market', sa.Enum('totals', 'btts', 'correct_score', 'alternate_totals', name='odd_market'), nullable=False),
+    sa.Column('market', sa.Enum('totals', 'btts', 'correct_score', 'alternate_totals', name='odd_market', native_enum=False, create_constraint=True), nullable=False),
     sa.Column('line', sa.Numeric(precision=4, scale=2), nullable=True),
     sa.Column('outcome', sa.String(length=40), nullable=False),
     sa.Column('price', sa.Numeric(precision=8, scale=3), nullable=False),
-    sa.Column('tier', sa.Enum('T-48', 'T-24', 'T-3', 'T-1', 'manual', name='odd_tier'), nullable=False),
+    sa.Column('tier', sa.Enum('T-48', 'T-24', 'T-3', 'T-1', 'manual', name='odd_tier', native_enum=False, create_constraint=True), nullable=False),
     sa.Column('planned_offset_min', sa.Integer(), nullable=True),
     sa.Column('actual_offset_min', sa.Integer(), nullable=True),
-    sa.Column('source', sa.Enum('toa', 'manual_fortuna', name='odd_source'), nullable=False),
+    sa.Column('source', sa.Enum('toa', 'manual_fortuna', name='odd_source', native_enum=False, create_constraint=True), nullable=False),
     sa.Column('captured_at_utc', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['match_id'], ['matches.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -137,8 +137,8 @@ def upgrade() -> None:
     sa.Column('team_id', sa.Integer(), nullable=False),
     sa.Column('match_id', sa.Integer(), nullable=True),
     sa.Column('player', sa.String(length=120), nullable=False),
-    sa.Column('status', sa.Enum('out', 'doubtful', 'suspended', name='player_status'), nullable=False),
-    sa.Column('source', sa.Enum('api_football', 'news_llm', name='player_source'), nullable=False),
+    sa.Column('status', sa.Enum('out', 'doubtful', 'suspended', name='player_status', native_enum=False, create_constraint=True), nullable=False),
+    sa.Column('source', sa.Enum('api_football', 'news_llm', name='player_source', native_enum=False, create_constraint=True), nullable=False),
     sa.Column('source_url', sa.String(length=500), nullable=True),
     sa.Column('quote_summary', sa.Text(), nullable=True),
     sa.Column('detected_at_utc', sa.DateTime(timezone=True), nullable=False),
@@ -167,7 +167,7 @@ def upgrade() -> None:
     op.create_table('recommendations',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('match_id', sa.Integer(), nullable=False),
-    sa.Column('market', sa.Enum('totals', 'btts', 'correct_score', 'alternate_totals', name='reco_market'), nullable=False),
+    sa.Column('market', sa.Enum('totals', 'btts', 'correct_score', 'alternate_totals', name='reco_market', native_enum=False, create_constraint=True), nullable=False),
     sa.Column('line', sa.Numeric(precision=4, scale=2), nullable=True),
     sa.Column('outcome', sa.String(length=40), nullable=False),
     sa.Column('odds', sa.Numeric(precision=8, scale=3), nullable=False),
@@ -175,10 +175,10 @@ def upgrade() -> None:
     sa.Column('edge', sa.Numeric(precision=6, scale=4), nullable=False),
     sa.Column('kelly_quarter_capped', sa.Numeric(precision=6, scale=4), nullable=True),
     sa.Column('flags', sa.String(length=200), nullable=False),
-    sa.Column('variant', sa.Enum('base', 'shadow_llm', name='reco_variant'), nullable=False),
+    sa.Column('variant', sa.Enum('base', 'shadow_llm', name='reco_variant', native_enum=False, create_constraint=True), nullable=False),
     sa.Column('clv', sa.Numeric(precision=7, scale=4), nullable=True),
-    sa.Column('clv_source', sa.Enum('avgc', 'maxc', 'own_snapshot_t3', name='clv_source'), nullable=True),
-    sa.Column('final_odds_source', sa.Enum('fortuna_manual', 'fortuna_api', name='final_odds_source'), nullable=True),
+    sa.Column('clv_source', sa.Enum('avgc', 'maxc', 'own_snapshot_t3', name='clv_source', native_enum=False, create_constraint=True), nullable=True),
+    sa.Column('final_odds_source', sa.Enum('fortuna_manual', 'fortuna_api', name='final_odds_source', native_enum=False, create_constraint=True), nullable=True),
     sa.Column('created_at_utc', sa.DateTime(timezone=True), nullable=False),
     sa.CheckConstraint('edge >= -1', name='ck_recommendations_edge'),
     sa.ForeignKeyConstraint(['match_id'], ['matches.id'], ),
