@@ -1,0 +1,236 @@
+{
+  "events": [
+    {
+      "home": "Ipswich Town",
+      "away": "Nottingham Forest",
+      "commence": "2026-10-23T19:00:00Z",
+      "id": "d0202960708a442401d7fc7bd74a0183"
+    },
+    {
+      "home": "Aston Villa",
+      "away": "Manchester City",
+      "commence": "2026-10-24T11:30:00Z",
+      "id": "aca5dd297dbee71f576f7641569fe578"
+    },
+    {
+      "home": "Arsenal",
+      "away": "Everton",
+      "commence": "2026-10-24T14:00:00Z",
+      "id": "f66e4f29c1b7bcfc5ab58c0b88c8850b"
+    }
+  ],
+  "tavily": {
+    "Ipswich Town vs Nottingham Forest (2026-10-23)": {
+      "query": "Ipswich Town injury news team news",
+      "ok": true,
+      "http": 200,
+      "results": [
+        {
+          "title": "Ipswich Town Injury Update and Team News Today",
+          "url": "https://www.fa-cupfinals.co.uk/fixtures/teams/ipswich-town-injuries.html",
+          "content_snippet": "Abdul Fatawu IssahakuAttackerIndirect Card SuspensionOut since 21 Sep 2026 \u00b7 Expected back 12 Oct 2026\n Azor MatusiwaMidfielderKnee SurgeryOut since 11 May 2026 \u00b7 13 games missed\n Jack TaylorMidfielderKnee SurgeryOut since 11 May 2026 \u00b7 13 games missed\n Jaden PhilogeneAttackerAnkle InjuryOut since 1",
+          "score": 0.8740022
+        },
+        {
+          "title": "Ipswich Town - Premier Injuries",
+          "url": "https://www.premierinjuries.com/teams/ipswich-town",
+          "content_snippet": "Skip to content\n\nImage 1: PremierInjuries.com Logo\n\n   Injury Newsroom\n   Your Injury\n   Your Nutrition\n\n   Injury Newsroom\n   Your Injury\n   Your Nutrition\n\nShop\n\nHome \u25b8 Injury Newsroom \u25b8 Teams \u25b8 Ipswich Town\n\nImage 2: Ipswich Town FC\n\n# Ipswich Town Injuries\n\n Which Ipswich Town players are injure",
+          "score": 0.7343678
+        },
+        {
+          "title": "Ipswich Town Injuries & Suspensions news | Breaking News",
+          "url": "https://www.newsnow.com/us/Sports/Soccer/Premier+League/Ipswich+Town/Injuries+and+Suspensions",
+          "content_snippet": "Read the latest Ipswich Town Injuries & Suspensions headlines, on NewsNow. Ipswich Town Injuries & Suspensions news, analysis and opinion from around the world.",
+          "score": 0.7336813
+        },
+        {
+          "title": "Ipswich Town Injuries | Full Injury List, Player return dates ...",
+          "url": "https://www.sportsdunia.com/football-teams/ipswich-town-injuries",
+          "content_snippet": "Aug 19, 2026 \u00b7 Get the latest Ipswich Town injuries update, including current player injury status, expected return dates, and a full injury list for the squad.",
+          "score": 0.65914243
+        },
+        {
+          "title": "Premier League Latest Injury News \u2013 Club by Club Updates",
+          "url": "https://www.premierleague.com/en/latest-player-injuries",
+          "content_snippet": "Copilot logo\n\n# \n\nAll you need to know about who's out of action, why, and when they could return\n\nSee all the players injured for each of the 20 Premier League clubs during the 2026/27 season.\n\nLast updated: 18:30 BST, 17 October2026.See: Which players are suspended or close to a ban?\n\n## Key Injur",
+          "score": 0.27993473
+        }
+      ]
+    },
+    "Aston Villa vs Manchester City (2026-10-24)": {
+      "query": "Aston Villa injury news team news",
+      "ok": true,
+      "http": 200,
+      "results": [
+        {
+          "title": "Aston Villa Injuries and Suspensions News - NewsNow",
+          "url": "https://www.newsnow.com/us/Sports/Soccer/Premier+League/Aston+Villa/Injuries+and+Suspensions",
+          "content_snippet": "Monday\n\nAston Villa Team News vs Viking FK: Wan-Bissaka, Manzambi, Hemmings, Maatsen  The Sports Bank.Net   18:15 Mon, 19 Oct\n\nEmiliano Buendia closes in on new contract with Aston Villa  MailOnline   16:46 Mon, 19 Oct\n\nAdvertisement\n\nAdvertisement\n\nAdvertisement\n\nAdvertisement\n\n#### About our Aston",
+          "score": 0.83678174
+        },
+        {
+          "title": "Aston Villa - Premier Injuries",
+          "url": "https://www.premierinjuries.com/teams/aston-villa",
+          "content_snippet": "Image 5: \ud83c\udf99\ufe0f Unai Emery. #AVFC Team news... Jo\u00e3o Gomes is set for a return following a three-match ban, plus a slight calf issue. Marco Bizot joins a lengthy injury list after a back complaint forced the goalkeeper off at Coventry on Wednesday. Matty Cash is '100 per cent fit to face Spurs' after fee",
+          "score": 0.81979275
+        },
+        {
+          "title": "Aston Villa - Suspensions and injuries | Transfermarkt",
+          "url": "https://www.transfermarkt.com/aston-villa/sperrenundverletzungen/verein/405",
+          "content_snippet": "| Player | Age | Reason | since | Expected return | Missed matches |\n ---  ---  --- |\n| Injuries |\n| |  |  |  --- | | Amadou Onana | Amadou Onana | | Defensive Midfield | | 25 | Cruciate ligament tear | 07/07/2026 | 01/06/2027 | 49 |\n| |  |  |  --- | | Ian Maatsen | Ian Maatsen | | Left-Back | | 24 ",
+          "score": 0.7763013
+        },
+        {
+          "title": "Aston Villa injury news: Johan Manzambi, Aaron Wan-Bissaka, Matteo Ruggeri blows delivered by Unai Emery - Sports Mole",
+          "url": "https://www.sportsmole.co.uk/football/aston-villa/injury-news/news/emery-delivers-triple-aston-villa-injury-blow-ahead-of-viking-fk-game_607301.html",
+          "content_snippet": "Champions League  Gameweek 3\n\nAston Villa/https%3A%2F%2Fsportsmole-media-prod.s3.gra.io.cloud.ovh.net%2F19%2F06%2Fastlog.png)\n\nAston Villa\n\nOct 21, 2026 8.00pm\n\n Villa Park\n\nViking FK\n\nViking FK\n\n# Aston Villa injury news: Johan Manzambi, Aaron Wan-Bissaka, Matteo Ruggeri blows delivered by Unai Eme",
+          "score": 0.7715858
+        },
+        {
+          "title": "Aston Villa Injuries - Yahoo Sports",
+          "url": "https://sports.yahoo.com/soccer/teams/aston-villa/injuries",
+          "content_snippet": "| Player | Pos | Status | Date |\n ---  --- |\n| Matteo Ruggeri  Matteo Ruggeri | D | (Hamstring: May return on 2026-11-21) | 10/19 |\n| Amadou Onana  Amadou Onana | M | (Knee: May return on 2027-04-10) | 10/19 |\n| Ian Maatsen  Ian Maatsen | D | (Ankle: May return on 2026-10-21) | 10/19 |\n| Aaron Wan-B",
+          "score": 0.70336664
+        }
+      ]
+    },
+    "Arsenal vs Everton (2026-10-24)": {
+      "query": "Arsenal injury news team news",
+      "ok": true,
+      "http": 200,
+      "results": [
+        {
+          "title": "Arsenal injury news and latest player updates - Daily Cannon",
+          "url": "https://dailycannon.com/arsenal-injury-updates",
+          "content_snippet": "## Arsenal injury updates \u2013 Knee Injuries (ACL Tears) in Football\n\nLONDON, ENGLAND - JANUARY 04: The injured Theo Walcott of Arsenal makes a 2-0 gesture to the Tottenham fans as he is stretchered off the pitch during the Budweiser FA Cup third round match between Arsenal and Tottenham Hotspur at Emi",
+          "score": 0.82220376
+        },
+        {
+          "title": "Arsenal facing injury crisis as 10 players leave international duty - CBS Sports",
+          "url": "https://www.cbssports.com/soccer/news/arsenal-injury-crisis-international-break-gunners-premier-league-mikel-arteta-ucl",
+          "content_snippet": "A week after their bruising defeat to Manchester City in the EFL Cup final, it seems that Arsenal players are still feeling the aches and pains with yet more of Mikel Arteta's side withdrawing from their international duties. Sunday morning brought the news that Piero Hincapie and Martin Zubimendi w",
+          "score": 0.7593865
+        },
+        {
+          "title": "Arsenal Injury News | Latest Player Updates - NewsNow",
+          "url": "https://www.newsnow.com/us/Sports/Soccer/Premier+League/Arsenal/Injuries+and+Suspensions",
+          "content_snippet": "Latest news on injuries and suspensions at Arsenal FC, including all player updates from the club's manager and medical team. [...] Arsenal receive much-needed boost following Bayern Munich injury setback  Arsenal News   15:25\n\nIn the last hour\n\nArteta makes new Saka injury admission as Arsenal star",
+          "score": 0.75809944
+        },
+        {
+          "title": "Arsenal FC injury update: Bukayo Saka, Piero Hincapie, Christos Tzolis latest news and return dates | The Standard",
+          "url": "https://www.standard.co.uk/sport/football/arsenal-fc-injury-update-saka-hincapie-tzolis-latest-news-return-dates-b1301849.html",
+          "content_snippet": "Following the international break, Arsenal appeared to be in good shape as they prepared for a flurry of games only for Piero Hincapie and Martin Zubimendi to suffer freak injuries after the win over Leeds.\n\nThe latter has since made a full recovery and he was named on the bench in the last two game",
+          "score": 0.7552947
+        },
+        {
+          "title": "Arsenal's injury woes deepen as Arteta calls for more rest - ESPN",
+          "url": "https://www.espn.com/soccer/story/_/id/47193680/arsenal-injuries-declan-rice-cristhian-mosquera-mikel-arteta",
+          "content_snippet": "## ESPN\n\n# Soccer\n\n# Arsenal's injury woes deepen as Arteta calls for more rest\n\nCopy Link\n\nLONDON -- Mikel Arteta said an unprecedented fixture calendar is responsible for Arsenal's ongoing injury problems after two more players limped off in Wednesday's 2-0 win over Brentford.",
+          "score": 0.66699636
+        }
+      ]
+    }
+  },
+  "brave": {
+    "Ipswich Town vs Nottingham Forest (2026-10-23)": {
+      "query": "Ipswich Town injury news team news",
+      "ok": true,
+      "http": 200,
+      "n_results": 5,
+      "results": [
+        {
+          "title": "Team News: Ipswich Town vs. Nottingham Forest injury, suspension list, predicted XIs - Sports Mole",
+          "url": "https://www.sportsmole.co.uk/football/nottingham-forest/relegation-battle/team-news/ipswich-vs-forest-injury-suspension-list-predicted-xis_607367.html",
+          "content_snippet": "Sports Mole rounds up the team news, including injuries and predicted lineups, as Ipswich Town prepare to take on Nottingham Forest in the Premier League."
+        },
+        {
+          "title": "Ipswich Town Injury News - Football predictions",
+          "url": "https://www.sportsmole.co.uk/football/ipswich-town/injury-news/",
+          "content_snippet": "&gt; Ipswich Town \u00b7 News \u00b7 Fixtures &amp; Results \u00b7 Squad \u00b7 Top Scorers \u00b7 Transfer Talk \u00b7 Injury News \u00b7 Football | 10d \u00b7 Next Page &gt; rhs 2.0 \u00b7 Nations League&gt; Fixtures \u00b7 7.45pm \u00b7 Spain \u00b7 vs \u00b7 Croatia \u00b7 7.45pm \u00b7 Czech Republic \u00b7 vs \u00b7 England \u00b7 Nations League&gt; Fixtures \u00b7"
+        },
+        {
+          "title": "Ipswich Town Injuries & Suspensions news | Breaking News",
+          "url": "https://www.newsnow.com/us/Sports/Soccer/Premier+League/Ipswich+Town/Injuries+and+Suspensions",
+          "content_snippet": "Get NewsNow Essentials at just \u00a32.99 a month (25% OFF!). Faster, slicker, customisable &amp; ad free!Summer Special! Get NewsNow Essentials at just \u00a32.99 a month (25% OFF!). Subscribe and saveSummer Special! Upgrade here at \u00a32.99/m (25% OFF!) ... Ipswich Town transfer rumour: Wrexham interested in B"
+        },
+        {
+          "title": "The Ipswich Town and Sunderland team and injury news",
+          "url": "https://www.facebook.com/sunderlandechoonline/posts/the-ipswich-town-and-sunderland-team-and-injury-news-with-three-ruled-out-and-bi/1511051921066954/",
+          "content_snippet": "Sunderland Echo. 221,215 followers \u00b7 29,421 talking about this. News outlet for Sunderland, South Tyneside, East Durham &amp; the North East. Comments made on this page may be used in follow-up stories...."
+        },
+        {
+          "title": "Ipswich Town injury list and suspended players | BeSoccer",
+          "url": "https://www.besoccer.com/team/injuries-suspensions/ipswich-town-fc",
+          "content_snippet": "Check the status of the current and former Ipswich Town players and all the details of the injured players and their duration and the suspended players for the next matchday."
+        }
+      ]
+    },
+    "Aston Villa vs Manchester City (2026-10-24)": {
+      "query": "Aston Villa injury news team news",
+      "ok": true,
+      "http": 200,
+      "n_results": 5,
+      "results": [
+        {
+          "title": "Aston Villa - Premier Injuries",
+          "url": "https://www.premierinjuries.com/teams/aston-villa",
+          "content_snippet": "Which Aston Villa players are injured? Details of all the current injuries, suspensions and absences, and latest injury news as it breaks."
+        },
+        {
+          "title": "Aston Villa Injuries and Suspensions News - NewsNow",
+          "url": "https://www.newsnow.com/us/Sports/Soccer/Premier+League/Aston+Villa/Injuries+and+Suspensions",
+          "content_snippet": "Aston Villa record-breaker Brian Madjo set for period on sidelines through injury talkSPORT 20:13 Fri, 14 Aug ... Brighton hammer Aston Villa and Jo\u00e3o Gomes red card adds to Unai Emery\u2019s pain The Irish Times 16:55 Article paywall ... Aston Villa team news: Midfielder starts up front at Brighton Birm"
+        },
+        {
+          "title": "Aston Villa Injury Update and Team News Today - FA Cup Finals",
+          "url": "https://www.fa-cupfinals.co.uk/fixtures/teams/aston-villa-injuries.html",
+          "content_snippet": "Find Aston Villa injury update and team news today for key players including Amadou Onana, Ian Maatsen, Modou K\u00e9ba Ciss\u00e9 and Taylor Harwood-Bellis."
+        },
+        {
+          "title": "Aston Villa injury, suspension list and return dates for Man City: Manzambi, Ruggeri, Wan Bissaka latest - Sports Mole",
+          "url": "https://www.sportsmole.co.uk/football/aston-villa/injury-news/injuries-and-suspensions/manzambi-ruggeri-wan-bissaka-latest-aston-villa-injury-list-for-man-city-clash_607410.html",
+          "content_snippet": "Johan Manzambi missed the midweek win over Viking FK with a &quot;small injury&quot;, but there is hope that the summer signing can recover in time to face Man City. ... Possible return date: October 24 (vs. Man City) Twenty-one-year-old defender Modou Keba Cisse has returned to team training and co"
+        },
+        {
+          "title": "Aston Villa injury list and suspensions | BeSoccer",
+          "url": "https://www.besoccer.com/team/injuries-suspensions/aston-villa-fc",
+          "content_snippet": "Check the status of the current and former Aston Villa players and all the details of the injured players and their duration and the suspended players for the next matchday."
+        }
+      ]
+    },
+    "Arsenal vs Everton (2026-10-24)": {
+      "query": "Arsenal injury news team news",
+      "ok": true,
+      "http": 200,
+      "n_results": 5,
+      "results": [
+        {
+          "title": "Arsenal - Premier Injuries",
+          "url": "https://www.premierinjuries.com/teams/arsenal",
+          "content_snippet": "Which Arsenal players are injured? Details of all the current injuries, suspensions and absences, and latest injury news as it breaks."
+        },
+        {
+          "title": "Arsenal injury news and latest player updates - Daily Cannon",
+          "url": "https://dailycannon.com/arsenal-injury-updates/",
+          "content_snippet": "Arsenal were forced into another reshuffle against Birmingham City after two midfielders dropped out of the squad before kick-off. ... Mikel Merino has owned up to being the player who injured Martin Zubimendi during last week\u2019s post-match warm-down, but he insists his fellow midfielder is alright n"
+        },
+        {
+          "title": "Arsenal Injury News | Latest Player Updates - NewsNow",
+          "url": "https://www.newsnow.co.uk/h/Sport/Football/Premier+League/Arsenal/Injuries+and+Suspensions",
+          "content_snippet": "Every word Arteta said on Arsenal&#x27;s Bayern fightback, Saka injury latest and Eze Football.London 23:22 Wed, 21 Oct \u00b7 &#x27;It doesn&#x27;t look good&#x27;: Arteta sparks fears over Saka injury MailOnline 23:12 Wed, 21 Oct Article paywall ... Injury expert predicts how long Arsenal star Bukayo S"
+        },
+        {
+          "title": "Arsenal FC injury list and suspensions | BeSoccer",
+          "url": "https://www.besoccer.com/team/injuries-suspensions/arsenal",
+          "content_snippet": "Check the status of the current and former Arsenal FC players and all the details of the injured players and their duration and the suspended players for the next matchday."
+        },
+        {
+          "title": "Arsenal injury news - footballlondon",
+          "url": "https://www.football.london/all-about/arsenal-injury-news",
+          "content_snippet": "Mikel Arteta will be without four Arsenal stars for the visit of Lille in the Champions League after an unfortunate double injury blow this past weekend ... Mikel Arteta has addressed the media ahead of Arsenal&#x27;s Champions League home clash against Lille and there was plenty of team news includ"
+        }
+      ]
+    }
+  }
+}
