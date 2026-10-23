@@ -1,8 +1,8 @@
 """initial schema
 
-Revision ID: 6f073a9d4637
+Revision ID: 5fc6c179eb70
 Revises: 
-Create Date: 2026-10-23 21:56:41.345021
+Create Date: 2026-10-23 22:50:10.624523
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = '6f073a9d4637'
+revision: str = '5fc6c179eb70'
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -73,16 +73,19 @@ def upgrade() -> None:
     sa.Column('status', sa.Enum('scheduled', 'postponed_suspected', 'postponed', 'finished', 'void', name='match_status', native_enum=False, create_constraint=True), nullable=False),
     sa.Column('home_team_id', sa.Integer(), nullable=False),
     sa.Column('away_team_id', sa.Integer(), nullable=False),
-    sa.Column('understat_id', sa.String(length=60), nullable=True),
+    sa.Column('stage', sa.String(length=30), nullable=True),
+    sa.Column('understat_id', sa.Integer(), nullable=True),
     sa.Column('toa_event_id', sa.String(length=60), nullable=True),
     sa.ForeignKeyConstraint(['away_team_id'], ['teams.id'], ),
     sa.ForeignKeyConstraint(['home_team_id'], ['teams.id'], ),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('toa_event_id', name='uq_matches_toa_event')
+    sa.UniqueConstraint('toa_event_id', name='uq_matches_toa_event'),
+    sa.UniqueConstraint('understat_id')
     )
     with op.batch_alter_table('matches', schema=None) as batch_op:
         batch_op.create_index('ix_matches_date_league', ['date_utc', 'league'], unique=False)
-        batch_op.create_index(batch_op.f('ix_matches_understat_id'), ['understat_id'], unique=False)
+        batch_op.create_index('uq_matches_league_pairing', ['league', 'season', 'home_team_id', 'away_team_id'], unique=True, sqlite_where=sa.text('stage IS NULL'))
+        batch_op.create_index('uq_matches_ucl_pairing', ['league', 'season', 'stage', 'home_team_id', 'away_team_id'], unique=True, sqlite_where=sa.text('stage IS NOT NULL'))
 
     op.create_table('team_aliases',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -113,8 +116,8 @@ def upgrade() -> None:
 
     op.create_table('odds_snapshots',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('toa_sport_key', sa.String(length=40), nullable=False),
-    sa.Column('toa_event_id', sa.String(length=60), nullable=False),
+    sa.Column('toa_sport_key', sa.String(length=40), nullable=True),
+    sa.Column('toa_event_id', sa.String(length=60), nullable=True),
     sa.Column('match_id', sa.Integer(), nullable=True),
     sa.Column('bookmaker', sa.String(length=60), nullable=False),
     sa.Column('market', sa.Enum('totals', 'btts', 'correct_score', 'alternate_totals', name='odd_market', native_enum=False, create_constraint=True), nullable=False),
@@ -126,6 +129,7 @@ def upgrade() -> None:
     sa.Column('actual_offset_min', sa.Integer(), nullable=True),
     sa.Column('source', sa.Enum('toa', 'manual_fortuna', name='odd_source', native_enum=False, create_constraint=True), nullable=False),
     sa.Column('captured_at_utc', sa.DateTime(timezone=True), nullable=False),
+    sa.CheckConstraint("source = 'manual_fortuna' OR (toa_sport_key IS NOT NULL AND toa_event_id IS NOT NULL)", name='ck_odds_snapshots_toa_ids'),
     sa.ForeignKeyConstraint(['match_id'], ['matches.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -167,11 +171,16 @@ def upgrade() -> None:
     op.create_table('recommendations',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('match_id', sa.Integer(), nullable=False),
-    sa.Column('market', sa.Enum('totals', 'btts', 'correct_score', 'alternate_totals', name='reco_market', native_enum=False, create_constraint=True), nullable=False),
+    sa.Column('market', sa.Enum('exact_score', 'multiscore', 'goals_range', 'totals', 'btts', name='reco_market', native_enum=False, create_constraint=True), nullable=False),
     sa.Column('line', sa.Numeric(precision=4, scale=2), nullable=True),
     sa.Column('outcome', sa.String(length=40), nullable=False),
+    sa.Column('scores_set', sa.Text(), nullable=True),
+    sa.Column('goals_range_lo', sa.Integer(), nullable=True),
+    sa.Column('goals_range_hi', sa.Integer(), nullable=True),
+    sa.Column('bookmaker', sa.String(length=60), nullable=True),
     sa.Column('odds', sa.Numeric(precision=8, scale=3), nullable=False),
     sa.Column('p_model', sa.Numeric(precision=6, scale=4), nullable=False),
+    sa.Column('p_market_devig', sa.Numeric(precision=6, scale=4), nullable=True),
     sa.Column('edge', sa.Numeric(precision=6, scale=4), nullable=False),
     sa.Column('kelly_quarter_capped', sa.Numeric(precision=6, scale=4), nullable=True),
     sa.Column('flags', sa.String(length=200), nullable=False),
@@ -179,8 +188,11 @@ def upgrade() -> None:
     sa.Column('clv', sa.Numeric(precision=7, scale=4), nullable=True),
     sa.Column('clv_source', sa.Enum('avgc', 'maxc', 'own_snapshot_t3', name='clv_source', native_enum=False, create_constraint=True), nullable=True),
     sa.Column('final_odds_source', sa.Enum('fortuna_manual', 'fortuna_api', name='final_odds_source', native_enum=False, create_constraint=True), nullable=True),
+    sa.Column('llm_call_id', sa.Integer(), nullable=True),
     sa.Column('created_at_utc', sa.DateTime(timezone=True), nullable=False),
+    sa.CheckConstraint("variant != 'shadow_llm' OR llm_call_id IS NOT NULL", name='ck_recommendations_shadow_llm_call'),
     sa.CheckConstraint('edge >= -1', name='ck_recommendations_edge'),
+    sa.ForeignKeyConstraint(['llm_call_id'], ['llm_calls.id'], ),
     sa.ForeignKeyConstraint(['match_id'], ['matches.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -229,7 +241,8 @@ def downgrade() -> None:
 
     op.drop_table('team_aliases')
     with op.batch_alter_table('matches', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_matches_understat_id'))
+        batch_op.drop_index('uq_matches_ucl_pairing', sqlite_where=sa.text('stage IS NOT NULL'))
+        batch_op.drop_index('uq_matches_league_pairing', sqlite_where=sa.text('stage IS NULL'))
         batch_op.drop_index('ix_matches_date_league')
 
     op.drop_table('matches')

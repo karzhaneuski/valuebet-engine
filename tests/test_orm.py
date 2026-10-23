@@ -10,7 +10,7 @@ from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError, StatementError
 
 from core.db import get_engine, session_scope
-from core.orm import Base, Match, OddsSnapshot, Recommendation, Team, TeamAlias
+from core.orm import Base, LlmCall, Match, OddsSnapshot, Recommendation, Team, TeamAlias
 
 
 @pytest.fixture()
@@ -130,3 +130,122 @@ def test_recommendation_clv_fields(db_url) -> None:
         assert r.clv_source == "avgc"
         assert r.variant == "base"
         assert r.final_odds_source == "fortuna_manual"
+
+
+def test_manual_fortuna_snapshot_without_toa_ids(db_url) -> None:
+    with session_scope(db_url) as s:
+        s.add(OddsSnapshot(
+            toa_sport_key=None, toa_event_id=None, bookmaker="fortuna",
+            market="correct_score", line=None, outcome="H1|A0",
+            price=Decimal("8.5"), tier="manual", source="manual_fortuna",
+            captured_at_utc=dt.datetime(2026, 10, 24, 10, 0, tzinfo=dt.UTC)))
+
+
+def test_toa_snapshot_requires_toa_ids(db_url) -> None:
+    from core.db import get_session_factory
+    factory = get_session_factory(db_url)
+    session = factory()
+    session.add(OddsSnapshot(
+        toa_sport_key=None, toa_event_id=None, bookmaker="pinnacle",
+        market="totals", line=Decimal("2.5"), outcome="Over",
+        price=Decimal("1.95"), tier="T-3", source="toa",
+        captured_at_utc=dt.datetime(2026, 10, 24, 11, 0, tzinfo=dt.UTC)))
+    with pytest.raises(IntegrityError):
+        session.flush()
+    session.rollback()
+    session.close()
+
+
+def test_understat_id_unique(db_url) -> None:
+    from core.db import get_session_factory
+    with session_scope(db_url) as s:
+        t1, t2 = Team(name="U1"), Team(name="U2")
+        s.add_all([t1, t2])
+        s.flush()
+        s.add(Match(league="premier_league", season=2026,
+                    date_utc=dt.date(2026, 10, 24), kickoff_source="toa",
+                    understat_id=12345, home_team_id=t1.id,
+                    away_team_id=t2.id))
+    session = get_session_factory(db_url)()
+    t1 = session.scalars(select(Team).where(Team.name == "U1")).one()
+    t2 = session.scalars(select(Team).where(Team.name == "U2")).one()
+    # same understat_id on a different date must fail (unique)
+    session.add(Match(league="premier_league", season=2026,
+                      date_utc=dt.date(2026, 10, 26), kickoff_source="toa",
+                      understat_id=12345, home_team_id=t1.id,
+                      away_team_id=t2.id))
+    with pytest.raises(IntegrityError):
+        session.flush()
+    session.rollback()
+    session.close()
+
+
+def test_league_pairing_unique_and_ucl_stage(db_url) -> None:
+    from core.db import get_session_factory
+    with session_scope(db_url) as s:
+        t1, t2 = Team(name="P1"), Team(name="P2")
+        s.add_all([t1, t2])
+        s.flush()
+        s.add(Match(league="premier_league", season=2026,
+                    date_utc=dt.date(2026, 10, 24), kickoff_source="toa",
+                    home_team_id=t1.id, away_team_id=t2.id))
+    factory = get_session_factory(db_url)
+    s2 = factory()
+    t1 = s2.scalars(select(Team).where(Team.name == "P1")).one()
+    t2 = s2.scalars(select(Team).where(Team.name == "P2")).one()
+    # same pairing again -> unique violation (league, stage IS NULL)
+    s2.add(Match(league="premier_league", season=2026,
+                 date_utc=dt.date(2026, 10, 25), kickoff_source="toa",
+                 home_team_id=t1.id, away_team_id=t2.id))
+    with pytest.raises(IntegrityError):
+        s2.flush()
+    s2.rollback()
+    # same pairing in UCL with DIFFERENT stages -> allowed
+    s2.add(Match(league="ucl", season=2026, stage="league_phase",
+                 date_utc=dt.date(2026, 11, 3), kickoff_source="toa",
+                 home_team_id=t1.id, away_team_id=t2.id))
+    s2.add(Match(league="ucl", season=2026, stage="final",
+                 date_utc=dt.date(2027, 5, 29), kickoff_source="toa",
+                 home_team_id=t1.id, away_team_id=t2.id))
+    s2.commit()
+    s2.close()
+
+
+def test_shadow_llm_requires_llm_call(db_url) -> None:
+    from core.db import get_session_factory
+    factory = get_session_factory(db_url)
+    session = factory()
+    t1, t2 = Team(name="S1"), Team(name="S2")
+    session.add_all([t1, t2])
+    session.flush()
+    m = Match(league="premier_league", season=2026,
+              date_utc=dt.date(2026, 10, 24), kickoff_source="toa",
+              home_team_id=t1.id, away_team_id=t2.id)
+    session.add(m)
+    session.flush()
+    session.add(Recommendation(
+        match_id=m.id, market="multiscore", outcome="1:0,2:0,2:1",
+        scores_set="[[1,0],[2,0],[2,1]]", bookmaker="fortuna",
+        odds=Decimal("3.4"), p_model=Decimal("0.3300"),
+        p_market_devig=Decimal("0.2900"), edge=Decimal("0.1220"),
+        variant="shadow_llm",
+        created_at_utc=dt.datetime(2026, 10, 24, 9, 0, tzinfo=dt.UTC)))
+    with pytest.raises(IntegrityError):
+        session.flush()
+    session.rollback()
+    # with an llm_call it is valid
+    call = LlmCall(purpose="shadow", prompt="...", model="gemini-3.8-flash",
+                   model_version="3.0",
+                   thinking_config='{"thinkingBudget": 4096}',
+                   created_at_utc=dt.datetime(2026, 10, 24, 9, 0,
+                                              tzinfo=dt.UTC))
+    session.add(call)
+    session.flush()
+    session.add(Recommendation(
+        match_id=m.id, market="goals_range", outcome="2-4",
+        goals_range_lo=2, goals_range_hi=4, bookmaker="fortuna",
+        odds=Decimal("1.8"), p_model=Decimal("0.6100"), edge=Decimal("0.0980"),
+        variant="shadow_llm", llm_call_id=call.id,
+        created_at_utc=dt.datetime(2026, 10, 24, 9, 0, tzinfo=dt.UTC)))
+    session.commit()
+    session.close()
