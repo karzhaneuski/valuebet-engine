@@ -1,15 +1,16 @@
 # Data sources — phase 0 recon
 
-Status date: 2026-10-23. Branch: `phase-0-recon`. All findings below come from
-real requests executed on 2026-10-23 (evidence: `reports/recon/*.json`,
-scripts: `scripts/recon/`). No API keys are stored in reports.
+Status date: 2026-10-23 (updated same day after review). Branch: `phase-0-recon`.
+All findings come from real requests; evidence lives in `reports/recon/*.json`,
+scripts in `scripts/recon/` regenerate every number quoted below. Numbers not
+measured by us are marked "declared by provider". No API keys in reports.
 
-Legend: ✅ verified · ⚠️ verified with caveats/risks · ❌ not available.
+Legend: ✅ verified · ⚠️ verified with caveats/risks.
 
 ## 1. football-data.co.uk — ✅ verified (no key needed)
 
 Method: downloaded all 30 CSVs (5 leagues × 6 seasons) on 2026-10-23
-(`check_football_data.py`, evidence: `football_data.json`).
+(`check_football_data.py` → `football_data.json`).
 
 | League | Code | 2021-22 … 2025-26 | 2026-27 (current) |
 |---|---|---|---|
@@ -19,141 +20,207 @@ Method: downloaded all 30 CSVs (5 leagues × 6 seasons) on 2026-10-23
 | Bundesliga | D1 | 306 (18 teams) | 54 |
 | Ligue 1 | F1 | 380 in 21/22–22/23, 306 from 23/24 (18 teams) | 63 |
 
-- All result columns (`Date`, `HomeTeam`, `AwayTeam`, `FTHG`, `FTAG`, `FTR`) present
-  in every file; closing totals fully filled.
-- **Closing O/U 2.5**: past seasons have `PC>/<` (Pinnacle), `MaxC>/<`, `AvgC>/<`;
-  fill rate 1.0 everywhere. The in-progress 2026-27 files currently have only
-  `MaxC>/<` and `AvgC>/<` — current-season CLV must use `AvgC`/`MaxC`.
-- ~30 bookmaker column groups for 1X2 (B365, Pinnacle, Betfair exchange, etc.)
-  with closing variants; totals limited to the 2.5 line; **no exact-score odds**.
+- Result columns (`Date`, `HomeTeam`, `AwayTeam`, `FTHG`, `FTAG`, `FTR`) present
+  in every file.
+- **Closing O/U 2.5 — use AvgC/MaxC, not Pinnacle**: `AvgC>2.5` is filled 1.0
+  in all 30 files; `PC>2.5` (Pinnacle closing) is well filled only through
+  2024-25 (0.96–1.0), drops to **0.46–0.55 in 2025-26 and is absent in
+  2026-27** (football_data.json, `pc_over_fill`). Backtests and CLV must be
+  computed on `AvgC` (and `MaxC` as the upper bound).
+- Totals are limited to the 2.5 line; **no exact-score odds** here.
+- 1X2 bookmakers actually present (base column codes → names per the official
+  `notes.txt`, `fd_notes.json`): Pinnacle (P/PS), Bet365 (B365), William Hill
+  (WH), Skybet (SK*), Betfred (BFD), Betfair (BF) + Betfair Exchange (BFE),
+  BetMGM (BMGM), BetVictor (BV; VC = VC Bet → BetVictor), Bet&Win/bwin (BW),
+  Coral (CL), Interwetten (IW), Ladbrokes (LB), Paddy Power (PP), 1XBet (1XB),
+  plus Avg/Max aggregates; most with closing (C) and Asian-handicap (AH)
+  variants.
 - Dates are UK local time strings; phase 2 must store them as UTC-aware.
 - Free, no key, no visible rate limiting (we throttled to 1 req/s).
 
-**Recommendation: use as-is** for results history and closing O/U 2.5 (backtest base).
+**Recommendation: use as-is** for results history and closing O/U 2.5 (backtest
+and CLV base), on `AvgC`/`MaxC`.
 
 ## 2. Understat xG via soccerdata — ✅ verified (no key needed)
 
-Method: `soccerdata` 2026.43.0, `Understat.read_schedule()`, 5 leagues × 5 seasons
-+ direct JSON-API probe for the 6th season (`check_understat.py`, `understat.json`).
+Method: `soccerdata` **2026.43.0 (pinned in pyproject)**, `read_schedule()`,
+5 leagues × 5 seasons + a direct JSON-API probe for the 6th season
+(`check_understat.py` → `understat.json`); lineups probe
+(`check_understat_lineups.py` → `understat_lineups.json`); schedule/timezone
+alignment against TOA events (`odds_budget_sim.py` → `odds_budget.json`).
 
-API findings (soccerdata 2026.43.0 differs from older docs):
+Coverage and API facts:
 
 - League codes: `ENG-Premier League`, `ESP-La Liga`, `ITA-Serie A`,
   `GER-Bundesliga`, `FRA-Ligue 1`; seasons as ints (`2022` = 2022/23).
-  **Understat has no UCL coverage** — only these five leagues (plus others
-  irrelevant to us).
-- `read_schedule()` returns per-match `home_xg` / `away_xg`, goals, teams, dates,
-  `is_result` — and **includes future (unplayed) matches**, so it doubles as the
-  fixtures feed for the current season.
-- **Limitation**: soccerdata season discovery lists only the **last 5 seasons**
-  (2022/23 … 2026/27). Older seasons are still served by Understat's JSON API
-  (`getLeagueData/{slug}/{season}`); the 2021/22 probe worked for all 5 leagues
-  (~0.5 s per league-season). Phase 2 must fetch pre-window seasons that way.
-- **Lineups fallback**: `read_player_match_stats(match_id)` works for current-season
-  matches (verified on a played 2026/27 EPL match): 16 players per team
-  (11 starters + 5 subs), substitutes marked `position == 'Sub'`, with minutes,
-  xG, cards per player (`understat_lineups.json`). This makes "≥70% starts in
-  last 8" computable without API-Football.
-- Coverage: all 6 seasons × 5 leagues verified, xG fill ~1.0 (Serie A 2021/22:
-  1 of 380 matches lacks xG). Played-match counts match football-data almost
-  exactly (one La Liga discrepancy, 88 vs 89 — log mismatches, don't drop).
-- Speed/cost: ~3 s per league (5 season pages) on first fetch, ~0.5 s per cached
-  page; current-season pages refetch per call by design. Informal source behind
-  TLS fingerprinting → use soccerdata (pinned) with a file cache, throttle, and
-  refresh a few times per day at most.
-- Team spelling differs from football-data (and soccerdata applies its own
-  replacements) → `team_aliases` (phase 1) must map both.
+  **No UCL coverage.**
+- xG per match (`home_xg`/`away_xg`) for all 6 seasons (2021/22 … 2026/27),
+  fill ~1.0 (Serie A 2021/22: 379/380). Match counts line up with
+  football-data almost exactly (one La Liga current-season discrepancy,
+  88 vs 89 — log, don't drop).
+- soccerdata's season discovery covers only the **last 5 seasons**; 2021/22
+  was fetched through Understat's JSON API `getLeagueData/{slug}/{season}`
+  (~0.5 s per league-season, `understat.json` `elapsed_s`). **Phase 2 note
+  (N6): the recon calls the reader's private `_read_league_season`; the
+  production loader must call the `getLeagueData` endpoint itself (or another
+  public surface) and not depend on private API of the pinned library.**
+- Lineups: `read_player_match_stats(match_id)` works for current-season
+  matches (played 2026/27 EPL match verified): 16 players/team, substitutes
+  marked `position == 'Sub'`, with minutes/xG/cards — the "≥70% starts in
+  last 8" key-player rule is computable from Understat alone.
 
-**Recommendation: use soccerdata (pinned) with file cache** for xG, fixtures and
-lineups; older seasons via the getLeagueData endpoint.
+Schedule role and time semantics (S5, evidence `odds_budget.json`
+`understat_alignment`, `toa_events.json`):
+
+- `read_schedule()` includes **future matches**, so it is the full-season
+  fixture list. **There is no match status field**, and **far-future rounds
+  carry placeholder kickoff times** (observed: whole rounds of 10 matches all
+  at 15:00 while near rounds have real spread; see `toa_events.json` vs
+  `understat` in `odds_budget.json`).
+- **Timezone**: matched 94 TOA events to Understat entries (best-|Δ| within
+  ±48 h, fuzzy team names): median Δ = 0 min, 86% exactly 0 — Understat naive
+  datetimes are effectively UTC. Non-zero deltas are postponed matches.
+- **Authoritative kickoff times: TOA `/events`** (free). Postponement rules
+  for phase 2: event disappeared from `/events` before start, or
+  `commence_time` shifted > 15 min, or no result by KO+3 h → mark
+  `postponed?`; recommendations older than 48 h without a result are voided.
+- Team names differ from both football-data and TOA spellings: 82
+  Understat↔TOA name pairs recorded in `odds_budget.json`
+  (`understat_alignment.team_name_pairs`, e.g. "FC Cologne" vs
+  "1. FC Köln", "Roma" vs "AS Roma") — seed material for the phase-1
+  `team_aliases` table, which must map football-data + Understat + TOA
+  spellings.
+- Informal source behind TLS impersonation (soccerdata ships a
+  TLS-impersonating HTTP client — library fact, not our measurement). Use the
+  pinned library with a file cache and throttling; refresh a few times/day.
+
+**Recommendation**: xG, lineups and the season fixture list via soccerdata
+(pinned) + `getLeagueData` for pre-window seasons; kickoff times and
+postponements from TOA `/events`.
 
 ## 3. API-Football — ⚠️ verified: free tier has NO current-season access
 
-Method: `/status`, fixtures/lineups/injuries/odds probes (`check_api_football.py`,
-`check_api_football_seasons.py`, evidence: `api_football.json`). Plan: **Free**,
-daily limit **100 requests/day** (confirmed via `/status`; the `x-ratelimit-*`
-headers are the separate 10 req/min limit).
+Method: `/status`, fixtures/lineups/injuries/odds probes
+(`check_api_football.py`, `check_api_football_seasons.py` →
+`api_football.json`). Plan **Free**, daily limit **100 requests/day**
+(`/status`); the `x-ratelimit-*` headers are a separate 10 req/min limit.
 
-**Season lockout (blocking finding)**: every request for season 2026 (and 2025)
-returns `Free plans do not have access to this season, try from 2022 to 2024.`
-Verified explicitly for fixtures and injuries. The free window is **2022–2024**
-(2022/23 … 2024/25). Consequences:
+**Season lockout (blocking finding)**: every request for season 2025 or 2026
+returns `Free plans do not have access to this season, try from 2022 to
+2024.` Verified for fixtures and injuries. The free window is exactly
+**2022–2024 = three seasons (2022/23, 2023/24, 2024/25), without 2025/26**.
 
-- No current-season schedule, results, lineups, injuries or odds from this source
-  on the free plan → the live loop cannot use API-Football. Alternatives chosen:
-  Understat (fixtures, results, lineups — see §2), football-data (results),
-  The Odds API (odds, events).
-- On an allowed season the endpoints themselves work fine: lineups returned both
-  teams with formations and startXI; fixture injuries returned 8 entries; odds
-  for an old fixture returned 0 (odds are simply not kept long-term — expected).
-- Remaining value on the free plan: historical data for 2022–2024, **including
-  UCL results for the phase-11 league-strength model** (Understat has no UCL).
+- On allowed seasons the endpoints work: lineups (both teams, formation,
+  startXI), fixture injuries (8 entries), and **UCL 2024/25 fixtures are
+  accessible (44 matches in a Jan–Feb 2025 window, real pairings)** — this is
+  the free source of UCL history for phase 11.
+- Odds for an old fixture return 0 rows (odds are not kept long-term).
+- Live loop (current-season fixtures/results/lineups/injuries/odds) cannot
+  use API-Football on the free plan → Understat + football-data + TOA cover
+  it; injuries come from news extraction (decisions.md).
 
-**Recommendation: keep the key for historical/UCL data only**; revisit a paid
-plan only if news-based injury detection proves insufficient (see decisions.md).
+**Recommendation: keep the key for historical 2022–2024 data and UCL
+history only.**
 
 ## 4. The Odds API — ✅ verified (region eu)
 
-Method: `/sports`, per-market odds probes on `soccer_epl`, totals for the other
-sports, `/events`, combined-markets cost check (`check_odds_api.py`, evidence:
-`odds_api.json`).
+Method: `/sports`, sport-level market probes, `/events`, cost measurements
+(`check_odds_api.py`), event-level market probes + Ligue 1 + `/scores` +
+Fortuna check (`check_odds_followup.py`) — all evidence in `odds_api.json`.
 
-- Free quota: **500 credits/month** (header `x-requests-remaining` = 500 at start).
+- Free quota: **500 credits/month** (`x-requests-remaining` = 500 at start).
 - Sport keys: `soccer_epl`, `soccer_spain_la_liga`, `soccer_italy_serie_a`,
-  `soccer_germany_bundesliga`, **`soccer_france_ligue_one`** (not `ligue_1`!),
+  `soccer_germany_bundesliga`, **`soccer_france_ligue_one`**, 
   `soccer_uefa_champs_league`.
-- **Measured credit costs**: `/sports` and `/events` are **free**; each odds call
-  costs `markets × regions` (totals+eu = 1 credit; h2h+totals+eu = 2 credits).
-- **Available markets on this key**: `h2h`, `totals`, `spreads`. **`btts`,
-  `alternate_totals`, `correct_score` return `INVALID_MARKET`** — not available
-  on the free tier (and no alternate endpoint exists). So: **no exact-score and
-  no BTTS odds in any free odds API we could verify** → SPEC's exact
-  score/multiscore markets stay on manual input; BTTS odds unavailable (see
-  decisions.md).
-- `totals` returns multiple lines per bookmaker (union across ~13–18 eu
-  bookmakers): EPL {2.25–3.5}, La Liga {1.5–4.5}, Serie A {0.5–3.75},
-  Bundesliga {2.5–4.5}, Ligue 1 {2.25–3.5}, UCL {2.5–4.5}. Half-lines 2.5/3.5
-  everywhere; 0.5/1.5/4.5 league-dependent — phase 5 must configure
-  lines per league as "requested ∩ available".
-- eu-region bookmakers include **Pinnacle**, William Hill, Marathon Bet, Betsson,
-  Tipico, 1xBet, Betfair, Matchbook, Unibet/Winamax variants (~13–24 per market).
-- ~18–21 upcoming events per sport at query time; `/events` (free) lists them
-  with commence times — use it to gate odds polling.
+- **Measured credit costs**: `/sports` and `/events` **0 credits** (delta
+  verified); each `/odds` call costs `markets × regions` — totals+eu = 1,
+  h2h+totals+eu = 2. **The cost does not depend on the number of events
+  returned or the requested horizon.**
+- **Sport-level markets** (`/sports/{sport}/odds`): `h2h`, `totals`,
+  `spreads`. `btts`/`alternate_totals`/`correct_score` are INVALID_MARKET
+  here.
+- **Event-level markets** (`/sports/{sport}/events/{eventId}/odds`) — review
+  B2 finding: **`btts`, `correct_score`, `alternate_totals` all work** at 1
+  credit per market×region per event, incl. Pinnacle: BTTS yes/no prices, a
+  full correct-score grid (~25–101 outcomes per bookmaker; Pinnacle grid up
+  to 5:5), alternate totals with points {0.5, 1.0, 1.5, 1.75, 2.0, 2.25,
+  2.5, 2.75, 3.0, 3.25, 3.5, 3.75, 4.0, 4.5, 5.0, 5.5, 6.5, 7.5} (1xBet,
+  Codere, Coolbet, Pinnacle, William Hill, BetOnline.ag among 5–6 books).
+  So exact-score/BTTS odds ARE available free — per event, for candidates
+  (budget in §7); sport-wide polling of them does not fit the quota.
+- `totals` (sport-level) returns one main line per bookmaker; the union
+  across books per league (measured): EPL {2.25–3.5}, La Liga {1.5–4.5},
+  Serie A {0.5–3.75}, Bundesliga {2.5–4.5}, Ligue 1 {2.25–3.5}, UCL
+  {2.5–4.5}. Whole and quarter lines (2.0, 2.25, 2.75 …) occur — see the
+  half-lines-only decision in decisions.md.
+- `/scores` (UCL): **2 credits** per 1–7-day call, forward window only
+  (18 upcoming UCL events, 0 completed at probe time). Whether a finished
+  matchday stays visible after it ends is **not yet verified** — needs a
+  probe after the Oct 27–29 matchday (open item, decisions.md).
+- eu-region bookmakers observed: Pinnacle, William Hill, Betclic, Tipico,
+  Betsson, 1xBet, Betfair (sportsbook), Matchbook, BetOnline.ag, MyBookie.ag,
+  GTbets, Unibet/Winamax/PMU/Codere/LeoVegas/NordicBet variants, Coolbet,
+  888sport, Marathon Bet. **Fortuna (efortuna.pl): NOT present under any
+  name in region eu** (`fortuna_check` in `odds_api.json`). Offshore or
+  commission exchanges, excluded from reference and best-odds (decisions.md):
+  1xBet (Curaçao), BetOnline.ag, MyBookie.ag, GTbets (US offshore), Betfair,
+  Matchbook (exchanges with commission); Pinnacle is Curaçao-licensed but is
+  deliberately kept as the sharp reference (decisions.md).
 
-**Recommendation: use as the totals-odds source** with events-gated polling
-(budget in §7).
+**Recommendation**: totals via sport-level calls (snapshot policy, §7);
+btts/correct_score/alternate_totals per candidate event.
 
 ## 5. Search APIs for team news — ✅ verified
 
-Method: `<home team> injury news team news` on 3 real upcoming EPL fixtures
-(taken from The Odds API events), 2026-10-23 (`check_search.py`, evidence:
-`search.json`).
+Method: `<home team> injury news team news` on 3 real upcoming EPL fixtures,
+2026-10-23 (`check_search.py` → `search.json`).
 
-- **Tavily**: works on all 3 queries, 5 results each; results are genuinely
-  relevant (premierinjuries.com, NewsNow injury feeds, Transfermarkt suspension
-  pages) with usable content snippets. Quota: no usage header returned — the
-  1000/month basic-plan figure is **declared by the provider, not API-verifiable**.
-- **Brave Search** (second candidate): also works on all 3 queries (descriptions
-  shorter than Tavily content). Kept as fallback.
-
-**Recommendation: Tavily primary, Brave fallback.**
+- **Tavily**: works on all 3 queries, 5 results each; sources are on-topic
+  (premierinjuries.com, NewsNow injury feeds, Transfermarkt suspensions).
+  Quota: no usage header — 1000/month basic plan is **declared by provider**.
+- **Brave** (fallback): works on all 3 queries, shorter descriptions.
+  Free tier 2000/month, 1 req/s — **declared by provider** (not verifiable
+  via API response).
+- Quality caveats (honest): results include stale template pages (the saved
+  sample still listed a player "expected back 12 Oct" for a 23 Oct match) and
+  aggregators that link out rather than state facts. The Gemini prompt now
+  carries the match date and drops players whose expected-back date precedes
+  it (§6); for phase 6 also: query with opponent and match date
+  ("<team> vs <opponent> team news <date>"), prefer recency-filtered/news
+  topics, and cross-check against a second source before flagging.
+- Budget with 2 teams per candidate (home AND away), 2 windows per match:
+  5–15 candidates/week × 2 searches × 2 windows = **20–60 searches/week ≈
+  86–260/month** vs Tavily 1000 declared — fits.
 
 ## 6. Gemini — ✅ verified
 
-Method: model list + one structured-output call on a real news snippet saved by
-the search probe (`check_gemini.py`, evidence: `gemini.json`).
+Method: model list + per-candidate `GET /models/{name}` metadata + probe
+calls + two structured-output tests (`check_gemini.py` → `gemini.json`).
 
-- 46 models with `generateContent` reachable by the key, incl.
-  `gemini-2.5-flash` (extraction) and `gemini-2.5-pro` (reasoning) — matching
-  the SPEC config roles of a fast and a strong model.
-- **Structured output works on the exact SPEC §6 schema** (`responseSchema`):
-  the model returned a valid JSON array with `player`, `team`,
-  `status ∈ {out, doubtful, suspended}`, `source_url`, `quote_summary`
-  (4 items extracted from the sample, schema-validated in code).
-  Token usage measured: ~255 prompt / ~274 completion for a short snippet.
-
-**Recommendation: use Gemini via the provider abstraction** (phase 6) with
-`responseSchema` enforcement + pydantic validation behind it.
+- 46 models with `generateContent` reachable; stable candidates (no
+  -latest/-preview/-experimental): `gemini-2.5-flash/pro`,
+  `gemini-3.5/3.6/3.7/3.8-flash`. Metadata (displayName, token limits,
+  description) recorded per candidate.
+- **Selection is explicit and availability-tested**: `gemini-2.5-pro` is
+  listed by /models but **returns 404 "no longer available to new users"**
+  on call — so reasoning_model falls back per the agreed chain to the same
+  flash with an elevated thinking budget (4096).
+  - extraction_model: **gemini-3.8-flash** (newest stable flash)
+  - reasoning_model: **gemini-3.8-flash + thinkingBudget 4096** (no stable
+    pro is callable with this key; 3.x-pro exist only as previews, excluded
+    from the main loop; gemini-2.5-pro fallback is dead — 404).
+- **Structured output works on the exact SPEC §6 schema** with both picks
+  (`responseSchema`, all five fields, status enum) — schema-valid in both
+  tests.
+- **Match-date-aware extraction (S7)**: prompt includes the match date and
+  the rule "expected back before match date ⇒ do not include". The first
+  phase-0 run (no date) wrongly returned `suspended` for a player expected
+  back 11 days before the match; with the date both tests exclude him
+  (`stale_case_pass: true`), while players without a return date correctly
+  stay `out`.
+- Token usage incl. thinking (usageMetadata): extraction test 300 prompt /
+  199 candidates / **433 thoughts**; reasoning-mode test 300/192/**518**.
+  Cost estimates must use the totals incl. thoughts (~0.9–1.0k tokens/call).
 
 ## 7. Selection summary & quota budget
 
@@ -161,53 +228,84 @@ the search probe (`check_gemini.py`, evidence: `gemini.json`).
 
 | Data | Source | Status |
 |---|---|---|
-| Results history + closing O/U 2.5 | football-data.co.uk | ✅ |
-| xG per match | Understat via soccerdata (pinned) | ✅ |
-| Fixtures/schedule current season | Understat `read_schedule` (+ free TOA `/events`) | ✅ |
-| Lineups → key players | Understat `read_player_match_stats` | ✅ |
-| Injuries/suspensions | LLM extraction from Tavily news (primary); API-Football 2022–24 only | ⚠️ see decisions.md |
-| Totals odds | The Odds API, `totals`, region eu | ✅ |
-| Exact score / multiscore odds | manual input (no free source — verified) | manual |
-| BTTS odds | not available free → model probability only or manual | ⚠️ see decisions.md |
+| Results history + closing O/U 2.5 (AvgC/MaxC) | football-data.co.uk | ✅ |
+| xG per match, lineups, season fixture list | Understat via soccerdata (pinned) | ✅ |
+| Kickoff times, postponements, near-horizon fixtures | TOA `/events` (free) | ✅ |
+| Injuries/suspensions | LLM extraction from Tavily news (primary) | ⚠️ decisions.md |
+| Totals odds (all matches) | TOA sport-level `totals`, snapshot policy | ✅ |
+| btts / correct_score / alternate_totals odds | TOA event-level, candidates only | ✅ (B2) |
+| Fortuna odds (final edge) | manual input (Fortuna ∉ TOA eu) | decisions.md |
 | News search | Tavily (Brave fallback) | ✅ |
-| LLM | Gemini 2.5 flash + pro | ✅ |
-| UCL history (phase 11) | API-Football free window 2022–2024 | ✅ |
+| LLM | Gemini 3.8-flash (extraction) / 3.8-flash+thinking (reasoning) | ✅ |
+| UCL history 2022–2024 | API-Football free window | ✅ |
 
-### Quota budget for the SPEC scenario (top-5 + UCL, 72 h ahead, every 6 h)
+### The Odds API credit budget (B1, `odds_budget.json`)
 
-**The Odds API (500 credits/month):**
+Cost model: 1 credit = 1 market × 1 region per `/odds` call; **independent of
+event count and horizon** (measured). `/events` and `/sports` are free.
 
-- Flat polling: 6 sports × 1 credit (totals, eu) × 4 polls/day = 24/day ≈
-  **730 credits/month — DOES NOT FIT** (146% of the free quota). Even 8h cadence
-  (18/day ≈ 547) does not fit.
-- **Events-gated 6h polling (recommended)**: `/events` is free — poll odds only
-  for sports with matches commencing within 72 h. Typical week: top-5 matches
-  Fri–Sun (≈ 3 days × 4 polls × 5 sports = 60) + UCL Tue–Thu (≈ 3 × 4 × 1 = 12)
-  ≈ 72–90 credits/week ≈ **310–390/month — fits** with headroom for manual
-  checks.
-- Flat 12h fallback: 6 × 2 = 12/day ≈ 365/month — also fits, simpler but
-  coarser.
+Two 28-day windows simulated minute-by-minute: **forward** (2026-10-23 →
+11-20, contains a 12-day international break) and **no-break**
+(2026-11-20 → 12-18, max league gap 6 days). Event times: real where TOA
+lists them; Understat placeholder rounds re-timed from the empirical
+(weekday, kickoff) distribution of real rounds ("retimed" — primary); the
+"asis" variant keeps placeholders (lower bound). UCL matchdays beyond TOA's
+horizon are cadence-based estimates (flagged).
 
-**API-Football (100/day):** live loop does not use it (season lockout);
-occasional historical pulls (UCL results backfills) are a few dozen requests per
-run — fits easily.
+Credits per 30 days (retimed / asis; no-break window):
 
-**Understat (no quota, informal):** season pages ~6 requests per refresh (5
-current + ad hoc), a few refreshes/day; player-match pages ~1 per new match
-(~50–70/week) — throttle + permanent cache.
+| Policy | no-break /30d | forward /30d | vs 500 quota |
+|---|---|---|---|
+| (a) flat 6h | 720 | 720 | ❌ 144% |
+| (b) flat 12h | 360 | 360 | ✅ |
+| (c) events-gated 6h/72h | **448** / 281 | 309 / 264 | ✅ tight |
+| (d) snapshots T-48/24/3, per-kickoff slot | **240** / 81 | 170 / 132 | ✅ |
+| (d-day) same, T-3 per match day | **215** / — | 153 | ✅ |
+| (e) (d) + T-1h | 364 / — | 283 | ✅ tight |
+| (f) (d) + T-72h | 303 / — | 212 | ✅ |
 
-**Tavily (declared 1000/month):** 5–15 value candidates/week × 2 windows
-(T-24h, T-2h) = 10–30 searches/week ≈ **40–130/month — fits**.
+Corrections to the earlier draft: with a 72 h horizon the gate is open for
+most of the week (weekend rounds span Fri–Mon), not "≈3 days × 4 polls" —
+that arithmetic was wrong and is withdrawn.
 
-**Gemini (pay-per-token):** per candidate ≈ ≤6 extraction calls (flash,
-~800 in / 300 out each) + 1 justification + 1 shadow JSON (pro). At the top of
-the candidate range (15/week ≈ 65/month) ≈ ~420k input + ~140k output tokens
-per month ≈ **on the order of $1/month** — negligible.
+Comparison with the reviewer's expectations (c ≈480–520, d ≈170–200, no-break,
+/30d): (c) simulated 448 — 7% below the range: the gate is quantized to
+6-hour ticks and the specific Nov 20–Dec 18 fixture list has slightly fewer
+Friday/Monday matches than a "typical" week; per-sport totals are in
+`odds_budget.json`. (d) simulated 240 — 20% above the range: the narrow T-3
+window [1;4] h needs a fresh snapshot per kickoff slot (92 of the 240 are
+T-3); treating the whole match day as one slot gives 215, and day-granular
+T-48/T-24 as well approaches the reviewer's figure — the difference is
+purely slot granularity, both variants are reported.
+
+Candidate extras (per-event markets): 1 snapshot at T-24 per candidate with
+markets `correct_score,btts` = 2 credits → 5–15 candidates/week ⇒
+**43–129/month** (alternate_totals would add 1 more credit per event).
+Chosen policy (decisions.md): (d-day) 215 + extras 43–129 ⇒ **258–344 per
+month** against a **hard stop at 450** of the 500 quota. `/scores` for UCL
+results, if adopted, adds 2 credits per 7-day call (~8–9/month).
+
+TOA quota state after all recon probes: **18 of 500 used, 482 remaining**
+(2026-10-23). Monthly reset date: **not checked** (dashboard-only; recorded
+as "не проверено" — decisions.md).
+
+### Other quotas
+
+- **API-Football (100/day)**: historical pulls only (occasional dozens per
+  backfill) — fits.
+- **Understat**: no quota; ~6 season pages per refresh + ~1 request per new
+  match for lineups, throttled and cached.
+- **Tavily (1000/mo declared)**: 86–260/month — fits.
+- **Gemini (pay-per-token)**: ~1.0k tokens incl. thoughts per extraction
+  call (measured); per candidate ≤ 6 extraction + 1 justification + 1 shadow
+  calls ⇒ at 15 candidates/week ≈ ~0.9M tokens/month — still on the order of
+  a few dollars (provider price list applies; declared, not measured).
 
 ### Honest bottom line
 
-The free-tier plan is viable with two documented deviations: API-Football is
-demoted to historical-only use (injuries come from news extraction instead),
-and odds polling must be events-gated (or 12-hourly) to fit the 500-credit
-quota. Exact-score odds exist nowhere free — that market lives or dies with
-manual input, as SPEC already assumed.
+Free-tier plan is viable: totals odds via the snapshot policy (d-day),
+exact-score/BTTS/alternate-totals odds per candidate from the event endpoint
+(a review-driven discovery that reopens the SPEC's exact-score market beyond
+manual input), final edge against Fortuna via manual input (Fortuna absent
+from TOA eu). Open items: UCL `/scores` post-matchday visibility; TOA quota
+reset date.
