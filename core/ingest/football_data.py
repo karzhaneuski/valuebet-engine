@@ -280,9 +280,28 @@ class FootballDataLoader:
                             f"match#{match.id}: fd {kickoff.date()} vs db "
                             f"{match.date_utc}")
                 if delta is not None and delta > 1 and kickoff is not None:
-                    # B5: write stats/closing only when the match is already
-                    # finished (per Understat) AND the score agrees;
-                    # otherwise quarantine (report, no write)
+                    # B5: a same-date INVERTED fixture exists -> the fd row
+                    # belongs to it, not to this far-away pairing (the
+                    # Rennes/PSG case: never bind to the return leg)
+                    inverted = s.scalars(select(Match).where(
+                        Match.league == row.league_slug,
+                        Match.season == row.season,
+                        Match.home_team_id == away.id,
+                        Match.away_team_id == home.id,
+                        Match.stage.is_(None),
+                        Match.date_utc >= row.date - dt.timedelta(days=1),
+                        Match.date_utc <= row.date + dt.timedelta(days=1))
+                        .order_by(Match.date_utc)).first()
+                    if inverted is not None:
+                        report.inverted_pairs.append(
+                            f"fd {row.home} v {row.away} ({row.date}) -> "
+                            f"inverted db match#{inverted.id} "
+                            f"{inverted.date_utc}; NOT bound to match#"
+                            f"{match.id} {match.date_utc}")
+                        continue
+                    # otherwise write stats/closing only when the match is
+                    # already finished (per Understat) AND the score agrees;
+                    # else quarantine (report, no write)
                     us_stat = s.scalars(select(MatchStat).where(
                         MatchStat.match_id == match.id,
                         MatchStat.source == "understat")).first()

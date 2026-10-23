@@ -126,10 +126,11 @@ class OddsApiClient:
         return body
 
     def apply_events(self, sport_key: str, events: list[dict],
-                     league_slug: str, season: int) -> EventsReport:
+                     league_slug: str, season: int,
+                     now: dt.datetime | None = None) -> EventsReport:
         cfg = self._config.odds_policy.postponement
         report = EventsReport()
-        now = dt.datetime.now(dt.UTC)
+        now = now or dt.datetime.now(dt.UTC)
         with session_scope(self._db_url) as s:
             matcher, names = self._matcher(s)
             roster = self._roster(s, league_slug, season)
