@@ -1,0 +1,220 @@
+{
+  "run_date": "2026-10-23",
+  "requests": [
+    {
+      "label": "account status",
+      "path": "/status",
+      "http": 200,
+      "api_errors": null,
+      "results": 0,
+      "ratelimit_limit": "10",
+      "ratelimit_remaining": "9"
+    },
+    {
+      "label": "fixtures 7d Premier League",
+      "path": "/fixtures",
+      "http": 200,
+      "api_errors": {
+        "plan": "Free plans do not have access to this season, try from 2022 to 2024."
+      },
+      "results": 0,
+      "ratelimit_limit": null,
+      "ratelimit_remaining": null
+    },
+    {
+      "label": "fixtures 7d La Liga",
+      "path": "/fixtures",
+      "http": 200,
+      "api_errors": {
+        "plan": "Free plans do not have access to this season, try from 2022 to 2024."
+      },
+      "results": 0,
+      "ratelimit_limit": null,
+      "ratelimit_remaining": null
+    },
+    {
+      "label": "fixtures 7d Serie A",
+      "path": "/fixtures",
+      "http": 200,
+      "api_errors": {
+        "plan": "Free plans do not have access to this season, try from 2022 to 2024."
+      },
+      "results": 0,
+      "ratelimit_limit": null,
+      "ratelimit_remaining": null
+    },
+    {
+      "label": "fixtures 7d Bundesliga",
+      "path": "/fixtures",
+      "http": 200,
+      "api_errors": {
+        "plan": "Free plans do not have access to this season, try from 2022 to 2024."
+      },
+      "results": 0,
+      "ratelimit_limit": null,
+      "ratelimit_remaining": null
+    },
+    {
+      "label": "fixtures 7d Ligue 1",
+      "path": "/fixtures",
+      "http": 200,
+      "api_errors": {
+        "plan": "Free plans do not have access to this season, try from 2022 to 2024."
+      },
+      "results": 0,
+      "ratelimit_limit": null,
+      "ratelimit_remaining": null
+    },
+    {
+      "label": "fixtures 7d UEFA Champions League",
+      "path": "/fixtures",
+      "http": 200,
+      "api_errors": {
+        "plan": "Free plans do not have access to this season, try from 2022 to 2024."
+      },
+      "results": 0,
+      "ratelimit_limit": null,
+      "ratelimit_remaining": null
+    },
+    {
+      "label": "finished fixtures Premier League",
+      "path": "/fixtures",
+      "http": 200,
+      "api_errors": {
+        "plan": "Free plans do not have access to this season, try from 2022 to 2024."
+      },
+      "results": 0,
+      "ratelimit_limit": null,
+      "ratelimit_remaining": null
+    },
+    {
+      "label": "finished fixtures La Liga",
+      "path": "/fixtures",
+      "http": 200,
+      "api_errors": {
+        "plan": "Free plans do not have access to this season, try from 2022 to 2024."
+      },
+      "results": 0,
+      "ratelimit_limit": null,
+      "ratelimit_remaining": null
+    }
+  ],
+  "status": {
+    "account": {
+      "firstname": "Artsiom",
+      "lastname": "Karzhaneuski",
+      "email": "aleksandr.k.197762@gmail.com"
+    },
+    "subscription": {
+      "plan": "Free",
+      "end": "2027-10-23T00:00:00+00:00",
+      "active": true
+    },
+    "requests": {
+      "current": 0,
+      "limit_day": 100
+    }
+  },
+  "leagues": [
+    {
+      "id": 39,
+      "name_expected": "Premier League",
+      "name_returned": null,
+      "season": 2026,
+      "n_fixtures_next7": 0,
+      "samples": []
+    },
+    {
+      "id": 140,
+      "name_expected": "La Liga",
+      "name_returned": null,
+      "season": 2026,
+      "n_fixtures_next7": 0,
+      "samples": []
+    },
+    {
+      "id": 135,
+      "name_expected": "Serie A",
+      "name_returned": null,
+      "season": 2026,
+      "n_fixtures_next7": 0,
+      "samples": []
+    },
+    {
+      "id": 78,
+      "name_expected": "Bundesliga",
+      "name_returned": null,
+      "season": 2026,
+      "n_fixtures_next7": 0,
+      "samples": []
+    },
+    {
+      "id": 61,
+      "name_expected": "Ligue 1",
+      "name_returned": null,
+      "season": 2026,
+      "n_fixtures_next7": 0,
+      "samples": []
+    },
+    {
+      "id": 2,
+      "name_expected": "UEFA Champions League",
+      "name_returned": null,
+      "season": 2026,
+      "n_fixtures_next7": 0,
+      "samples": []
+    }
+  ],
+  "finished_fixture": {},
+  "requests_used_this_run": 1,
+  "upcoming_for_search": [],
+  "season_probe": {
+    "probed_on": "2026-10-23",
+    "season_2024_fixtures": {
+      "errors": null,
+      "n_results": 20
+    },
+    "season_2025_fixtures": {
+      "errors": {
+        "plan": "Free plans do not have access to this season, try from 2022 to 2024."
+      },
+      "n_results": 0
+    },
+    "injuries_season_2026": {
+      "errors": {
+        "plan": "Free plans do not have access to this season, try from 2022 to 2024."
+      },
+      "n_results": 0
+    },
+    "allowed_season_sample_fixture": {
+      "fixture_id": 1208318,
+      "date": "2025-04-03T19:00:00+00:00",
+      "home": "Chelsea",
+      "away": "Tottenham"
+    },
+    "lineups_2024": [
+      {
+        "team": "Chelsea",
+        "formation": "4-2-3-1",
+        "n_start_xi": 11,
+        "n_substitutes": 9
+      },
+      {
+        "team": "Tottenham",
+        "formation": "4-3-3",
+        "n_start_xi": 11,
+        "n_substitutes": 9
+      }
+    ],
+    "injuries_fixture_2024": {
+      "errors": null,
+      "count": 8
+    },
+    "odds_fixture_2024": {
+      "errors": null,
+      "n_bookmakers": 0,
+      "bookmakers": [],
+      "bet_names": []
+    }
+  }
+}
