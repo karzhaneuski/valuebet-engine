@@ -22,8 +22,7 @@ from sqlalchemy import select
 from core.config import AppConfig
 from core.db import session_scope
 from core.ingest.aliases import AliasMatch, AliasMatcher
-from core.ingest.understat_archive import (ArchiveRow, archive_rows,
-                                       is_archived, store_archive)
+from core.ingest.understat_archive import ArchiveRow, archive_rows, is_archived, store_archive
 from core.logging import get_logger
 from core.orm import Match, MatchLineup, MatchStat, Team, TeamAlias
 
