@@ -28,6 +28,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    TypeDecorator,
     UniqueConstraint,
 )
 from sqlalchemy import text as sa_text
@@ -36,6 +37,19 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
     pass
+
+
+class UTCDateTime(TypeDecorator):
+    """DateTime that always reads back as timezone-aware UTC (SQLite loses
+    the tzinfo on storage; S7)."""
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_result_value(self, value, dialect):
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=dt.UTC)
+        return value
 
 
 def sa_enum(*values: str, name: str) -> Enum:
@@ -57,7 +71,7 @@ ODD_MARKETS = ("totals", "btts", "correct_score", "alternate_totals")
 # spelling of the exact-score market, exact_score/multiscore/goals_range
 # are our internal names
 RECO_MARKETS = ("exact_score", "multiscore", "goals_range", "totals", "btts")
-ODD_TIERS = ("T-48", "T-24", "T-3", "T-1", "manual")
+ODD_TIERS = ("T-48", "T-24", "T-3", "T-1", "manual", "off_window")
 ODD_SOURCES = ("toa", "manual_fortuna")
 CLV_SOURCES = ("avgc", "maxc", "own_snapshot_t3")
 RECO_VARIANTS = ("base", "shadow_llm")
@@ -116,7 +130,7 @@ class Match(Base):
     season: Mapped[int] = mapped_column(Integer)  # e.g. 2026 = 2026/27
     date_utc: Mapped[dt.date] = mapped_column(Date)
     # authoritative kickoff: TOA commence_time (docs/decisions.md, S5)
-    commence_time_utc: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    commence_time_utc: Mapped[dt.datetime | None] = mapped_column(UTCDateTime)
     kickoff_source: Mapped[str] = mapped_column(
         sa_enum(*KICKOFF_SOURCES, name="kickoff_source"))
     status: Mapped[str] = mapped_column(
@@ -187,7 +201,7 @@ class OddsSnapshot(Base):
     t3_day_degraded: Mapped[bool] = mapped_column(Boolean, default=False,
                                                   nullable=False)
     source: Mapped[str] = mapped_column(sa_enum(*ODD_SOURCES, name="odd_source"))
-    captured_at_utc: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    captured_at_utc: Mapped[dt.datetime] = mapped_column(UTCDateTime)
 
 
 # --- availability & prefilter ----------------------------------------------
@@ -205,7 +219,7 @@ class PlayerAvailability(Base):
         sa_enum(*PLAYER_SOURCES, name="player_source"))
     source_url: Mapped[str | None] = mapped_column(String(500))
     quote_summary: Mapped[str | None] = mapped_column(Text)
-    detected_at_utc: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    detected_at_utc: Mapped[dt.datetime] = mapped_column(UTCDateTime)
 
 
 class PrefilterDecision(Base):
@@ -261,7 +275,7 @@ class Recommendation(Base):
     final_odds_source: Mapped[str | None] = mapped_column(
         sa_enum(*FINAL_ODDS_SOURCES, name="final_odds_source"))
     llm_call_id: Mapped[int | None] = mapped_column(ForeignKey("llm_calls.id"))
-    created_at_utc: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    created_at_utc: Mapped[dt.datetime] = mapped_column(UTCDateTime)
 
 
 class Result(Base):
@@ -292,7 +306,9 @@ class ApiQuotaUsage(Base):
     endpoint: Mapped[str] = mapped_column(String(120))
     credits: Mapped[int] = mapped_column(Integer, default=0)
     remaining_header: Mapped[int | None] = mapped_column(Integer)
-    created_at_utc: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    # reserved -> settled | failed (B1); imported for one-time backfills
+    status: Mapped[str] = mapped_column(String(10), default="settled")
+    created_at_utc: Mapped[dt.datetime] = mapped_column(UTCDateTime)
 
 
 class QuotaCounter(Base):
@@ -307,7 +323,7 @@ class QuotaCounter(Base):
     provider: Mapped[str] = mapped_column(String(30))
     period: Mapped[str] = mapped_column(String(7))  # 'YYYY-MM'
     credits_used: Mapped[int] = mapped_column(Integer, default=0)
-    updated_at_utc: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    updated_at_utc: Mapped[dt.datetime] = mapped_column(UTCDateTime)
 
 
 class LlmCall(Base):
@@ -326,7 +342,7 @@ class LlmCall(Base):
     completion_tokens: Mapped[int | None] = mapped_column(Integer)
     thoughts_tokens: Mapped[int | None] = mapped_column(Integer)
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(8, 4))
-    created_at_utc: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    created_at_utc: Mapped[dt.datetime] = mapped_column(UTCDateTime)
 
 
 class MatchLineup(Base):
@@ -339,12 +355,15 @@ class MatchLineup(Base):
     __table_args__ = (
         UniqueConstraint("match_id", "team_id", "player",
                          name="uq_match_lineups_row"),
+        UniqueConstraint("match_id", "understat_player_id",
+                         name="uq_match_lineups_understat_pid"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
     player: Mapped[str] = mapped_column(String(120))
+    understat_player_id: Mapped[int | None] = mapped_column(Integer)
     # Understat marks substitutes with position == 'Sub' (phase-0 finding)
     started: Mapped[bool] = mapped_column(Boolean, nullable=False)
     minutes: Mapped[int | None] = mapped_column(Integer)

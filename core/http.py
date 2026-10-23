@@ -131,3 +131,21 @@ def redact_processor(logger: object, method: str,
         elif isinstance(value, BaseException):
             event_dict[key] = redact_text(str(value))
     return event_dict
+
+
+def retry_call(fn, attempts: int = 3, backoff_s: float = 2.0):
+    """Run fn() with exponential backoff between attempts (S2). Free
+    endpoints and football-data only; paid calls retry through the quota
+    reserve, one reservation per attempt."""
+    import time
+
+    last: BaseException | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return fn()
+        except Exception as exc:
+            last = exc
+            if attempt < attempts:
+                time.sleep(backoff_s * attempt)
+    assert last is not None
+    raise last

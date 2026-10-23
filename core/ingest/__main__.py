@@ -109,10 +109,17 @@ def cmd_refresh(args: argparse.Namespace) -> None:
     cmd_backfill(args)
 
 
+def current_season(now: dt.datetime | None = None) -> int:
+    """League season for a date: 2026/27 -> 2026 (starts in July)."""
+    now = now or dt.datetime.now(dt.UTC)
+    return now.year if now.month >= 7 else now.year - 1
+
+
 def cmd_events(args: argparse.Namespace) -> None:
     config = load_config()
     client = OddsApiClient(_db_url(), config,
                            load_secrets().odds_api_key)
+    season = current_season()
     report = {}
     for league in config.leagues:
         if not league.toa_sport_key:
@@ -121,7 +128,7 @@ def cmd_events(args: argparse.Namespace) -> None:
             continue
         events = client.fetch_events(league.toa_sport_key)
         r = client.apply_events(league.toa_sport_key, events, league.slug,
-                                season=2026)
+                                season=season)
         report[league.slug] = {"events": r.events_seen,
                                "created": r.matches_created,
                                "kickoffs_updated": r.kickoffs_updated,

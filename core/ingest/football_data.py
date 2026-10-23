@@ -27,6 +27,7 @@ from sqlalchemy import select
 
 from core.config import AppConfig
 from core.db import session_scope
+from core.http import retry_call
 from core.ingest.aliases import AliasMatcher
 from core.logging import get_logger
 from core.orm import ClosingOdds, Match, MatchStat, Team, TeamAlias
@@ -71,8 +72,12 @@ class FdReport:
     missing_match: list[str] = field(default_factory=list)   # pair not loaded yet
     unmatched_teams: list[str] = field(default_factory=list)  # alias unknown
     date_mismatches: list[str] = field(default_factory=list)  # >±1 day off
+    quarantined: list[str] = field(default_factory=list)      # B5: no write
+    inverted_pairs: list[str] = field(default_factory=list)    # B5
     stats_written: int = 0
+    stats_updated: int = 0
     closing_written: int = 0
+    closing_updated: int = 0
     alias_report: dict[str, dict] = field(default_factory=dict)  # fuzzy etc.
 
 
@@ -83,6 +88,8 @@ class FootballDataLoader:
         self._db_url = db_url
         self._config = config
         self._cache_dir = cache_dir
+        self._retry_attempts = config.ingest.retry_attempts
+        self._retry_backoff_s = config.ingest.retry_backoff_s
         self._session = session or requests.Session()
         self._session.headers.setdefault(
             "User-Agent", "Mozilla/5.0 (valuebet-engine)")
@@ -93,16 +100,31 @@ class FootballDataLoader:
         league = self._league(league_slug)
         return self._cache_dir / f"{league.fd_code}_{SEASON_CODES[season]}.csv"
 
-    def download(self, league_slug: str, season: int) -> Path:
-        """Download once; the cached file is reused forever (results are
-        final; the current season is re-downloaded on --refresh)."""
+    def download(self, league_slug: str, season: int,
+                 current_season: int | None = None,
+                 ttl_hours: int = 12) -> Path:
+        """Past seasons are cached forever; the CURRENT season is
+        re-downloaded when its cache file is older than ttl_hours (B4)."""
         path = self.csv_path(league_slug, season)
         if path.is_file():
-            return path
+            if current_season is None or season != current_season:
+                return path
+            age_h = (dt.datetime.now() - dt.datetime.fromtimestamp(
+                path.stat().st_mtime)).total_seconds() / 3600
+            if age_h < ttl_hours:
+                return path
+            path.unlink()
         league = self._league(league_slug)
         url = FD_BASE.format(season=SEASON_CODES[season], code=league.fd_code)
-        resp = self._session.get(url, timeout=30)
-        resp.raise_for_status()
+        attempts = self._retry_attempts
+
+        def _fetch():
+            resp = self._session.get(url, timeout=30)
+            resp.raise_for_status()
+            return resp
+
+        resp = retry_call(_fetch, attempts=attempts,
+                          backoff_s=self._retry_backoff_s)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         path.write_bytes(resp.content)
         logger.info("fd.downloaded", league=league_slug, season=season,
@@ -173,14 +195,26 @@ class FootballDataLoader:
     def upsert(self, rows: list[FdRow]) -> FdReport:
         report = FdReport()
         with session_scope(self._db_url) as s:
-            matcher = AliasMatcher(
-                {(a.source, a.alias): a.team_id
-                 for a in s.scalars(select(TeamAlias)).all()},
-                {t.id: t.name for t in s.scalars(select(Team)).all()})
+            aliases = {(a.source, a.alias): a.team_id
+                       for a in s.scalars(select(TeamAlias)).all()}
+            names = {t.id: t.name for t in s.scalars(select(Team)).all()}
+            matcher = AliasMatcher(aliases, names)
+            league_slugs = {r.league_slug for r in rows}
+            seasons = {r.season for r in rows}
+            roster: set[int] = set()
+            for lg in league_slugs:
+                for sn in seasons:
+                    for h, a in s.execute(
+                            select(Match.home_team_id, Match.away_team_id)
+                            .where(Match.league == lg,
+                                   Match.season == sn)).all():
+                        roster.update((h, a))
             for row in rows:
                 report.rows += 1
-                home_m = matcher.match("football_data", row.home)
-                away_m = matcher.match("football_data", row.away)
+                home_m = matcher.match("football_data", row.home,
+                                       roster=roster)
+                away_m = matcher.match("football_data", row.away,
+                                       roster=roster)
                 for name, m in ((row.home, home_m), (row.away, away_m)):
                     if m.matched is None and name not in report.unmatched_teams:
                         report.unmatched_teams.append(name)
@@ -215,19 +249,51 @@ class FootballDataLoader:
                     Match.away_team_id == away.id,
                     Match.stage.is_(None))).first()
                 if match is None:
-                    report.missing_match.append(
-                        f"{row.season}/{row.league_slug}: {row.home} v "
-                        f"{row.away} ({row.date})")
+                    # B5: inverted pair on (nearly) the same date must NOT
+                    # be bound to the return leg — report and skip
+                    inverted = s.scalars(select(Match).where(
+                        Match.league == row.league_slug,
+                        Match.season == row.season,
+                        Match.home_team_id == away.id,
+                        Match.away_team_id == home.id,
+                        Match.stage.is_(None),
+                        Match.date_utc >= row.date - dt.timedelta(days=1),
+                        Match.date_utc <= row.date + dt.timedelta(days=1))
+                        .order_by(Match.date_utc)).first()
+                    label = (f"{row.season}/{row.league_slug}: fd {row.home} "
+                             f"v {row.away} ({row.date})")
+                    if inverted is not None:
+                        report.inverted_pairs.append(
+                            f"{label} -> db match#{inverted.id} "
+                            f"{inverted.date_utc} (inverted)")
+                        continue
+                    report.missing_match.append(label)
                     continue
                 report.matched += 1
                 # ±1 day validation only (decisions.md rule)
                 kickoff = row.kickoff_utc
-                if kickoff is not None and match.commence_time_utc is not None:
+                delta = None
+                if kickoff is not None and match.date_utc is not None:
                     delta = abs(kickoff.date() - match.date_utc).days
                     if delta > 1:
                         report.date_mismatches.append(
                             f"match#{match.id}: fd {kickoff.date()} vs db "
                             f"{match.date_utc}")
+                if delta is not None and delta > 1 and kickoff is not None:
+                    # B5: write stats/closing only when the match is already
+                    # finished (per Understat) AND the score agrees;
+                    # otherwise quarantine (report, no write)
+                    us_stat = s.scalars(select(MatchStat).where(
+                        MatchStat.match_id == match.id,
+                        MatchStat.source == "understat")).first()
+                    if us_stat is None or us_stat.home_goals is None or \
+                            (us_stat.home_goals, us_stat.away_goals) != \
+                            (row.fthg, row.ftag):
+                        report.quarantined.append(
+                            f"match#{match.id}: fd {kickoff.date()} vs db "
+                            f"{match.date_utc}, score "
+                            f"{row.fthg}:{row.ftag}")
+                        continue
                 stat = s.scalars(select(MatchStat).where(
                     MatchStat.match_id == match.id,
                     MatchStat.source == "football_data")).first()
@@ -237,6 +303,11 @@ class FootballDataLoader:
                                     home_goals=row.fthg,
                                     away_goals=row.ftag))
                     report.stats_written += 1
+                elif (stat.home_goals, stat.away_goals) != \
+                        (row.fthg, row.ftag):
+                    stat.home_goals = row.fthg
+                    stat.away_goals = row.ftag
+                    report.stats_updated += 1
                 for book, over, under in (
                         ("AvgC", row.avgc_over, row.avgc_under),
                         ("MaxC", row.maxc_over, row.maxc_under),
@@ -252,6 +323,11 @@ class FootballDataLoader:
                                           over_price=over,
                                           under_price=under))
                         report.closing_written += 1
+                    elif (closing.over_price, closing.under_price) != \
+                            (over, under):
+                        closing.over_price = over
+                        closing.under_price = under
+                        report.closing_updated += 1
         return report
 
     def _league(self, slug: str):

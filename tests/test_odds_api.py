@@ -123,9 +123,11 @@ def test_snapshot_sport_totals_from_recorded_fixture(tmp_path) -> None:
     with session_scope(url) as s:
         snaps = s.scalars(select(OddsSnapshot)).all()
         assert len(snaps) == 2
-        assert all(sn.tier == "T-24" for sn in snaps)
-        assert all(sn.planned_offset_min == 18 * 60 for sn in snaps)
-        assert client.quota.monthly_used() == 1
+        # fixture kickoff is in the past -> S4 marks the tier off_window
+        assert all(sn.tier == "off_window" for sn in snaps)
+        assert all(sn.bookmaker == "pinnacle" for sn in snaps)  # S5: TOA key
+        # B1 reconcile: the provider header (479 remaining) wins
+        assert client.quota.monthly_used() == 500 - 479
 
 
 @respx.mock

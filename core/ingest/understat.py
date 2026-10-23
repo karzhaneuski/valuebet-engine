@@ -52,6 +52,9 @@ class UnderstatReport:
     matches_created: int = 0
     matches_existing: int = 0
     stats_written: int = 0
+    stats_updated: int = 0
+    status_updates: int = 0
+    kickoffs_skipped_toa: int = 0
     teams_created: list[str] = field(default_factory=list)
     unmatched: list[str] = field(default_factory=list)
 
@@ -127,6 +130,8 @@ class UnderstatLoader:
 
     def lineup_rows(self, understat_id: int) -> list[dict]:
         """Per-player rows for one match (public soccerdata API, cached)."""
+        import math
+
         import soccerdata
 
         reader = soccerdata.Understat(data_dir=self._cache_dir)
@@ -134,12 +139,15 @@ class UnderstatLoader:
         flat = players.reset_index()
         out = []
         for _, p in flat.iterrows():
+            minutes = p["minutes"]
             out.append({
                 "team": str(p["team"]),
                 "player": str(p["player"]),
+                "understat_player_id": int(p["player_id"]),
                 "started": str(p["position"]) != "Sub",
-                "minutes": int(p["minutes"])
-                if p["minutes"] is not None else None,
+                "minutes": None if minutes is None or
+                (isinstance(minutes, float) and math.isnan(minutes))
+                else int(minutes),
             })
         return out
 
@@ -184,6 +192,18 @@ class UnderstatLoader:
                     report.matches_existing += 1
                     if match.understat_id is None:
                         match.understat_id = int(row.understat_id)
+                    # B4: status transitions and kickoff updates, but a
+                    # TOA-authoritative kickoff is never overwritten
+                    if row.is_result and match.status == "scheduled":
+                        match.status = "finished"
+                        report.status_updates += 1
+                    new_kickoff = row.naive_start.replace(tzinfo=dt.UTC)
+                    if match.commence_time_utc != new_kickoff:
+                        if match.kickoff_source == "toa":
+                            report.kickoffs_skipped_toa += 1
+                        else:
+                            match.commence_time_utc = new_kickoff
+                            match.date_utc = new_kickoff.date()
                 if row.is_result and row.home_goals is not None:
                     existing = s.scalars(select(MatchStat).where(
                         MatchStat.match_id == match.id,
@@ -195,11 +215,19 @@ class UnderstatLoader:
                             away_goals=row.away_goals,
                             home_xg=row.home_xg, away_xg=row.away_xg))
                         report.stats_written += 1
+                    elif (existing.home_goals != row.home_goals
+                          or existing.away_goals != row.away_goals):
+                        existing.home_goals = row.home_goals
+                        existing.away_goals = row.away_goals
+                        existing.home_xg = row.home_xg  # type: ignore[assignment]
+                        existing.away_xg = row.away_xg  # type: ignore[assignment]
+                        report.stats_updated += 1
         return report
 
     def upsert_lineups(self, match: Match, rows: list[dict]) -> int:
-        """Returns the number of player rows written (0 if already loaded)."""
-        written = 0
+        """S6: all-or-nothing — if ANY player row's team fails to resolve,
+        nothing is written and the match stays "not loaded". Returns the
+        number of rows written."""
         with session_scope(self._db_url) as s:
             existing = s.scalars(select(MatchLineup).where(
                 MatchLineup.match_id == match.id)).first()
@@ -208,24 +236,27 @@ class UnderstatLoader:
             db_match = s.get(Match, match.id)
             if db_match is None:
                 return 0
-            by_name = {t.name: t
-                       for t in (db_match.home_team, db_match.away_team)}
+            team_ids: dict[str, int] = {}
+            for team in (db_match.home_team, db_match.away_team):
+                team_ids[team.name] = team.id
+                for alias in s.scalars(select(TeamAlias).where(
+                        TeamAlias.team_id == team.id)).all():
+                    team_ids.setdefault(alias.alias, team.id)
+            resolved = []
             for r in rows:
-                team = by_name.get(r["team"])
-                if team is None:
-                    report_team = None
-                    for name in by_name:
-                        if r["team"].lower() in name.lower():
-                            report_team = by_name[name]
-                    team = report_team
-                if team is None:
-                    logger.warning("lineup.team.unmatched", team=r["team"])
-                    continue
-                s.add(MatchLineup(match_id=match.id, team_id=team.id,
-                                  player=r["player"], started=r["started"],
-                                  minutes=r["minutes"]))
-                written += 1
-        return written
+                team_id = team_ids.get(r["team"])
+                if team_id is None:
+                    logger.warning("lineup.team.unmatched", team=r["team"],
+                                   match_id=match.id)
+                    return 0  # all-or-nothing
+                resolved.append((team_id, r))
+            for team_id, r in resolved:
+                s.add(MatchLineup(
+                    match_id=match.id, team_id=team_id,
+                    player=r["player"],
+                    understat_player_id=r.get("understat_player_id"),
+                    started=r["started"], minutes=r["minutes"]))
+            return len(resolved)
 
     # --- helpers --------------------------------------------------------------
 
@@ -250,7 +281,10 @@ class UnderstatLoader:
         identity: unknown names create a new team (canonical = Understat
         spelling); TOA canonical names win where an alias already links
         them."""
-        m: AliasMatch = matcher.match("understat", name)
+        # B7: containment is NOT used for team creation (understat is a
+        # source of identity: unknown name -> new team + report)
+        m: AliasMatch = matcher.match("understat", name,
+                                      allow_containment=False)
         team = None
         if m.matched is not None:
             team = session.scalars(

@@ -1,12 +1,18 @@
 """The Odds API client: free /events, paid odds snapshots, /scores.
 
-Cost model (phase 0): /sports and /events are free; each /odds call costs
-markets x regions (1 credit per market for one region); /scores with
-daysFrom costs 2 credits. Every paid call goes through QuotaGuard (hard
-stop 450, pacing remaining/days_left) and is logged to api_quota_usage.
+Paid-call protocol (review B1): every call goes through
+``QuotaGuard.begin/settle/fail`` — atomic reservation before the request,
+actual cost from ``x-requests-last`` after it; on a response-less failure
+the reservation stays spent. Free calls are logged with credits=0.
 
-Alternate totals keep only half lines (x.5); whole and quarter lines are
-dropped and counted (docs/decisions.md S11).
+Matching (reviews B6/B7): events are matched with the same deterministic
+matcher as the loaders (exact -> normalized -> league-roster containment);
+matched teams get a ``toa`` alias; pair-matched matches get the TOA event
+id and their odds_snapshots re-linked. Postponement rules follow config:
+a >15 min shift of a previously TOA-authoritative kickoff flags
+postponed_suspected; a vanished event with a FUTURE kickoff flags it too
+(past kickoffs are phase-7 settlement territory). A stable event clears
+the flag.
 """
 
 from __future__ import annotations
@@ -17,9 +23,12 @@ from decimal import Decimal
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from core.config import AppConfig
 from core.db import session_scope
+from core.http import HttpError, redact_text, retry_call
+from core.ingest.aliases import AliasMatcher
 from core.ingest.quota import QuotaGuard
 from core.logging import get_logger
 from core.orm import Match, OddsSnapshot, Result, Team, TeamAlias
@@ -28,7 +37,7 @@ logger = get_logger("ingest.odds_api")
 
 BASE = "https://api.the-odds-api.com/v4"
 TIER_LOWER_BOUND_MIN = {"T-48": 40 * 60, "T-24": 18 * 60, "T-3": 60,
-                        "T-1": 30, "manual": 0}
+                        "T-1": 30, "manual": 0, "off_window": 0}
 
 
 @dataclass
@@ -37,7 +46,22 @@ class EventsReport:
     kickoffs_updated: int = 0
     matches_created: int = 0
     postponed_suspected: int = 0
+    un_suspected: int = 0
+    teams_created: list[str] = field(default_factory=list)
     unmatched_teams: list[str] = field(default_factory=list)
+
+
+def _as_utc(value: dt.datetime | None) -> dt.datetime | None:
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=dt.UTC)
+
+
+def _to_int(value: str | None) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except ValueError:
+        return None
 
 
 class OddsApiClient:
@@ -49,25 +73,66 @@ class OddsApiClient:
         self._http = client or httpx.Client(timeout=30.0)
         self.quota = QuotaGuard(db_url, config, provider="toa")
 
-    # --- free: events ---------------------------------------------------------
+    # --- HTTP plumbing ---------------------------------------------------------
+
+    def _free_get(self, endpoint: str,
+                  params: dict) -> tuple[object, int | None]:
+        """Free call; logged with credits=0; never raises with a URL."""
+        attempts = self._config.ingest.retry_attempts
+
+        def _fetch() -> httpx.Response:
+            return self._http.get(f"{BASE}{endpoint}",
+                                  params={**params, "apiKey": self._key})
+
+        try:
+            resp = retry_call(_fetch, attempts=attempts,
+                              backoff_s=self._config.ingest.retry_backoff_s)
+        except httpx.HTTPError as exc:
+            raise HttpError(None, endpoint,
+                            message=type(exc).__name__) from None
+        remaining = _to_int(resp.headers.get("x-requests-remaining"))
+        self.quota.record(endpoint, 0, remaining)
+        if resp.status_code != 200:
+            raise HttpError(resp.status_code, endpoint,
+                            message=redact_text(resp.text[:80]))
+        return resp.json(), remaining
+
+    def _paid_get(self, endpoint: str, params: dict,
+                  expected_cost: int) -> tuple[object, int | None]:
+        """Paid call: reserve before, settle by headers after (B1)."""
+        usage_id = self.quota.begin(endpoint, expected_cost)
+        try:
+            resp = self._http.get(f"{BASE}{endpoint}",
+                                  params={**params, "apiKey": self._key})
+        except httpx.HTTPError as exc:
+            self.quota.fail(usage_id)
+            raise HttpError(None, endpoint,
+                            message=type(exc).__name__) from None
+        remaining = _to_int(resp.headers.get("x-requests-remaining"))
+        last = _to_int(resp.headers.get("x-requests-last"))
+        actual = last if last is not None else expected_cost
+        self.quota.settle(usage_id, actual, remaining)
+        if resp.status_code != 200:
+            raise HttpError(resp.status_code, endpoint,
+                            message=redact_text(resp.text[:80]))
+        return resp.json(), remaining
+
+    # --- free: /events -----------------------------------------------------------
 
     def fetch_events(self, sport_key: str) -> list[dict]:
-        resp = self._http.get(
-            f"{BASE}/sports/{sport_key}/events",
-            params={"apiKey": self._key, "regions": "eu", "dateFormat": "iso"})
-        resp.raise_for_status()
-        return resp.json()
+        body, _ = self._free_get(f"/sports/{sport_key}/events",
+                                 {"regions": "eu", "dateFormat": "iso"})
+        assert isinstance(body, list)
+        return body
 
     def apply_events(self, sport_key: str, events: list[dict],
                      league_slug: str, season: int) -> EventsReport:
-        """Upsert kickoffs (authoritative), create missing matches (UCL),
-        apply postponement rules from config."""
         cfg = self._config.odds_policy.postponement
-        report = EventsReport(events_seen=len(events))
+        report = EventsReport()
         now = dt.datetime.now(dt.UTC)
         with session_scope(self._db_url) as s:
-            aliases = {(a.source, a.alias): a.team_id
-                       for a in s.scalars(select(TeamAlias)).all()}
+            matcher, names = self._matcher(s)
+            roster = self._roster(s, league_slug, season)
             seen_event_ids: set[str] = set()
             for ev in events:
                 report.events_seen += 1
@@ -75,44 +140,53 @@ class OddsApiClient:
                 seen_event_ids.add(eid)
                 commence = dt.datetime.fromisoformat(
                     ev["commence_time"].replace("Z", "+00:00"))
+                home = self._team_for(s, matcher, names, roster,
+                                      ev["home_team"], league_slug, report)
+                away = self._team_for(s, matcher, names, roster,
+                                      ev["away_team"], league_slug, report)
+                if home is None or away is None:
+                    continue
                 match = s.scalars(select(Match).where(
                     Match.toa_event_id == eid)).first()
-                if match is None:
-                    home_id = aliases.get(("toa", ev["home_team"]))
-                    away_id = aliases.get(("toa", ev["away_team"]))
-                    if home_id is None or away_id is None:
-                        for nm in (ev["home_team"], ev["away_team"]):
-                            if aliases.get(("toa", nm)) is None and \
-                                    nm not in report.unmatched_teams:
-                                report.unmatched_teams.append(nm)
-                        continue
+                if match is None and league_slug != "ucl":
                     match = s.scalars(select(Match).where(
                         Match.league == league_slug,
                         Match.season == season,
-                        Match.home_team_id == home_id,
-                        Match.away_team_id == away_id)).first() \
-                        if league_slug != "ucl" else None
-                    if match is None:
-                        match = Match(
-                            league=league_slug, season=season,
-                            date_utc=commence.date(),
-                            commence_time_utc=commence,
-                            kickoff_source="toa", status="scheduled",
-                            home_team_id=home_id, away_team_id=away_id,
-                            toa_event_id=eid)
-                        s.add(match)
-                        s.flush()
-                        report.matches_created += 1
-                    else:
-                        # link the pair-matched match to its TOA event so
-                        # vanished-event detection works on later runs
-                        match.toa_event_id = eid
-                # postponement: a previously AUTHORITATIVE (TOA) kickoff
-                # shifted by more than cfg minutes. Replacing an Understat
-                # placeholder with the real time is not a postponement.
+                        Match.home_team_id == home.id,
+                        Match.away_team_id == away.id,
+                        Match.stage.is_(None))).first()
+                if match is None and league_slug == "ucl":
+                    match = self._find_ucl_by_pair(s, season, home.id,
+                                                   away.id, commence)
+                if match is None:
+                    match = Match(
+                        league=league_slug,
+                        season=season,
+                        stage="league_phase" if league_slug == "ucl" else None,
+                        date_utc=commence.date(),
+                        commence_time_utc=commence,
+                        kickoff_source="toa", status="scheduled",
+                        home_team_id=home.id, away_team_id=away.id,
+                        toa_event_id=eid)
+                    s.add(match)
+                    s.flush()
+                    report.matches_created += 1
+                else:
+                    was_linked = match.toa_event_id is not None
+                    match.toa_event_id = eid
+                    if not was_linked:
+                        self._relink_snapshots(s, eid, match.id)
+                # S10: a stable event clears a stale suspicion
                 stored = _as_utc(match.commence_time_utc)
+                if match.status == "postponed_suspected" and stored and \
+                        abs((commence - stored).total_seconds()) / 60 <= \
+                        cfg.shift_min:
+                    match.status = "scheduled"
+                    report.un_suspected += 1
+                # postponement: only a previously TOA-authoritative kickoff
+                # shifting by more than cfg minutes (S10/B6)
                 if stored is not None and match.kickoff_source == "toa":
-                    shift = abs((commence - stored).total_seconds() / 60)
+                    shift = abs((commence - stored).total_seconds()) / 60
                     if shift > cfg.shift_min and \
                             match.status in ("scheduled",
                                              "postponed_suspected"):
@@ -123,76 +197,56 @@ class OddsApiClient:
                     match.date_utc = commence.date()
                     match.kickoff_source = "toa"
                     report.kickoffs_updated += 1
-            # event disappeared from /events while its kickoff window is in
-            # the near horizon -> postponed suspected (the KO+3h no-result
-            # rule is settlement logic and belongs to phase 7)
+            # vanished events: only FUTURE kickoffs (B3); past ones are
+            # the KO+3h phase-7 settlement rule
             horizon_start = now - dt.timedelta(days=7)
             existing = s.scalars(select(Match).where(
                 Match.toa_event_id.isnot(None),
                 Match.league == league_slug)).all()
             for m in existing:
-                if m.toa_event_id in seen_event_ids or m.status != "scheduled":
+                if m.toa_event_id in seen_event_ids:
+                    continue
+                if m.status != "scheduled":
                     continue
                 stored_m = _as_utc(m.commence_time_utc)
-                if stored_m and horizon_start < \
-                        stored_m <= now + dt.timedelta(days=7):
+                if stored_m and stored_m > now + dt.timedelta(minutes=5) \
+                        and horizon_start < stored_m:
                     m.status = "postponed_suspected"
                     report.postponed_suspected += 1
         return report
 
-    # --- paid: odds snapshots ---------------------------------------------------
-
-    def _record_usage(self, endpoint: str, credits: int,
-                      remaining: int | None) -> None:
-        self.quota.record(endpoint, credits, remaining)
+    # --- paid: odds snapshots ------------------------------------------------------
 
     def snapshot_sport_totals(self, sport_key: str, tier: str) -> dict:
-        """One sport-level /odds call for totals (1 credit)."""
         endpoint = f"/sports/{sport_key}/odds"
-        self.quota.check(1)
-        resp = self._http.get(
-            f"{BASE}{endpoint}",
-            params={"apiKey": self._key, "regions": "eu", "markets": "totals",
-                    "oddsFormat": "decimal"})
-        remaining = _to_int(resp.headers.get("x-requests-remaining"))
-        if resp.status_code != 200:
-            self._record_usage(endpoint + ":failed", 0, remaining)
-            resp.raise_for_status()
-        self._record_usage(endpoint, 1, remaining)
-        body = resp.json()
-        planned = TIER_LOWER_BOUND_MIN[tier]
-        written = self._store_events_odds(body, sport_key, "totals", tier,
-                                          planned)
+        body, remaining = self._paid_get(
+            endpoint, {"regions": "eu", "markets": "totals",
+                       "oddsFormat": "decimal"}, expected_cost=1)
+        assert isinstance(body, list)
+        written = self._store_events_odds(body, sport_key, "totals", tier)
         return {"events": len(body), "rows": written, "credits": 1,
                 "remaining": remaining}
 
     def snapshot_event_markets(self, sport_key: str, event_id: str,
                                markets: list[str], tier: str) -> dict:
-        """Event-level markets (1 credit per market per region)."""
         endpoint = f"/sports/{sport_key}/events/{event_id}/odds"
-        self.quota.check(len(markets))
-        resp = self._http.get(
-            f"{BASE}{endpoint}",
-            params={"apiKey": self._key, "regions": "eu",
-                    "markets": ",".join(markets), "oddsFormat": "decimal"})
-        remaining = _to_int(resp.headers.get("x-requests-remaining"))
-        if resp.status_code != 200:
-            self._record_usage(endpoint + ":failed", 0, remaining)
-            resp.raise_for_status()
-        self._record_usage(endpoint, len(markets), remaining)
-        planned = TIER_LOWER_BOUND_MIN[tier]
+        body, remaining = self._paid_get(
+            endpoint, {"regions": "eu", "markets": ",".join(markets),
+                       "oddsFormat": "decimal"}, expected_cost=len(markets))
+        assert isinstance(body, (list, dict))
         written = 0
         for market in markets:
-            written += self._store_events_odds(resp.json(), sport_key, market,
-                                               tier, planned, event_id)
+            written += self._store_events_odds(body, sport_key, market,
+                                               tier, event_id)
         return {"event": event_id, "rows": written,
                 "credits": len(markets), "remaining": remaining}
 
     def _store_events_odds(self, body: list | dict, sport_key: str,
-                           market: str, tier: str, planned_min: int,
+                           market: str, tier: str,
                            only_event_id: str | None = None) -> int:
         events = body if isinstance(body, list) else [body]
         now = dt.datetime.now(dt.UTC)
+        windows = self._config.odds_policy.tier_windows
         half_only = self._config.totals_lines.half_lines_only
         dropped_lines = 0
         written = 0
@@ -203,11 +257,16 @@ class OddsApiClient:
                     continue
                 match = s.scalars(select(Match).where(
                     Match.toa_event_id == eid)).first()
+                stored = _as_utc(match.commence_time_utc) if match else None
                 actual = None
-                stored = _as_utc(
-                    match.commence_time_utc if match else None)
+                tier_assigned = tier
                 if stored is not None:
+                    lead_h = (stored - now).total_seconds() / 3600
                     actual = int((stored - now).total_seconds() / 60)
+                    bounds = {"T-48": windows.t48, "T-24": windows.t24,
+                              "T-3": windows.t3}.get(tier)
+                    if bounds and not (bounds[0] <= lead_h <= bounds[1]):
+                        tier_assigned = "off_window"
                 for bk in ev.get("bookmakers", []):
                     for mkt in bk.get("markets", []):
                         if mkt.get("key") != market:
@@ -219,9 +278,7 @@ class OddsApiClient:
                             point = o.get("point")
                             line = None
                             if point is not None:
-                                # half lines only (x.5); whole (x.0) and
-                                # quarter (x.25/x.75) lines are dropped and
-                                # counted (docs/decisions.md S11)
+                                # half lines only (docs/decisions.md S11)
                                 if half_only and float(point) * 2 % 2 != 1:
                                     dropped_lines += 1
                                     continue
@@ -229,11 +286,13 @@ class OddsApiClient:
                             s.add(OddsSnapshot(
                                 toa_sport_key=sport_key, toa_event_id=eid,
                                 match_id=match.id if match else None,
-                                bookmaker=bk.get("title") or bk.get("key"),
+                                bookmaker=str(bk.get("key") or bk.get("title")),
                                 market=market, line=line,
                                 outcome=str(o.get("name")),
-                                price=Decimal(str(price)), tier=tier,
-                                planned_offset_min=planned_min,
+                                price=Decimal(str(price)),
+                                tier=tier_assigned,
+                                planned_offset_min=TIER_LOWER_BOUND_MIN.get(
+                                    tier, 0),
                                 actual_offset_min=actual,
                                 source="toa",
                                 captured_at_utc=now))
@@ -243,30 +302,21 @@ class OddsApiClient:
                         market=market)
         return written
 
-    # --- paid: scores (UCL results) ----------------------------------------------
+    # --- paid: /scores (UCL results) -------------------------------------------------
 
     def fetch_scores(self, days_from: int = 3) -> list[dict]:
         endpoint = "/sports/soccer_uefa_champs_league/scores"
-        self.quota.check(2)
-        resp = self._http.get(
-            f"{BASE}{endpoint}",
-            params={"apiKey": self._key, "daysFrom": days_from})
-        remaining = _to_int(resp.headers.get("x-requests-remaining"))
-        if resp.status_code != 200:
-            self._record_usage(endpoint + ":failed", 0, remaining)
-            resp.raise_for_status()
-        self._record_usage(endpoint, 2, remaining)
-        return resp.json()
+        body, _ = self._paid_get(endpoint, {"daysFrom": days_from},
+                                 expected_cost=2)
+        assert isinstance(body, list)
+        return body
 
     def apply_scores(self, body: list[dict]) -> dict:
-        """Finished events -> results rows + finished status.
-
-        UCL matchdays drop out of /events before /scores shows them, so a
-        missing match is CREATED here from the scores payload (TOA names as
-        canonical, league slug 'ucl'); unmatched team names are reported.
-        """
+        """Finished events -> results rows + finished status. Missing UCL
+        matches are created from the payload itself (same team rule as
+        /events)."""
         written = 0
-        unmatched: set[str] = set()
+        teams_created: list[str] = []
         with session_scope(self._db_url) as s:
             for ev in body:
                 if not ev.get("completed"):
@@ -281,34 +331,28 @@ class OddsApiClient:
                     kickoff = dt.datetime.fromisoformat(
                         commence.replace("Z", "+00:00")) \
                         if commence else dt.datetime.now(dt.UTC)
-                    team_ids = []
-                    for name in (home_name, away_name):
-                        alias = s.scalars(select(TeamAlias).where(
-                            TeamAlias.source == "toa",
-                            TeamAlias.alias == name)).first()
-                        if alias is not None:
-                            team_ids.append(alias.team_id)
-                            continue
-                        team = s.scalars(select(Team).where(
-                            Team.name == name)).first()
-                        if team is None:
-                            team = Team(name=name, league="ucl")
-                            s.add(team)
-                            s.flush()
-                            s.add(TeamAlias(team_id=team.id, source="toa",
-                                            alias=name))
-                        team_ids.append(team.id)
-                    match = Match(
-                        league="ucl",
-                        season=kickoff.year if kickoff.month >= 7
-                        else kickoff.year - 1,
-                        stage="league_phase",
-                        date_utc=kickoff.date(),
-                        commence_time_utc=kickoff, kickoff_source="toa",
-                        status="scheduled", home_team_id=team_ids[0],
-                        away_team_id=team_ids[1], toa_event_id=eid)
-                    s.add(match)
-                    s.flush()
+                    season = kickoff.year if kickoff.month >= 7 \
+                        else kickoff.year - 1
+                    home = self._ensure_toa_team(s, home_name, "ucl",
+                                                 teams_created)
+                    away = self._ensure_toa_team(s, away_name, "ucl",
+                                                 teams_created)
+                    match = self._find_ucl_by_pair(s, season, home.id,
+                                                   away.id, kickoff)
+                    if match is None:
+                        match = Match(league="ucl", season=season,
+                                      stage="league_phase",
+                                      date_utc=kickoff.date(),
+                                      commence_time_utc=kickoff,
+                                      kickoff_source="toa",
+                                      status="scheduled",
+                                      home_team_id=home.id,
+                                      away_team_id=away.id,
+                                      toa_event_id=eid)
+                        s.add(match)
+                        s.flush()
+                    else:
+                        match.toa_event_id = eid
                 scores = {sc.get("name"): sc.get("score")
                           for sc in ev.get("scores", [])}
                 hg_raw = scores.get(ev.get("home_team"))
@@ -329,19 +373,88 @@ class OddsApiClient:
                 match.status = "finished"
         return {"completed_seen": sum(1 for e in body if e.get("completed")),
                 "results_written": written,
-                "unmatched_teams": sorted(unmatched)}
+                "teams_created": teams_created}
 
+    # --- shared helpers ------------------------------------------------------------
 
-def _as_utc(value: dt.datetime | None) -> dt.datetime | None:
-    """SQLite returns naive datetimes even for timezone-aware columns; our
-    convention is UTC everywhere."""
-    if value is None:
-        return None
-    return value if value.tzinfo else value.replace(tzinfo=dt.UTC)
+    def _matcher(self,
+                 session: Session) -> tuple[AliasMatcher, dict[int, str]]:
+        aliases = {(a.source, a.alias): a.team_id
+                   for a in session.scalars(select(TeamAlias)).all()}
+        names = {t.id: t.name for t in session.scalars(select(Team)).all()}
+        return AliasMatcher(aliases, names), names
 
+    @staticmethod
+    def _roster(session: Session, league_slug: str, season: int) -> set[int]:
+        rows = session.execute(
+            select(Match.home_team_id, Match.away_team_id).where(
+                Match.league == league_slug,
+                Match.season == season)).all()
+        roster: set[int] = set()
+        for home_id, away_id in rows:
+            roster.update((home_id, away_id))
+        return roster
 
-def _to_int(value: str | None) -> int | None:
-    try:
-        return int(value) if value is not None else None
-    except ValueError:
-        return None
+    def _team_for(self, session: Session, matcher: AliasMatcher,
+                  names: dict[int, str], roster: set[int], name: str,
+                  league_slug: str, report: EventsReport) -> Team | None:
+        """B6: deterministic match (exact -> normalized -> roster
+        containment); on hit remember the toa alias; otherwise create the
+        team (same rule for /events and /scores)."""
+        m = matcher.match("toa", name, roster=roster)
+        team = None
+        if m.matched is not None:
+            team = session.scalars(select(Team).where(
+                Team.name == m.matched)).first()
+        if team is None:
+            team = self._ensure_toa_team(session, name, league_slug,
+                                         report.teams_created)
+        exists = session.scalars(select(TeamAlias).where(
+            TeamAlias.source == "toa", TeamAlias.alias == name)).first()
+        if exists is None:
+            session.add(TeamAlias(team_id=team.id, source="toa",
+                                  alias=name))
+            matcher._aliases[("toa", name)] = team.id  # keep snapshot fresh
+        return team
+
+    def _ensure_toa_team(self, session: Session, name: str,
+                         league_slug: str,
+                         teams_created: list[str]) -> Team:
+        alias = session.scalars(select(TeamAlias).where(
+            TeamAlias.source == "toa", TeamAlias.alias == name)).first()
+        if alias is not None:
+            team = session.get(Team, alias.team_id)
+            if team is not None:
+                return team
+        team = session.scalars(select(Team).where(
+            Team.name == name)).first()
+        if team is None:
+            team = Team(name=name,
+                        league=None if league_slug == "ucl" else league_slug)
+            session.add(team)
+            session.flush()
+            teams_created.append(name)
+        return team
+
+    @staticmethod
+    def _find_ucl_by_pair(session: Session, season: int, home_id: int,
+                          away_id: int, kickoff: dt.datetime) -> Match | None:
+        """S3: search by pair (season, home, away) with date +-1 before
+        creating a UCL match (stage is 'league_phase' for both sources)."""
+        lo = (kickoff - dt.timedelta(days=1)).date()
+        hi = (kickoff + dt.timedelta(days=1)).date()
+        return session.scalars(select(Match).where(
+            Match.league == "ucl", Match.season == season,
+            Match.home_team_id == home_id, Match.away_team_id == away_id,
+            Match.date_utc >= lo, Match.date_utc <= hi)).first()
+
+    @staticmethod
+    def _relink_snapshots(session: Session, event_id: str,
+                          match_id: int) -> int:
+        """B6: attach previously stored snapshots to the matched match."""
+        snaps = session.scalars(select(OddsSnapshot).where(
+            OddsSnapshot.toa_event_id == event_id,
+            OddsSnapshot.match_id.is_(None))).all()
+        for snap in snaps:
+            snap.match_id = match_id
+        return len(snaps)

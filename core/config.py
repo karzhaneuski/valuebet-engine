@@ -167,6 +167,14 @@ class LlmModelsConfig(BaseModel):
     api_base: str = "https://generativelanguage.googleapis.com/v1beta"
 
 
+class IngestConfig(BaseModel):
+    """Loader tuning (review B4/S2)."""
+
+    fd_current_season_ttl_hours: int = 12
+    retry_attempts: int = 3
+    retry_backoff_s: float = 2.0
+
+
 class SchedulerConfig(BaseModel):
     """Cron entries; real jobs arrive in phase 7.
 
@@ -207,6 +215,7 @@ class AppConfig(BaseModel):
     totals_lines: TotalsLinesConfig = Field(default_factory=TotalsLinesConfig)
     llm: LlmModelsConfig = Field(default_factory=LlmModelsConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
+    ingest: IngestConfig = Field(default_factory=IngestConfig)
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:

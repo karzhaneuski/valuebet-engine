@@ -295,3 +295,19 @@ canonical, stage `league_phase`) when it is missing, then writes the result.
 
 **Reason**: 9 completed matches of the 2026-10-21 matchday were visible in
 `scores daysFrom=3` but had no match rows (verified in the phase-2 run).
+
+## 2026-10-24 — Phase 2 review S1: 450 is an absolute ceiling for ALL tiers
+
+**Decision**: the hard stop (450 of 500 monthly TOA credits) applies to
+every tier including T-3. "T-3 is never disabled" means it is the LAST
+degradation step and may not cause the counter to exceed 450 — the atomic
+reservation refuses any call that would. Pacing is informational
+(`ok | degrade | stop`) with an injectable clock; only the hard stop
+refuses calls. Month length uses the real calendar month.
+
+## 2026-10-24 — Phase 2 review S8: API-Football history loader deferred
+
+**Decision** (project owner): the API-Football loader for UCL history
+2022–2024 moves to phase 11 together with the UCL model work; phase 2
+keeps no API-Football code (current season is blocked on the free plan,
+top-5 history comes from football-data + Understat).

@@ -1,11 +1,19 @@
-"""Team-name matching across sources.
+"""Team-name matching across sources (review B7 policy).
 
-Policy (phase-2 review of the phase-0 fuzzy mistake, docs/decisions.md):
-- exact alias hit and deterministic normalization hits are applied
-  automatically;
-- fuzzy candidates are NEVER applied automatically — they go to a report
-  file for manual confirmation (example of what fuzzy must not do:
-  "Racing Santander" vs "Athletic Club" matched on the token "Club").
+Automatic (deterministic) rules only:
+1. exact alias within the source;
+2. normalization (fixed abbreviation table + stop tokens; "club"/"de" are
+   meaningful) — cross-source, deterministic;
+3. contiguous containment ("Brighton" ⊂ "Brighton and Hove Albion") — ONLY
+   when a league-season roster is supplied, and only if exactly ONE roster
+   team matches AND that team has no alias of this source yet.
+
+Anything similarity-based is NEVER applied automatically — fuzzy candidates
+go to the report (the phase-0 mistake: Racing Santander vs Athletic Club
+matched on the token "Club").
+
+A normalized-name collision between two different teams raises
+AliasCollisionError at matcher construction instead of silently picking one.
 """
 
 from __future__ import annotations
@@ -15,8 +23,6 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
-# football-data abbreviations vs TOA spellings (verified against the CSVs
-# and toa_events.json during phase 2; extendable)
 FD_KNOWN_ABBREVIATIONS: dict[str, str] = {
     "man united": "manchester united",
     "man city": "manchester city",
@@ -29,26 +35,19 @@ FD_KNOWN_ABBREVIATIONS: dict[str, str] = {
     "ath madrid": "atletico madrid",
     "atletico mad": "atletico madrid",
     "int milan": "inter milan",
-    "inter milan": "inter milan",
-    "ac milan": "ac milan",
-    "as roma": "as roma",
     "juve": "juventus",
     "w bremen": "werder bremen",
     "f dortmund": "borussia dortmund",
     "b dortmund": "borussia dortmund",
-    "bayern munich": "bayern munich",
     "gladbach": "borussia monchengladbach",
     "b monchengladbach": "borussia monchengladbach",
-    "freiburg": "freiburg",
     "e frankfurt": "eintracht frankfurt",
     "mainz 05": "mainz",
-    "fc koln": "fc cologne",
     "1 fc union berlin": "union berlin",
     "stade de reims": "reims",
     "stade brestois": "brest",
     "stade rennais": "rennes",
     "paris sg": "paris saint germain",
-    "ein frankfurt": "eintracht frankfurt",
     "espanol": "espanyol",
     "greuther furth": "greuther fuerth",
     "hamburg": "hamburger sv",
@@ -57,8 +56,13 @@ FD_KNOWN_ABBREVIATIONS: dict[str, str] = {
     "koln": "cologne",
 }
 
-# "club"/"de" are NOT stop tokens: Athletic Club vs Racing Club
+# "club"/"de" are NOT stop tokens: Athletic Club vs Racing Club depend on them
 STOP_TOKENS = {"fc", "cf", "sc", "afc", "acd", "cd", "the"}
+
+
+class AliasCollisionError(RuntimeError):
+    """Two different teams normalize to the same name — must be resolved
+    manually, never silently."""
 
 
 def normalize(name: str) -> str:
@@ -87,7 +91,7 @@ def token_set(name: str) -> set[str]:
 @dataclass
 class AliasMatch:
     matched: str | None          # canonical team name or None
-    method: str                  # exact | normalized | fuzzy:<score>
+    method: str                  # exact | normalized | contained | fuzzy:none
     candidates: list[tuple[str, float]] = field(default_factory=list)
 
 
@@ -96,34 +100,41 @@ class AliasMatcher:
 
     def __init__(self, aliases: dict[tuple[str, str], int],
                  names_by_id: dict[int, str]) -> None:
-        # (source, alias) -> team_id and team_id -> canonical name
-        self._aliases = aliases
-        self._names = names_by_id
+        self._aliases = dict(aliases)
+        self._names = dict(names_by_id)
         by_norm: dict[str, int] = {}
         for (_source, alias), team_id in aliases.items():
-            by_norm.setdefault(normalize(alias), team_id)
+            key = normalize(alias)
+            if key in by_norm and by_norm[key] != team_id:
+                raise AliasCollisionError(
+                    f"normalized collision on {key!r}: teams "
+                    f"{self._names.get(by_norm[key])!r} and "
+                    f"{self._names.get(team_id)!r}")
+            by_norm[key] = team_id
         self._by_norm = by_norm
 
-    def match(self, source: str, name: str) -> AliasMatch:
+    def match(self, source: str, name: str,
+              roster: set[int] | None = None,
+              allow_containment: bool = True) -> AliasMatch:
+        """roster: team ids of the league-season; containment is restricted
+        to roster teams that have no alias of ``source`` yet."""
         exact = self._aliases.get((source, name))
         if exact is not None:
             return AliasMatch(matched=self._names[exact], method="exact")
-        # deterministic normalization is trusted cross-source (it is a
-        # fixed abbreviation table, not similarity); anything weaker is
-        # fuzzy and stays report-only
         norm = normalize(name)
         hit = self._by_norm.get(norm)
         if hit is not None:
             return AliasMatch(matched=self._names[hit], method="normalized")
-        # deterministic containment: the name's tokens are a contiguous
-        # subsequence of exactly ONE known alias (fd shorthands like
-        # "Brighton" ⊂ "Brighton and Hove Albion"); ambiguity -> report
-        if len(norm) >= 4:
-            supers = [team_id for norm_key, team_id
-                      in self._by_norm.items()
-                      if _is_subsequence(norm, norm_key) and norm != norm_key]
-            unique = {t for t in supers}
-            if len(unique) == 1:
+        if allow_containment and roster and len(norm) >= 4:
+            have_source_alias = {team_id for (src, _a), team_id
+                                 in self._aliases.items() if src == source}
+            supers: list[int] = []
+            for norm_key, team_id in self._by_norm.items():
+                if team_id in roster and team_id not in have_source_alias \
+                        and norm != norm_key \
+                        and _is_subsequence(norm, norm_key):
+                    supers.append(team_id)
+            if len(set(supers)) == 1:
                 return AliasMatch(matched=self._names[supers[0]],
                                   method="contained")
         # fuzzy: report only, never auto-apply
@@ -131,14 +142,11 @@ class AliasMatcher:
         scored: list[tuple[str, float]] = []
         for norm_key, team_id in self._by_norm.items():
             other = set(norm_key.split())
-            overlap = len(tokens & other)
-            if not overlap:
+            distinctive = (tokens - STOP_TOKENS) & (other - STOP_TOKENS)
+            if not distinctive:
                 continue
             ratio = difflib.SequenceMatcher(None, norm, norm_key).ratio()
-            # require BOTH token overlap and string similarity; single
-            # shared stop-ish tokens ("club") must not qualify alone
-            distinctive = tokens - STOP_TOKENS & (other - STOP_TOKENS)
-            if distinctive and ratio >= 0.5:
+            if ratio >= 0.5:
                 scored.append((self._names[team_id], round(ratio, 3)))
         scored.sort(key=lambda x: -x[1])
         return AliasMatch(matched=None, method="fuzzy:none",
