@@ -1,98 +1,152 @@
 {
-  "models_available": [
-    "antigravity-preview-05-2026",
-    "antigravity-preview-09-2026",
-    "antigravity-preview-latest",
-    "deep-research-max-preview-04-2026",
-    "deep-research-preview-04-2026",
-    "deep-research-pro-preview-12-2025",
-    "gemini-2.5-computer-use-preview-10-2025",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-image",
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-flash-preview-tts",
-    "gemini-2.5-pro",
-    "gemini-2.5-pro-preview-tts",
-    "gemini-3-flash-preview",
-    "gemini-3-pro-image",
-    "gemini-3-pro-image-preview",
-    "gemini-3.1-flash-image",
-    "gemini-3.1-flash-image-preview",
-    "gemini-3.1-flash-lite",
-    "gemini-3.1-flash-lite-image",
-    "gemini-3.1-flash-lite-preview",
-    "gemini-3.1-flash-tts-preview",
-    "gemini-3.1-pro-preview",
-    "gemini-3.1-pro-preview-customtools",
-    "gemini-3.5-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-3.5-transcribe",
-    "gemini-3.6-flash",
-    "gemini-3.7-flash",
-    "gemini-3.8-flash",
-    "gemini-3.8-flash-lite-tts",
-    "gemini-3.8-flash-tts",
-    "gemini-4-argon",
-    "gemini-flash-latest",
-    "gemini-flash-lite-latest",
-    "gemini-nano-banana-2.1",
-    "gemini-omni-1.1-flash",
-    "gemini-omni-flash-preview",
-    "gemini-pro-latest",
-    "gemini-robotics-er-2-preview",
-    "gemma-4-26b-a4b-it",
-    "gemma-4-31b-it",
-    "lyria-3-clip-preview",
-    "lyria-3-pro-preview",
-    "lyria-3.5",
-    "nano-banana-pro-preview"
-  ],
-  "picked": {
-    "extraction_model": "gemini-2.5-flash",
-    "reasoning_model": "gemini-2.5-pro"
+  "models_available_n": 46,
+  "stable_candidates": {
+    "gemini-2.5-flash": {
+      "displayName": "Gemini 2.5 Flash",
+      "inputTokenLimit": 1048576,
+      "outputTokenLimit": 65536,
+      "version": "001",
+      "description_head": "Stable version of Gemini 2.5 Flash, our mid-size multimodal model that supports up to 1 million tokens, released in June of 2025."
+    },
+    "gemini-2.5-pro": {
+      "displayName": "Gemini 2.5 Pro",
+      "inputTokenLimit": 1048576,
+      "outputTokenLimit": 65536,
+      "version": "2.5",
+      "description_head": "Stable release (June 17th, 2025) of Gemini 2.5 Pro"
+    },
+    "gemini-3.5-flash": {
+      "displayName": "Gemini 3.5 Flash",
+      "inputTokenLimit": 1048576,
+      "outputTokenLimit": 65536,
+      "version": "3.5-flash-05-2026",
+      "description_head": "Gemini 3.5 Flash"
+    },
+    "gemini-3.6-flash": {
+      "displayName": "Gemini 3.6 Flash",
+      "inputTokenLimit": 1048576,
+      "outputTokenLimit": 65536,
+      "version": "3.6-flash-07-2026",
+      "description_head": "Gemini 3.6 Flash"
+    },
+    "gemini-3.7-flash": {
+      "displayName": "Gemini 3.7 Flash",
+      "inputTokenLimit": 1048576,
+      "outputTokenLimit": 65536,
+      "version": "3.7-flash-08-2026",
+      "description_head": "Gemini 3.7 Flash"
+    },
+    "gemini-3.8-flash": {
+      "displayName": "Gemini 3.8 Flash",
+      "inputTokenLimit": 1048576,
+      "outputTokenLimit": 65536,
+      "version": "3.0",
+      "description_head": "Gemini 3.8 Flash"
+    }
   },
-  "structured_output_test": {
-    "model": "gemini-2.5-flash",
-    "http": 200,
-    "usage": {
-      "promptTokenCount": 255,
-      "candidatesTokenCount": 274,
-      "totalTokenCount": 1050,
-      "promptTokensDetails": [
+  "picked": {
+    "extraction_model": "gemini-3.8-flash",
+    "reasoning_model": "gemini-3.8-flash",
+    "reasoning_mode": "flash+thinking_budget",
+    "pro_availability_probes": {
+      "gemini-2.5-pro": "http=404"
+    }
+  },
+  "structured_output_tests": {
+    "extraction": {
+      "model": "gemini-3.8-flash",
+      "http": 200,
+      "thinking_budget": null,
+      "usage": {
+        "promptTokenCount": 300,
+        "candidatesTokenCount": 199,
+        "totalTokenCount": 932,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 300
+          }
+        ],
+        "thoughtsTokenCount": 433,
+        "serviceTier": "standard"
+      },
+      "total_tokens_incl_thoughts": 932,
+      "schema_valid": true,
+      "validation": "valid array with 3 items",
+      "extracted_n": 3,
+      "extracted": [
         {
-          "modality": "TEXT",
-          "tokenCount": 255
+          "player": "Azor Matusiwa",
+          "team": "Ipswich Town",
+          "status": "out",
+          "source_url": "https://www.fa-cupfinals.co.uk/fixtures/teams/ipswich-town-injuries.html",
+          "quote_summary": "Azor Matusiwa is out following knee surgery."
+        },
+        {
+          "player": "Jack Taylor",
+          "team": "Ipswich Town",
+          "status": "out",
+          "source_url": "https://www.fa-cupfinals.co.uk/fixtures/teams/ipswich-town-injuries.html",
+          "quote_summary": "Jack Taylor is sidelined due to knee surgery."
+        },
+        {
+          "player": "Jaden Philogene",
+          "team": "Ipswich Town",
+          "status": "out",
+          "source_url": "https://www.fa-cupfinals.co.uk/fixtures/teams/ipswich-town-injuries.html",
+          "quote_summary": "Jaden Philogene is out with an ankle injury."
         }
       ],
-      "thoughtsTokenCount": 521,
-      "serviceTier": "standard"
+      "stale_case_expectation": "no item for A. Fatawu Issahaku (expected-back date precedes the match); players without a return date may stay 'out'",
+      "stale_case_pass": true
     },
-    "raw_response_head": "[{\"player\":\"Abdul Fatawu Issahaku\",\"team\":\"Ipswich Town\",\"status\":\"suspended\",\"source_url\":\"https://www.fa-cupfinals.co.uk/fixtures/teams/ipswich-town-injuries.html\",\"quote_summary\":\"Abdul Fatawu Issahaku is suspended due to an indirect card.\"},{\"player\":\"Azor Matusiwa\",\"team\":\"Ipswich Town\",\"status\":\"out\",\"source_url\":\"https://www.fa-cupfinals.co.uk/fixtures/teams/ipswich-town-injuries.html\",\"quote_summary\":\"Azor Matusiwa is out due to knee surgery.\"},{\"player\":\"Jack Taylor\",\"team\":\"Ipswich Tow",
-    "schema_valid": true,
-    "validation": "valid array with 4 items",
-    "extracted_n": 4,
-    "extracted_sample": [
-      {
-        "player": "Abdul Fatawu Issahaku",
-        "team": "Ipswich Town",
-        "status": "suspended",
-        "source_url": "https://www.fa-cupfinals.co.uk/fixtures/teams/ipswich-town-injuries.html",
-        "quote_summary": "Abdul Fatawu Issahaku is suspended due to an indirect card."
+    "reasoning": {
+      "model": "gemini-3.8-flash",
+      "http": 200,
+      "thinking_budget": 4096,
+      "usage": {
+        "promptTokenCount": 300,
+        "candidatesTokenCount": 192,
+        "totalTokenCount": 1010,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 300
+          }
+        ],
+        "thoughtsTokenCount": 518,
+        "serviceTier": "standard"
       },
-      {
-        "player": "Azor Matusiwa",
-        "team": "Ipswich Town",
-        "status": "out",
-        "source_url": "https://www.fa-cupfinals.co.uk/fixtures/teams/ipswich-town-injuries.html",
-        "quote_summary": "Azor Matusiwa is out due to knee surgery."
-      },
-      {
-        "player": "Jack Taylor",
-        "team": "Ipswich Town",
-        "status": "out",
-        "source_url": "https://www.fa-cupfinals.co.uk/fixtures/teams/ipswich-town-injuries.html",
-        "quote_summary": "Jack Taylor is out due to knee surgery."
-      }
-    ]
-  }
+      "total_tokens_incl_thoughts": 1010,
+      "schema_valid": true,
+      "validation": "valid array with 3 items",
+      "extracted_n": 3,
+      "extracted": [
+        {
+          "player": "Azor Matusiwa",
+          "team": "Ipswich Town",
+          "status": "out",
+          "source_url": "https://www.fa-cupfinals.co.uk/fixtures/teams/ipswich-town-injuries.html",
+          "quote_summary": "Ruled out after undergoing knee surgery."
+        },
+        {
+          "player": "Jack Taylor",
+          "team": "Ipswich Town",
+          "status": "out",
+          "source_url": "https://www.fa-cupfinals.co.uk/fixtures/teams/ipswich-town-injuries.html",
+          "quote_summary": "Ruled out after undergoing knee surgery."
+        },
+        {
+          "player": "Jaden Philogene",
+          "team": "Ipswich Town",
+          "status": "out",
+          "source_url": "https://www.fa-cupfinals.co.uk/fixtures/teams/ipswich-town-injuries.html",
+          "quote_summary": "Ruled out due to an ankle injury."
+        }
+      ],
+      "stale_case_expectation": "no item for A. Fatawu Issahaku (expected-back date precedes the match); players without a return date may stay 'out'",
+      "stale_case_pass": true
+    }
+  },
+  "prior_run_note": "The first phase-0 run (same snippet, no match date in the prompt) returned status='suspended' for A. Fatawu Issahaku whose 'Expected back 12 Oct 2026' precedes the 23 Oct 2026 match \u2014 a stale-data false positive. The date-aware prompt above is the fix being tested."
 }
