@@ -1,0 +1,13 @@
+[project]
+name = "valuebet-engine"
+version = "0.0.0"
+description = "Value bet discovery engine for football"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas",
+    "requests",
+    "soccerdata",
+]
+
+# Phase 0 only: minimal tooling for recon scripts under scripts/recon/.
+# The full scaffold (ruff, mypy, pytest config) arrives in phase 1.
