@@ -1,0 +1,972 @@
+{
+  "run_date_utc": "2026-10-23T18:00:00+00:00",
+  "cost_model": {
+    "odds_call_credits": 1,
+    "markets": "totals",
+    "regions": "eu",
+    "note": "measured: cost = markets x regions per /odds call, independent of event count and horizon"
+  },
+  "events_calls_credit_deltas": [
+    {
+      "sport": "soccer_epl",
+      "credits_delta": 0
+    },
+    {
+      "sport": "soccer_spain_la_liga",
+      "credits_delta": 0
+    },
+    {
+      "sport": "soccer_italy_serie_a",
+      "credits_delta": 0
+    },
+    {
+      "sport": "soccer_germany_bundesliga",
+      "credits_delta": 0
+    },
+    {
+      "sport": "soccer_france_ligue_one",
+      "credits_delta": 0
+    },
+    {
+      "sport": "soccer_uefa_champs_league",
+      "credits_delta": 0
+    }
+  ],
+  "understat_alignment": {
+    "n_matched": 94,
+    "median_delta_minutes": 0,
+    "share_delta_zero": 0.862,
+    "delta_min": -1785,
+    "delta_max": 180,
+    "nonzero_deltas": [
+      -1785,
+      -1680,
+      -1575,
+      -1560,
+      -1530,
+      -1500,
+      -1440,
+      -1440,
+      -1425,
+      -240,
+      -90,
+      45,
+      180
+    ],
+    "interpretation": "Understat naive datetimes are UTC when this offset is 0; nonzero deltas are expected for postponed matches matched to their rescheduled slot",
+    "team_name_pairs": [
+      [
+        "1. FC K\u00f6ln",
+        "FC Cologne"
+      ],
+      [
+        "AC Milan",
+        "AC Milan"
+      ],
+      [
+        "AS Monaco",
+        "Monaco"
+      ],
+      [
+        "AS Roma",
+        "Roma"
+      ],
+      [
+        "Angers",
+        "Angers"
+      ],
+      [
+        "Arsenal",
+        "Arsenal"
+      ],
+      [
+        "Aston Villa",
+        "Aston Villa"
+      ],
+      [
+        "Atalanta BC",
+        "Atalanta"
+      ],
+      [
+        "Athletic Bilbao",
+        "Athletic Club"
+      ],
+      [
+        "Atl\u00e9tico Madrid",
+        "Atletico Madrid"
+      ],
+      [
+        "Augsburg",
+        "Augsburg"
+      ],
+      [
+        "Auxerre",
+        "Auxerre"
+      ],
+      [
+        "Barcelona",
+        "Barcelona"
+      ],
+      [
+        "Bayer Leverkusen",
+        "Bayer Leverkusen"
+      ],
+      [
+        "Bayern Munich",
+        "Bayern Munich"
+      ],
+      [
+        "Borussia Dortmund",
+        "Borussia Dortmund"
+      ],
+      [
+        "Borussia Monchengladbach",
+        "Borussia M.Gladbach"
+      ],
+      [
+        "Bournemouth",
+        "Bournemouth"
+      ],
+      [
+        "Brentford",
+        "Brentford"
+      ],
+      [
+        "Brest",
+        "Brest"
+      ],
+      [
+        "Cagliari",
+        "Cagliari"
+      ],
+      [
+        "Celta Vigo",
+        "Celta Vigo"
+      ],
+      [
+        "Chelsea",
+        "Chelsea"
+      ],
+      [
+        "Como",
+        "Como"
+      ],
+      [
+        "Coventry City",
+        "Coventry"
+      ],
+      [
+        "Crystal Palace",
+        "Crystal Palace"
+      ],
+      [
+        "Deportivo La Coru\u00f1a",
+        "Deportivo La Coruna"
+      ],
+      [
+        "Eintracht Frankfurt",
+        "Eintracht Frankfurt"
+      ],
+      [
+        "Elche CF",
+        "Elche"
+      ],
+      [
+        "Elversberg",
+        "Elversberg"
+      ],
+      [
+        "FC Schalke 04",
+        "Schalke 04"
+      ],
+      [
+        "FSV Mainz 05",
+        "Mainz 05"
+      ],
+      [
+        "Fiorentina",
+        "Fiorentina"
+      ],
+      [
+        "Frosinone",
+        "Frosinone"
+      ],
+      [
+        "Genoa",
+        "Genoa"
+      ],
+      [
+        "Getafe",
+        "Getafe"
+      ],
+      [
+        "Hull City",
+        "Hull"
+      ],
+      [
+        "Inter Milan",
+        "Inter"
+      ],
+      [
+        "Ipswich Town",
+        "Ipswich"
+      ],
+      [
+        "Lazio",
+        "Lazio"
+      ],
+      [
+        "Le Havre",
+        "Le Havre"
+      ],
+      [
+        "Lecce",
+        "Lecce"
+      ],
+      [
+        "Levante",
+        "Levante"
+      ],
+      [
+        "Lille",
+        "Lille"
+      ],
+      [
+        "Liverpool",
+        "Liverpool"
+      ],
+      [
+        "Lorient",
+        "Lorient"
+      ],
+      [
+        "Lyon",
+        "Lyon"
+      ],
+      [
+        "Manchester City",
+        "Manchester City"
+      ],
+      [
+        "Manchester United",
+        "Manchester United"
+      ],
+      [
+        "Marseille",
+        "Marseille"
+      ],
+      [
+        "Monza",
+        "Monza"
+      ],
+      [
+        "Napoli",
+        "Napoli"
+      ],
+      [
+        "Newcastle United",
+        "Newcastle United"
+      ],
+      [
+        "Nice",
+        "Nice"
+      ],
+      [
+        "Paris FC",
+        "Paris FC"
+      ],
+      [
+        "Paris Saint Germain",
+        "Paris Saint Germain"
+      ],
+      [
+        "Parma",
+        "Parma Calcio 1913"
+      ],
+      [
+        "RB Leipzig",
+        "RasenBallsport Leipzig"
+      ],
+      [
+        "RC Lens",
+        "Lens"
+      ],
+      [
+        "Rayo Vallecano",
+        "Rayo Vallecano"
+      ],
+      [
+        "Real Racing Club de Santander",
+        "Athletic Club"
+      ],
+      [
+        "Real Racing Club de Santander",
+        "Racing Santander"
+      ],
+      [
+        "Real Sociedad",
+        "Real Sociedad"
+      ],
+      [
+        "Rennes",
+        "Rennes"
+      ],
+      [
+        "SC Freiburg",
+        "Freiburg"
+      ],
+      [
+        "SC Paderborn",
+        "Paderborn"
+      ],
+      [
+        "Sassuolo",
+        "Sassuolo"
+      ],
+      [
+        "Sevilla",
+        "Sevilla"
+      ],
+      [
+        "Strasbourg",
+        "Strasbourg"
+      ],
+      [
+        "Sunderland",
+        "Sunderland"
+      ],
+      [
+        "TSG Hoffenheim",
+        "Hoffenheim"
+      ],
+      [
+        "Torino",
+        "Torino"
+      ],
+      [
+        "Tottenham Hotspur",
+        "Tottenham"
+      ],
+      [
+        "Toulouse",
+        "Toulouse"
+      ],
+      [
+        "Troyes",
+        "Troyes"
+      ],
+      [
+        "Udinese",
+        "Udinese"
+      ],
+      [
+        "Union Berlin",
+        "Union Berlin"
+      ],
+      [
+        "Valencia",
+        "Valencia"
+      ],
+      [
+        "Venezia",
+        "Venezia"
+      ],
+      [
+        "VfB Stuttgart",
+        "VfB Stuttgart"
+      ],
+      [
+        "Villarreal",
+        "Villarreal"
+      ],
+      [
+        "Werder Bremen",
+        "Werder Bremen"
+      ]
+    ]
+  },
+  "windows": {
+    "forward_28d": {
+      "start": "2026-10-23T18:00:00+00:00",
+      "end": "2026-11-20T18:00:00+00:00",
+      "league_max_gap_days": 12,
+      "contains_intl_break": true
+    },
+    "no_break_28d": {
+      "start": "2026-11-20T18:00:00+00:00",
+      "end": "2026-12-18T18:00:00+00:00",
+      "contains_intl_break": false
+    }
+  },
+  "time_variants": {
+    "retimed": "placeholder rounds re-timed from the empirical (weekday, kickoff) distribution of real rounds (primary; realistic Fri-Mon spread)",
+    "asis": "Understat placeholder times left as-is (lower bound)"
+  },
+  "policies": {
+    "a_flat_6h": {
+      "forward_28d": {
+        "per_sport": {
+          "soccer_epl": 112,
+          "soccer_france_ligue_one": 112,
+          "soccer_germany_bundesliga": 112,
+          "soccer_italy_serie_a": 112,
+          "soccer_spain_la_liga": 112,
+          "soccer_uefa_champs_league": 112
+        },
+        "per_week": [
+          168,
+          168,
+          168,
+          168
+        ],
+        "total_28d": 672,
+        "per_30d": 720,
+        "events_within_56h_of_window_start": 0
+      },
+      "no_break_28d": {
+        "per_sport": {
+          "soccer_epl": 112,
+          "soccer_france_ligue_one": 112,
+          "soccer_germany_bundesliga": 112,
+          "soccer_italy_serie_a": 112,
+          "soccer_spain_la_liga": 112,
+          "soccer_uefa_champs_league": 112
+        },
+        "per_week": [
+          168,
+          168,
+          168,
+          168
+        ],
+        "total_28d": 672,
+        "per_30d": 720,
+        "events_within_56h_of_window_start": 0
+      }
+    },
+    "b_flat_12h": {
+      "forward_28d": {
+        "per_sport": {
+          "soccer_epl": 56,
+          "soccer_france_ligue_one": 56,
+          "soccer_germany_bundesliga": 56,
+          "soccer_italy_serie_a": 56,
+          "soccer_spain_la_liga": 56,
+          "soccer_uefa_champs_league": 56
+        },
+        "per_week": [
+          84,
+          84,
+          84,
+          84
+        ],
+        "total_28d": 336,
+        "per_30d": 360,
+        "events_within_56h_of_window_start": 0
+      },
+      "no_break_28d": {
+        "per_sport": {
+          "soccer_epl": 56,
+          "soccer_france_ligue_one": 56,
+          "soccer_germany_bundesliga": 56,
+          "soccer_italy_serie_a": 56,
+          "soccer_spain_la_liga": 56,
+          "soccer_uefa_champs_league": 56
+        },
+        "per_week": [
+          84,
+          84,
+          84,
+          84
+        ],
+        "total_28d": 336,
+        "per_30d": 360,
+        "events_within_56h_of_window_start": 0
+      }
+    },
+    "c_gated_6h_72h": {
+      "forward_28d": {
+        "per_sport": {
+          "soccer_epl": 29,
+          "soccer_france_ligue_one": 47,
+          "soccer_germany_bundesliga": 46,
+          "soccer_italy_serie_a": 68,
+          "soccer_spain_la_liga": 64,
+          "soccer_uefa_champs_league": 34
+        },
+        "per_week": [
+          112,
+          121,
+          38,
+          17
+        ],
+        "total_28d": 288,
+        "per_30d": 309,
+        "events_within_56h_of_window_start": 0
+      },
+      "no_break_28d": {
+        "per_sport": {
+          "soccer_epl": 65,
+          "soccer_france_ligue_one": 66,
+          "soccer_germany_bundesliga": 62,
+          "soccer_italy_serie_a": 94,
+          "soccer_spain_la_liga": 97,
+          "soccer_uefa_champs_league": 34
+        },
+        "per_week": [
+          109,
+          131,
+          105,
+          73
+        ],
+        "total_28d": 418,
+        "per_30d": 448,
+        "events_within_56h_of_window_start": 0
+      }
+    },
+    "d_snapshots": {
+      "forward_28d": {
+        "per_sport": {
+          "soccer_epl": 17,
+          "soccer_france_ligue_one": 23,
+          "soccer_germany_bundesliga": 23,
+          "soccer_italy_serie_a": 43,
+          "soccer_spain_la_liga": 41,
+          "soccer_uefa_champs_league": 12
+        },
+        "per_week": [
+          59,
+          67,
+          27,
+          6
+        ],
+        "total_28d": 159,
+        "per_30d": 170,
+        "events_within_56h_of_window_start": 46,
+        "per_tier": {
+          "24": 49,
+          "3": 66,
+          "48": 44
+        },
+        "firing": "lazy (last minute of tolerance window)"
+      },
+      "no_break_28d": {
+        "per_sport": {
+          "soccer_epl": 31,
+          "soccer_france_ligue_one": 37,
+          "soccer_germany_bundesliga": 31,
+          "soccer_italy_serie_a": 52,
+          "soccer_spain_la_liga": 61,
+          "soccer_uefa_champs_league": 12
+        },
+        "per_week": [
+          53,
+          70,
+          54,
+          47
+        ],
+        "total_28d": 224,
+        "per_30d": 240,
+        "events_within_56h_of_window_start": 31,
+        "per_tier": {
+          "24": 68,
+          "3": 92,
+          "48": 64
+        },
+        "firing": "lazy (last minute of tolerance window)"
+      }
+    },
+    "e_snapshots_plus_t1h": {
+      "forward_28d": {
+        "per_sport": {
+          "soccer_epl": 29,
+          "soccer_france_ligue_one": 37,
+          "soccer_germany_bundesliga": 36,
+          "soccer_italy_serie_a": 73,
+          "soccer_spain_la_liga": 69,
+          "soccer_uefa_champs_league": 20
+        },
+        "per_week": [
+          100,
+          107,
+          47,
+          10
+        ],
+        "total_28d": 264,
+        "per_30d": 283,
+        "events_within_56h_of_window_start": 46,
+        "per_tier": {
+          "1": 105,
+          "24": 49,
+          "3": 66,
+          "48": 44
+        },
+        "firing": "lazy (last minute of tolerance window)"
+      },
+      "no_break_28d": {
+        "per_sport": {
+          "soccer_epl": 47,
+          "soccer_france_ligue_one": 57,
+          "soccer_germany_bundesliga": 45,
+          "soccer_italy_serie_a": 80,
+          "soccer_spain_la_liga": 91,
+          "soccer_uefa_champs_league": 20
+        },
+        "per_week": [
+          76,
+          104,
+          85,
+          75
+        ],
+        "total_28d": 340,
+        "per_30d": 364,
+        "events_within_56h_of_window_start": 31,
+        "per_tier": {
+          "1": 116,
+          "24": 68,
+          "3": 92,
+          "48": 64
+        },
+        "firing": "lazy (last minute of tolerance window)"
+      }
+    },
+    "f_snapshots_plus_t72": {
+      "forward_28d": {
+        "per_sport": {
+          "soccer_epl": 20,
+          "soccer_france_ligue_one": 28,
+          "soccer_germany_bundesliga": 29,
+          "soccer_italy_serie_a": 54,
+          "soccer_spain_la_liga": 51,
+          "soccer_uefa_champs_league": 16
+        },
+        "per_week": [
+          77,
+          84,
+          29,
+          8
+        ],
+        "total_28d": 198,
+        "per_30d": 212,
+        "events_within_56h_of_window_start": 46,
+        "per_tier": {
+          "24": 49,
+          "3": 66,
+          "48": 44,
+          "72": 39
+        },
+        "firing": "lazy (last minute of tolerance window)"
+      },
+      "no_break_28d": {
+        "per_sport": {
+          "soccer_epl": 39,
+          "soccer_france_ligue_one": 45,
+          "soccer_germany_bundesliga": 39,
+          "soccer_italy_serie_a": 66,
+          "soccer_spain_la_liga": 78,
+          "soccer_uefa_champs_league": 16
+        },
+        "per_week": [
+          70,
+          91,
+          70,
+          52
+        ],
+        "total_28d": 283,
+        "per_30d": 303,
+        "events_within_56h_of_window_start": 31,
+        "per_tier": {
+          "24": 68,
+          "3": 92,
+          "48": 64,
+          "72": 59
+        },
+        "firing": "lazy (last minute of tolerance window)"
+      }
+    },
+    "d_snapshots_day_slots": {
+      "forward_28d": {
+        "per_sport": {
+          "soccer_epl": 14,
+          "soccer_france_ligue_one": 20,
+          "soccer_germany_bundesliga": 23,
+          "soccer_italy_serie_a": 38,
+          "soccer_spain_la_liga": 36,
+          "soccer_uefa_champs_league": 12
+        },
+        "per_week": [
+          53,
+          60,
+          24,
+          6
+        ],
+        "total_28d": 143,
+        "per_30d": 153,
+        "events_within_56h_of_window_start": 46,
+        "per_tier": {
+          "24": 48,
+          "3": 51,
+          "48": 44
+        },
+        "firing": "lazy (last minute of tolerance window)"
+      },
+      "no_break_28d": {
+        "per_sport": {
+          "soccer_epl": 27,
+          "soccer_france_ligue_one": 29,
+          "soccer_germany_bundesliga": 29,
+          "soccer_italy_serie_a": 47,
+          "soccer_spain_la_liga": 57,
+          "soccer_uefa_champs_league": 12
+        },
+        "per_week": [
+          50,
+          62,
+          48,
+          41
+        ],
+        "total_28d": 201,
+        "per_30d": 215,
+        "events_within_56h_of_window_start": 31,
+        "per_tier": {
+          "24": 68,
+          "3": 69,
+          "48": 64
+        },
+        "firing": "lazy (last minute of tolerance window)"
+      }
+    }
+  },
+  "policies_asis": {
+    "c_gated_6h_72h": {
+      "forward_28d": {
+        "per_sport": {
+          "soccer_epl": 29,
+          "soccer_france_ligue_one": 47,
+          "soccer_germany_bundesliga": 39,
+          "soccer_italy_serie_a": 48,
+          "soccer_spain_la_liga": 49,
+          "soccer_uefa_champs_league": 34
+        },
+        "per_week": [
+          112,
+          92,
+          25,
+          17
+        ],
+        "total_28d": 246,
+        "per_30d": 264,
+        "events_within_56h_of_window_start": 0
+      },
+      "no_break_28d": {
+        "per_sport": {
+          "soccer_epl": 55,
+          "soccer_france_ligue_one": 45,
+          "soccer_germany_bundesliga": 40,
+          "soccer_italy_serie_a": 44,
+          "soccer_spain_la_liga": 44,
+          "soccer_uefa_champs_league": 34
+        },
+        "per_week": [
+          64,
+          88,
+          60,
+          50
+        ],
+        "total_28d": 262,
+        "per_30d": 281,
+        "events_within_56h_of_window_start": 0
+      }
+    },
+    "d_snapshots": {
+      "forward_28d": {
+        "per_sport": {
+          "soccer_epl": 17,
+          "soccer_france_ligue_one": 23,
+          "soccer_germany_bundesliga": 17,
+          "soccer_italy_serie_a": 26,
+          "soccer_spain_la_liga": 28,
+          "soccer_uefa_champs_league": 12
+        },
+        "per_week": [
+          59,
+          47,
+          11,
+          6
+        ],
+        "total_28d": 123,
+        "per_30d": 132,
+        "events_within_56h_of_window_start": 46,
+        "per_tier": {
+          "24": 38,
+          "3": 52,
+          "48": 33
+        },
+        "firing": "lazy (last minute of tolerance window)"
+      },
+      "no_break_28d": {
+        "per_sport": {
+          "soccer_epl": 15,
+          "soccer_france_ligue_one": 14,
+          "soccer_germany_bundesliga": 11,
+          "soccer_italy_serie_a": 12,
+          "soccer_spain_la_liga": 12,
+          "soccer_uefa_champs_league": 12
+        },
+        "per_week": [
+          16,
+          24,
+          15,
+          21
+        ],
+        "total_28d": 76,
+        "per_30d": 81,
+        "events_within_56h_of_window_start": 39,
+        "per_tier": {
+          "24": 26,
+          "3": 26,
+          "48": 24
+        },
+        "firing": "lazy (last minute of tolerance window)"
+      }
+    }
+  },
+  "events_input": {
+    "forward_28d": {
+      "soccer_epl": {
+        "n_toa": 20,
+        "n_understat_added": 0,
+        "n_retimed_rounds": 0,
+        "n_events": 20,
+        "first": "2026-10-23T19:00:00+00:00",
+        "last": "2026-11-02T20:00:00+00:00"
+      },
+      "soccer_spain_la_liga": {
+        "n_toa": 20,
+        "n_understat_added": 10,
+        "n_retimed_rounds": 1,
+        "n_events": 30,
+        "first": "2026-10-23T19:00:00+00:00",
+        "last": "2026-11-09T19:00:00+00:00"
+      },
+      "soccer_italy_serie_a": {
+        "n_toa": 20,
+        "n_understat_added": 20,
+        "n_retimed_rounds": 2,
+        "n_events": 40,
+        "first": "2026-10-23T18:45:00+00:00",
+        "last": "2026-11-09T16:30:00+00:00"
+      },
+      "soccer_germany_bundesliga": {
+        "n_toa": 18,
+        "n_understat_added": 9,
+        "n_retimed_rounds": 1,
+        "n_events": 27,
+        "first": "2026-10-23T18:30:00+00:00",
+        "last": "2026-11-08T13:30:00+00:00"
+      },
+      "soccer_france_ligue_one": {
+        "n_toa": 18,
+        "n_understat_added": 9,
+        "n_retimed_rounds": 0,
+        "n_events": 27,
+        "first": "2026-10-23T18:45:00+00:00",
+        "last": "2026-11-07T19:45:00+00:00"
+      },
+      "soccer_uefa_champs_league": {
+        "n_observed": 18,
+        "n_estimated": 36,
+        "estimated_matchdays": [
+          "2026-11-03",
+          "2026-11-04",
+          "2026-11-17",
+          "2026-11-18"
+        ]
+      }
+    },
+    "no_break_28d": {
+      "soccer_epl": {
+        "n_toa": 1,
+        "n_understat_added": 40,
+        "n_retimed_rounds": 4,
+        "n_events": 41,
+        "first": "2026-11-22T16:30:00+00:00",
+        "last": "2026-12-14T19:00:00+00:00"
+      },
+      "soccer_spain_la_liga": {
+        "n_toa": 0,
+        "n_understat_added": 40,
+        "n_retimed_rounds": 4,
+        "n_events": 40,
+        "first": "2026-11-19T19:00:00+00:00",
+        "last": "2026-12-14T20:00:00+00:00"
+      },
+      "soccer_italy_serie_a": {
+        "n_toa": 0,
+        "n_understat_added": 40,
+        "n_retimed_rounds": 4,
+        "n_events": 40,
+        "first": "2026-11-18T19:45:00+00:00",
+        "last": "2026-12-14T18:45:00+00:00"
+      },
+      "soccer_germany_bundesliga": {
+        "n_toa": 0,
+        "n_understat_added": 36,
+        "n_retimed_rounds": 4,
+        "n_events": 36,
+        "first": "2026-11-20T18:30:00+00:00",
+        "last": "2026-12-13T15:30:00+00:00"
+      },
+      "soccer_france_ligue_one": {
+        "n_toa": 0,
+        "n_understat_added": 36,
+        "n_retimed_rounds": 4,
+        "n_events": 36,
+        "first": "2026-11-20T18:00:00+00:00",
+        "last": "2026-12-13T19:45:00+00:00"
+      },
+      "soccer_uefa_champs_league": {
+        "n_observed": 0,
+        "n_estimated": 36,
+        "estimated_matchdays": [
+          "2026-12-01",
+          "2026-12-02",
+          "2026-12-15",
+          "2026-12-16"
+        ]
+      }
+    }
+  },
+  "retimed_rounds": {
+    "forward_28d": {
+      "soccer_epl": 0,
+      "soccer_spain_la_liga": 1,
+      "soccer_italy_serie_a": 2,
+      "soccer_germany_bundesliga": 1,
+      "soccer_france_ligue_one": 0
+    },
+    "no_break_28d": {
+      "soccer_epl": 4,
+      "soccer_spain_la_liga": 4,
+      "soccer_italy_serie_a": 4,
+      "soccer_germany_bundesliga": 4,
+      "soccer_france_ligue_one": 4
+    }
+  },
+  "assumptions": {
+    "t1h_window_hours": [
+      0.5,
+      2
+    ],
+    "t72_window_hours": [
+      64,
+      80
+    ],
+    "ucl_cadence_default_days": 14,
+    "retime_seed": "deterministic per (league, round date)",
+    "understat_utc_offset_minutes_applied": 0
+  },
+  "reviewer_expected_per_30d_no_break": {
+    "c_gated_6h_72h": "480-520",
+    "d_snapshots": "170-200"
+  }
+}

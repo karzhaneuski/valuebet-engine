@@ -501,10 +501,98 @@
       "Hull City"
     ]
   },
-  "followup_probes": {
-    "soccer_france_ligue_one": {
-      "http": 200,
-      "events": 18,
+  "followup": {
+    "events_call": {
+      "n_events": 21,
+      "credits_delta": 0,
+      "note": "must be 0 \u2014 /events is free"
+    },
+    "event_odds_probes": {
+      "btts": {
+        "credits": 1,
+        "event": {
+          "commence_time": "2026-10-23T19:00:00Z",
+          "home_team": "Ipswich Town",
+          "away_team": "Nottingham Forest",
+          "n_bookmakers": 5,
+          "bookmakers": [
+            "1xBet",
+            "Matchbook",
+            "MyBookie.ag",
+            "Pinnacle",
+            "William Hill"
+          ],
+          "markets_returned": [
+            "btts"
+          ],
+          "points": [],
+          "n_outcomes": 10
+        }
+      },
+      "correct_score": {
+        "credits": 1,
+        "event": {
+          "commence_time": "2026-10-23T19:00:00Z",
+          "home_team": "Ipswich Town",
+          "away_team": "Nottingham Forest",
+          "n_bookmakers": 3,
+          "bookmakers": [
+            "MyBookie.ag",
+            "Pinnacle",
+            "William Hill"
+          ],
+          "markets_returned": [
+            "correct_score"
+          ],
+          "points": [],
+          "n_outcomes": 101
+        }
+      },
+      "alternate_totals": {
+        "credits": 1,
+        "event": {
+          "commence_time": "2026-10-23T19:00:00Z",
+          "home_team": "Ipswich Town",
+          "away_team": "Nottingham Forest",
+          "n_bookmakers": 6,
+          "bookmakers": [
+            "1xBet",
+            "BetOnline.ag",
+            "Codere (IT)",
+            "Coolbet",
+            "Pinnacle",
+            "William Hill"
+          ],
+          "markets_returned": [
+            "alternate_totals"
+          ],
+          "points": [
+            0.5,
+            1.0,
+            1.5,
+            1.75,
+            2.0,
+            2.25,
+            2.5,
+            2.75,
+            3.0,
+            3.25,
+            3.5,
+            3.75,
+            4.0,
+            4.5,
+            5.0,
+            5.5,
+            6.5,
+            7.5
+          ],
+          "n_outcomes": 86
+        }
+      }
+    },
+    "ligue_one_totals": {
+      "credits": 1,
+      "n_events": 18,
       "totals_lines": [
         2.25,
         2.5,
@@ -513,12 +601,52 @@
         3.25,
         3.5
       ],
-      "note": "correct sport key for Ligue 1"
+      "n_bookmakers": 15
     },
-    "events_odds_endpoint": {
-      "http": 404,
-      "note": "/v4/sports/{sport}/events/odds does not exist; btts/correct_score INVALID_MARKET on the only odds endpoint -> not available on this free key"
+    "ucl_scores": {
+      "credits": 2,
+      "params": {
+        "daysFrom": 1,
+        "daysTo": 7
+      },
+      "n_events": 18,
+      "n_completed": 0,
+      "sample": []
     },
-    "free_quota_start": 500
+    "fortuna_check": {
+      "present_in_eu": false,
+      "matches": [],
+      "all_eu_bookmakers_seen": [
+        "1xBet",
+        "888sport",
+        "BetAnything",
+        "BetOnline.ag",
+        "Betclic (FR)",
+        "Betfair",
+        "Betsson",
+        "Codere (IT)",
+        "Coolbet",
+        "GTbets",
+        "LeoVegas (SE)",
+        "Marathon Bet",
+        "Matchbook",
+        "MyBookie.ag",
+        "Nordic Bet",
+        "PMU (FR)",
+        "Pinnacle",
+        "Tipico",
+        "Unibet (FR)",
+        "Unibet (NL)",
+        "Unibet (SE)",
+        "William Hill",
+        "Winamax (DE)",
+        "Winamax (FR)"
+      ]
+    }
+  },
+  "quota_state_after_followup": {
+    "x_requests_used": 18,
+    "credits_spent_this_run": 2,
+    "note": "monthly quota 500; reset date not verifiable via API (dashboard only)"
   }
 }
