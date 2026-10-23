@@ -79,7 +79,10 @@ Schedule role and time semantics (S5, evidence `odds_budget.json`
   `understat` in `odds_budget.json`).
 - **Timezone**: matched 94 TOA events to Understat entries (best-|Δ| within
   ±48 h, fuzzy team names): median Δ = 0 min, 86% exactly 0 — Understat naive
-  datetimes are effectively UTC. Non-zero deltas are postponed matches.
+  datetimes are effectively UTC. Nonzero deltas cluster at **−24…−30 h**
+  (10 cases): these are **placeholder days** (Understat places far rounds on
+  a default day while the real round spans Fri–Mon), not postponements;
+  small deltas (minutes…hours) are kickoff-time drift or short postponements.
 - **Authoritative kickoff times: TOA `/events`** (free). Postponement rules
   for phase 2: event disappeared from `/events` before start, or
   `commence_time` shifted > 15 min, or no result by KO+3 h → mark
@@ -153,10 +156,12 @@ Fortuna check (`check_odds_followup.py`) — all evidence in `odds_api.json`.
   Serie A {0.5–3.75}, Bundesliga {2.5–4.5}, Ligue 1 {2.25–3.5}, UCL
   {2.5–4.5}. Whole and quarter lines (2.0, 2.25, 2.75 …) occur — see the
   half-lines-only decision in decisions.md.
-- `/scores` (UCL): **2 credits** per 1–7-day call, forward window only
-  (18 upcoming UCL events, 0 completed at probe time). Whether a finished
-  matchday stays visible after it ends is **not yet verified** — needs a
-  probe after the Oct 27–29 matchday (open item, decisions.md).
+- `/scores` (UCL): **verified — completed matches ARE visible**. A
+  `daysFrom=3` call (no `daysTo`, 2 credits) returned 27 events including
+  **9 finished matches of the 2026-10-21 matchday with final scores**
+  (e.g. Como 4–1 Manchester United), plus the upcoming 03–04.11 matchday
+  (`followup.ucl_scores`). Polling rule (decisions.md): one call after each
+  matchday + one mid-week ≈ 8 credits/28d.
 - eu-region bookmakers observed: Pinnacle, William Hill, Betclic, Tipico,
   Betsson, 1xBet, Betfair (sportsbook), Matchbook, BetOnline.ag, MyBookie.ag,
   GTbets, Unibet/Winamax/PMU/Codere/LeoVegas/NordicBet variants, Coolbet,
@@ -197,11 +202,13 @@ Method: `<home team> injury news team news` on 3 real upcoming EPL fixtures,
 Method: model list + per-candidate `GET /models/{name}` metadata + probe
 calls + two structured-output tests (`check_gemini.py` → `gemini.json`).
 
-- 46 models with `generateContent` reachable; stable candidates (no
-  -latest/-preview/-experimental): `gemini-2.5-flash/pro`,
-  `gemini-3.5/3.6/3.7/3.8-flash`. Metadata (displayName, token limits,
-  description) recorded per candidate.
-- **Selection is explicit and availability-tested**: `gemini-2.5-pro` is
+- 46 models with `generateContent` reachable; stable candidates by NAME
+  pattern `gemini-<version>-flash|pro` (no -latest/-preview/-experimental —
+  stability is decided by the name; the metadata has no stability flag):
+  `gemini-2.5-flash/pro`, `gemini-3.5/3.6/3.7/3.8-flash`. Per-candidate
+  metadata recorded; note `version` of gemini-3.8-flash is **"3.0"**
+  (`stable_candidates`).
+- **Selection is explicit and availability-probed**: `gemini-2.5-pro` is
   listed by /models but **returns 404 "no longer available to new users"**
   on call — so reasoning_model falls back per the agreed chain to the same
   flash with an elevated thinking budget (4096).
@@ -221,6 +228,9 @@ calls + two structured-output tests (`check_gemini.py` → `gemini.json`).
 - Token usage incl. thinking (usageMetadata): extraction test 300 prompt /
   199 candidates / **433 thoughts**; reasoning-mode test 300/192/**518**.
   Cost estimates must use the totals incl. thoughts (~0.9–1.0k tokens/call).
+- Deferred to phase 6 (decisions.md S5): the real shadow-adjustment schema
+  test and the `thinkingLevel` parameter; every shadow record must store
+  model, version and thinking config.
 
 ## 7. Selection summary & quota budget
 
@@ -245,49 +255,73 @@ Cost model: 1 credit = 1 market × 1 region per `/odds` call; **independent of
 event count and horizon** (measured). `/events` and `/sports` are free.
 
 Two 28-day windows simulated minute-by-minute: **forward** (2026-10-23 →
-11-20, contains a 12-day international break) and **no-break**
-(2026-11-20 → 12-18, max league gap 6 days). Event times: real where TOA
-lists them; Understat placeholder rounds re-timed from the empirical
-(weekday, kickoff) distribution of real rounds ("retimed" — primary); the
-"asis" variant keeps placeholders (lower bound). UCL matchdays beyond TOA's
-horizon are cadence-based estimates (flagged).
+11-20, contains a 12-day international break, `windows.forward_28d`) and
+**no-break** (2026-11-20 → 12-18, `windows.no_break_28d`). Event times: real
+where TOA lists them; Understat placeholder rounds re-timed from the
+empirical (weekday, kickoff) distribution of real rounds ("retimed" —
+primary); the "asis" variant keeps placeholders (lower bound). **Honesty
+note: in the no-break window all kickoff times beyond TOA's horizon are
+synthetic (re-timed placeholders)** — only the fixture DATES are real.
+UCL matchdays beyond TOA's horizon are cadence-based estimates (flagged);
+estimated matchdays falling into international-break windows are dropped
+(`events_input.*.soccer_uefa_champs_league.estimated_matchdays_dropped_in_break`,
+e.g. 2026-11-17/18 inside the Nov 9–20 break, `international_break_windows`).
 
-Credits per 30 days (retimed / asis; no-break window):
+Credits per 30 days (retimed / asis; keys `policies.<name>.<window>.per_30d`):
 
 | Policy | no-break /30d | forward /30d | vs 500 quota |
 |---|---|---|---|
 | (a) flat 6h | 720 | 720 | ❌ 144% |
 | (b) flat 12h | 360 | 360 | ✅ |
-| (c) events-gated 6h/72h | **448** / 281 | 309 / 264 | ✅ tight |
-| (d) snapshots T-48/24/3, per-kickoff slot | **240** / 81 | 170 / 132 | ✅ |
-| (d-day) same, T-3 per match day | **215** / — | 153 | ✅ |
-| (e) (d) + T-1h | 364 / — | 283 | ✅ tight |
-| (f) (d) + T-72h | 303 / — | 212 | ✅ |
+| (c) events-gated 6h/72h | **442** / 275 | 285 / 240 | ✅ tight |
+| **(d) snapshots T-48/24/3, per-kickoff slot — DEFAULT** | **239** / 81 | 162 / 123 | ✅ |
+| (d-day) same, T-3 per match day — degradation only | 214 / — | 144 | ✅ |
+| (e) (d) + T-1h | 360 / — | 265 | ✅ tight |
+| (f) (d) + T-72h | 302 / — | 201 | ✅ |
 
 Corrections to the earlier draft: with a 72 h horizon the gate is open for
 most of the week (weekend rounds span Fri–Mon), not "≈3 days × 4 polls" —
 that arithmetic was wrong and is withdrawn.
 
-Comparison with the reviewer's expectations (c ≈480–520, d ≈170–200, no-break,
-/30d): (c) simulated 448 — 7% below the range: the gate is quantized to
-6-hour ticks and the specific Nov 20–Dec 18 fixture list has slightly fewer
-Friday/Monday matches than a "typical" week; per-sport totals are in
-`odds_budget.json`. (d) simulated 240 — 20% above the range: the narrow T-3
-window [1;4] h needs a fresh snapshot per kickoff slot (92 of the 240 are
-T-3); treating the whole match day as one slot gives 215, and day-granular
-T-48/T-24 as well approaches the reviewer's figure — the difference is
+Comparison with the reviewer's expectations (c ≈480–520, d ≈170–200,
+no-break, /30d): (c) simulated 442 — below the range: the gate is quantized
+to 6-hour ticks and the specific Nov 20–Dec 18 fixture list has slightly
+fewer Friday/Monday matches than a "typical" week; per-sport totals are in
+`policies.c_gated_6h_72h.no_break_28d.per_sport`. (d) simulated 239 — above
+the range: the narrow T-3 window [1;4] h needs a fresh snapshot per kickoff
+slot; treating the whole match day as one slot gives 214 — the difference is
 purely slot granularity, both variants are reported.
 
-Candidate extras (per-event markets): 1 snapshot at T-24 per candidate with
-markets `correct_score,btts` = 2 credits → 5–15 candidates/week ⇒
-**43–129/month** (alternate_totals would add 1 more credit per event).
-Chosen policy (decisions.md): (d-day) 215 + extras 43–129 ⇒ **258–344 per
-month** against a **hard stop at 450** of the 500 quota. `/scores` for UCL
-results, if adopted, adds 2 credits per 7-day call (~8–9/month).
+**Default policy (decisions.md, final round S1): (d) with per-kickoff-slot
+T-3** — day-slots would leave evening matches with a 6–9 h stale last
+snapshot (measured from `toa_events.json`, 2026-10-25: Barcelona–Real Madrid
+20:00 vs day-first-kickoff 13:00 → 8 h; Udinese–Milan 19:45 vs 11:30 →
+9 h 15 m), corrupting pseudo-CLV and post-T-2h-news freshness. Factual
+firing semantics of the simulation (lazy, last minute of each window):
+snapshots effectively land at **T-40 / T-18 / T-1**; phase 5 must fire no
+later than lower bound + 15 min with one retry.
 
-TOA quota state after all recon probes: **18 of 500 used, 482 remaining**
-(2026-10-23). Monthly reset date: **not checked** (dashboard-only; recorded
-as "не проверено" — decisions.md).
+Combined budget scenarios (`budget_scenarios`, policy (d) no-break base +
+per-candidate T-24 `correct_score,btts` (2 credits/event) + `/scores` 8/28d):
+
+| Scenario (per 30d) | key |
+|---|---|
+| 5 cand/week → **290** | `budget_scenarios.candidates_5_per_week.combined_t24_30d` |
+| 10 cand/week → **333** | `budget_scenarios.candidates_10_per_week.combined_t24_30d` |
+| 15 cand/week → **376** | `budget_scenarios.candidates_15_per_week.combined_t24_30d` |
+| 15 cand/week + optional T-1 → **440** | `budget_scenarios.candidates_15_per_week.combined_t24_t1_30d` |
+
+Degradation ladder and pacing rule at the 450 hard stop: decisions.md
+(final round S3). Candidate prefilter BEFORE buying event odds: decisions.md
+(final round S2).
+
+TOA quota state after all recon probes: **20 of 500 used, 480 remaining**
+(2026-10-23). Breakdown by run: 9 (`check_odds_api.py` probes) + 3 (inline
+Ligue 1 key probing, incl. one request whose response failed to parse
+client-side and was repeated) + 4 (`check_odds_followup.py` first run:
+btts/correct_score/alternate_totals/Ligue 1) + 2 (`/scores` daysFrom=1..7
+probe) + 2 (`/scores` daysFrom=3 probe, final round). Monthly reset date:
+**not checked** (dashboard-only; recorded as "не проверено" — decisions.md).
 
 ### Other quotas
 
@@ -303,9 +337,9 @@ as "не проверено" — decisions.md).
 
 ### Honest bottom line
 
-Free-tier plan is viable: totals odds via the snapshot policy (d-day),
-exact-score/BTTS/alternate-totals odds per candidate from the event endpoint
-(a review-driven discovery that reopens the SPEC's exact-score market beyond
-manual input), final edge against Fortuna via manual input (Fortuna absent
-from TOA eu). Open items: UCL `/scores` post-matchday visibility; TOA quota
-reset date.
+Free-tier plan is viable: totals odds via the snapshot policy (d, per-slot
+T-3), exact-score/BTTS/alternate-totals odds per candidate from the event
+endpoint after a prefilter (a review-driven discovery that reopens the
+SPEC's exact-score market beyond manual input), UCL results from `/scores`
+(verified), final edge against Fortuna via manual input (Fortuna absent
+from TOA eu). Open items: TOA quota reset date (dashboard-only).
