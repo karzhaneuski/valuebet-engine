@@ -505,7 +505,7 @@
     "events_call": {
       "n_events": 21,
       "credits_delta": 0,
-      "note": "must be 0 \u2014 /events is free"
+      "note": "must be 0 \u2014 /events is free (delta measured against a /sports baseline)"
     },
     "event_odds_probes": {
       "btts": {
@@ -606,12 +606,62 @@
     "ucl_scores": {
       "credits": 2,
       "params": {
-        "daysFrom": 1,
-        "daysTo": 7
+        "daysFrom": 3
       },
-      "n_events": 18,
-      "n_completed": 0,
-      "sample": []
+      "n_events": 27,
+      "n_completed": 9,
+      "window": [
+        "2026-10-21",
+        "2026-11-03",
+        "2026-11-04"
+      ],
+      "sample_completed": [
+        {
+          "home": "Como",
+          "away": "Manchester United",
+          "commence": "2026-10-21T16:45:00Z",
+          "scores": [
+            {
+              "name": "Como",
+              "score": "4"
+            },
+            {
+              "name": "Manchester United",
+              "score": "1"
+            }
+          ]
+        },
+        {
+          "home": "Lille",
+          "away": "Galatasaray",
+          "commence": "2026-10-21T16:45:00Z",
+          "scores": [
+            {
+              "name": "Lille",
+              "score": "2"
+            },
+            {
+              "name": "Galatasaray",
+              "score": "4"
+            }
+          ]
+        },
+        {
+          "home": "Bayern Munich",
+          "away": "Arsenal",
+          "commence": "2026-10-21T19:00:00Z",
+          "scores": [
+            {
+              "name": "Bayern Munich",
+              "score": "2"
+            },
+            {
+              "name": "Arsenal",
+              "score": "2"
+            }
+          ]
+        }
+      ]
     },
     "fortuna_check": {
       "present_in_eu": false,
@@ -645,7 +695,7 @@
     }
   },
   "quota_state_after_followup": {
-    "x_requests_used": 18,
+    "x_requests_used": 20,
     "credits_spent_this_run": 2,
     "note": "monthly quota 500; reset date not verifiable via API (dashboard only)"
   }

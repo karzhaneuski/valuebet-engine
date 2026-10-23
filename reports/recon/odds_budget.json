@@ -1,5 +1,5 @@
 {
-  "run_date_utc": "2026-10-23T18:00:00+00:00",
+  "run_date_utc": "2026-10-23T19:00:00+00:00",
   "cost_model": {
     "odds_call_credits": 1,
     "markets": "totals",
@@ -53,7 +53,7 @@
       45,
       180
     ],
-    "interpretation": "Understat naive datetimes are UTC when this offset is 0; nonzero deltas are expected for postponed matches matched to their rescheduled slot",
+    "interpretation": "Understat naive datetimes are UTC when this offset is 0. Nonzero deltas cluster at -24..-30 h (-1425..-1785 min) \u2014 these are placeholder DAYS (Understat places far rounds on a default day while the real round spans Fri-Mon), not postponements; small deltas (minutes..hours) are kickoff-time drift or short postponements.",
     "team_name_pairs": [
       [
         "1. FC K\u00f6ln",
@@ -387,17 +387,31 @@
   },
   "windows": {
     "forward_28d": {
-      "start": "2026-10-23T18:00:00+00:00",
-      "end": "2026-11-20T18:00:00+00:00",
+      "start": "2026-10-23T19:00:00+00:00",
+      "end": "2026-11-20T19:00:00+00:00",
       "league_max_gap_days": 12,
       "contains_intl_break": true
     },
     "no_break_28d": {
-      "start": "2026-11-20T18:00:00+00:00",
-      "end": "2026-12-18T18:00:00+00:00",
+      "start": "2026-11-20T19:00:00+00:00",
+      "end": "2026-12-18T19:00:00+00:00",
       "contains_intl_break": false
     }
   },
+  "international_break_windows": [
+    [
+      "2026-09-21",
+      "2026-10-08"
+    ],
+    [
+      "2026-11-09",
+      "2026-11-20"
+    ],
+    [
+      "2027-03-22",
+      "2027-04-02"
+    ]
+  ],
   "time_variants": {
     "retimed": "placeholder rounds re-timed from the empirical (weekday, kickoff) distribution of real rounds (primary; realistic Fri-Mon spread)",
     "asis": "Understat placeholder times left as-is (lower bound)"
@@ -486,66 +500,66 @@
     "c_gated_6h_72h": {
       "forward_28d": {
         "per_sport": {
-          "soccer_epl": 29,
-          "soccer_france_ligue_one": 47,
-          "soccer_germany_bundesliga": 46,
-          "soccer_italy_serie_a": 68,
-          "soccer_spain_la_liga": 64,
-          "soccer_uefa_champs_league": 34
+          "soccer_epl": 28,
+          "soccer_france_ligue_one": 46,
+          "soccer_germany_bundesliga": 45,
+          "soccer_italy_serie_a": 67,
+          "soccer_spain_la_liga": 63,
+          "soccer_uefa_champs_league": 17
         },
         "per_week": [
           112,
-          121,
-          38,
-          17
+          120,
+          34,
+          0
         ],
-        "total_28d": 288,
-        "per_30d": 309,
+        "total_28d": 266,
+        "per_30d": 285,
         "events_within_56h_of_window_start": 0
       },
       "no_break_28d": {
         "per_sport": {
-          "soccer_epl": 65,
-          "soccer_france_ligue_one": 66,
-          "soccer_germany_bundesliga": 62,
-          "soccer_italy_serie_a": 94,
-          "soccer_spain_la_liga": 97,
+          "soccer_epl": 64,
+          "soccer_france_ligue_one": 65,
+          "soccer_germany_bundesliga": 61,
+          "soccer_italy_serie_a": 93,
+          "soccer_spain_la_liga": 96,
           "soccer_uefa_champs_league": 34
         },
         "per_week": [
           109,
           131,
           105,
-          73
+          68
         ],
-        "total_28d": 418,
-        "per_30d": 448,
+        "total_28d": 413,
+        "per_30d": 442,
         "events_within_56h_of_window_start": 0
       }
     },
     "d_snapshots": {
       "forward_28d": {
         "per_sport": {
-          "soccer_epl": 17,
+          "soccer_epl": 16,
           "soccer_france_ligue_one": 23,
           "soccer_germany_bundesliga": 23,
           "soccer_italy_serie_a": 43,
-          "soccer_spain_la_liga": 41,
-          "soccer_uefa_champs_league": 12
+          "soccer_spain_la_liga": 40,
+          "soccer_uefa_champs_league": 6
         },
         "per_week": [
           59,
           67,
-          27,
-          6
+          25,
+          0
         ],
-        "total_28d": 159,
-        "per_30d": 170,
-        "events_within_56h_of_window_start": 46,
+        "total_28d": 151,
+        "per_30d": 162,
+        "events_within_56h_of_window_start": 41,
         "per_tier": {
-          "24": 49,
-          "3": 66,
-          "48": 44
+          "24": 47,
+          "3": 62,
+          "48": 42
         },
         "firing": "lazy (last minute of tolerance window)"
       },
@@ -555,21 +569,21 @@
           "soccer_france_ligue_one": 37,
           "soccer_germany_bundesliga": 31,
           "soccer_italy_serie_a": 52,
-          "soccer_spain_la_liga": 61,
+          "soccer_spain_la_liga": 60,
           "soccer_uefa_champs_league": 12
         },
         "per_week": [
           53,
-          70,
-          54,
-          47
+          72,
+          52,
+          46
         ],
-        "total_28d": 224,
-        "per_30d": 240,
-        "events_within_56h_of_window_start": 31,
+        "total_28d": 223,
+        "per_30d": 239,
+        "events_within_56h_of_window_start": 26,
         "per_tier": {
           "24": 68,
-          "3": 92,
+          "3": 91,
           "48": 64
         },
         "firing": "lazy (last minute of tolerance window)"
@@ -578,27 +592,27 @@
     "e_snapshots_plus_t1h": {
       "forward_28d": {
         "per_sport": {
-          "soccer_epl": 29,
-          "soccer_france_ligue_one": 37,
-          "soccer_germany_bundesliga": 36,
-          "soccer_italy_serie_a": 73,
-          "soccer_spain_la_liga": 69,
-          "soccer_uefa_champs_league": 20
+          "soccer_epl": 27,
+          "soccer_france_ligue_one": 36,
+          "soccer_germany_bundesliga": 35,
+          "soccer_italy_serie_a": 72,
+          "soccer_spain_la_liga": 67,
+          "soccer_uefa_champs_league": 10
         },
         "per_week": [
-          100,
-          107,
-          47,
-          10
+          95,
+          110,
+          42,
+          0
         ],
-        "total_28d": 264,
-        "per_30d": 283,
-        "events_within_56h_of_window_start": 46,
+        "total_28d": 247,
+        "per_30d": 265,
+        "events_within_56h_of_window_start": 41,
         "per_tier": {
-          "1": 105,
-          "24": 49,
-          "3": 66,
-          "48": 44
+          "1": 96,
+          "24": 47,
+          "3": 62,
+          "48": 42
         },
         "firing": "lazy (last minute of tolerance window)"
       },
@@ -606,24 +620,24 @@
         "per_sport": {
           "soccer_epl": 47,
           "soccer_france_ligue_one": 57,
-          "soccer_germany_bundesliga": 45,
-          "soccer_italy_serie_a": 80,
-          "soccer_spain_la_liga": 91,
+          "soccer_germany_bundesliga": 44,
+          "soccer_italy_serie_a": 79,
+          "soccer_spain_la_liga": 89,
           "soccer_uefa_champs_league": 20
         },
         "per_week": [
           76,
-          104,
-          85,
-          75
+          107,
+          80,
+          73
         ],
-        "total_28d": 340,
-        "per_30d": 364,
-        "events_within_56h_of_window_start": 31,
+        "total_28d": 336,
+        "per_30d": 360,
+        "events_within_56h_of_window_start": 26,
         "per_tier": {
-          "1": 116,
+          "1": 113,
           "24": 68,
-          "3": 92,
+          "3": 91,
           "48": 64
         },
         "firing": "lazy (last minute of tolerance window)"
@@ -632,27 +646,27 @@
     "f_snapshots_plus_t72": {
       "forward_28d": {
         "per_sport": {
-          "soccer_epl": 20,
+          "soccer_epl": 19,
           "soccer_france_ligue_one": 28,
           "soccer_germany_bundesliga": 29,
           "soccer_italy_serie_a": 54,
-          "soccer_spain_la_liga": 51,
-          "soccer_uefa_champs_league": 16
+          "soccer_spain_la_liga": 50,
+          "soccer_uefa_champs_league": 8
         },
         "per_week": [
           77,
           84,
-          29,
-          8
+          27,
+          0
         ],
-        "total_28d": 198,
-        "per_30d": 212,
-        "events_within_56h_of_window_start": 46,
+        "total_28d": 188,
+        "per_30d": 201,
+        "events_within_56h_of_window_start": 41,
         "per_tier": {
-          "24": 49,
-          "3": 66,
-          "48": 44,
-          "72": 39
+          "24": 47,
+          "3": 62,
+          "48": 42,
+          "72": 37
         },
         "firing": "lazy (last minute of tolerance window)"
       },
@@ -662,21 +676,21 @@
           "soccer_france_ligue_one": 45,
           "soccer_germany_bundesliga": 39,
           "soccer_italy_serie_a": 66,
-          "soccer_spain_la_liga": 78,
+          "soccer_spain_la_liga": 77,
           "soccer_uefa_champs_league": 16
         },
         "per_week": [
           70,
-          91,
-          70,
-          52
+          93,
+          68,
+          51
         ],
-        "total_28d": 283,
-        "per_30d": 303,
-        "events_within_56h_of_window_start": 31,
+        "total_28d": 282,
+        "per_30d": 302,
+        "events_within_56h_of_window_start": 26,
         "per_tier": {
           "24": 68,
-          "3": 92,
+          "3": 91,
           "48": 64,
           "72": 59
         },
@@ -686,26 +700,26 @@
     "d_snapshots_day_slots": {
       "forward_28d": {
         "per_sport": {
-          "soccer_epl": 14,
+          "soccer_epl": 13,
           "soccer_france_ligue_one": 20,
           "soccer_germany_bundesliga": 23,
           "soccer_italy_serie_a": 38,
-          "soccer_spain_la_liga": 36,
-          "soccer_uefa_champs_league": 12
+          "soccer_spain_la_liga": 34,
+          "soccer_uefa_champs_league": 6
         },
         "per_week": [
-          53,
+          52,
           60,
-          24,
-          6
+          22,
+          0
         ],
-        "total_28d": 143,
-        "per_30d": 153,
-        "events_within_56h_of_window_start": 46,
+        "total_28d": 134,
+        "per_30d": 144,
+        "events_within_56h_of_window_start": 41,
         "per_tier": {
-          "24": 48,
-          "3": 51,
-          "48": 44
+          "24": 45,
+          "3": 47,
+          "48": 42
         },
         "firing": "lazy (last minute of tolerance window)"
       },
@@ -715,21 +729,21 @@
           "soccer_france_ligue_one": 29,
           "soccer_germany_bundesliga": 29,
           "soccer_italy_serie_a": 47,
-          "soccer_spain_la_liga": 57,
+          "soccer_spain_la_liga": 56,
           "soccer_uefa_champs_league": 12
         },
         "per_week": [
           50,
-          62,
-          48,
-          41
+          64,
+          46,
+          40
         ],
-        "total_28d": 201,
-        "per_30d": 215,
-        "events_within_56h_of_window_start": 31,
+        "total_28d": 200,
+        "per_30d": 214,
+        "events_within_56h_of_window_start": 26,
         "per_tier": {
           "24": 68,
-          "3": 69,
+          "3": 68,
           "48": 64
         },
         "firing": "lazy (last minute of tolerance window)"
@@ -740,66 +754,66 @@
     "c_gated_6h_72h": {
       "forward_28d": {
         "per_sport": {
-          "soccer_epl": 29,
-          "soccer_france_ligue_one": 47,
-          "soccer_germany_bundesliga": 39,
-          "soccer_italy_serie_a": 48,
-          "soccer_spain_la_liga": 49,
-          "soccer_uefa_champs_league": 34
+          "soccer_epl": 28,
+          "soccer_france_ligue_one": 46,
+          "soccer_germany_bundesliga": 38,
+          "soccer_italy_serie_a": 47,
+          "soccer_spain_la_liga": 48,
+          "soccer_uefa_champs_league": 17
         },
         "per_week": [
           112,
-          92,
-          25,
-          17
+          91,
+          21,
+          0
         ],
-        "total_28d": 246,
-        "per_30d": 264,
+        "total_28d": 224,
+        "per_30d": 240,
         "events_within_56h_of_window_start": 0
       },
       "no_break_28d": {
         "per_sport": {
-          "soccer_epl": 55,
-          "soccer_france_ligue_one": 45,
-          "soccer_germany_bundesliga": 40,
-          "soccer_italy_serie_a": 44,
-          "soccer_spain_la_liga": 44,
+          "soccer_epl": 54,
+          "soccer_france_ligue_one": 44,
+          "soccer_germany_bundesliga": 39,
+          "soccer_italy_serie_a": 43,
+          "soccer_spain_la_liga": 43,
           "soccer_uefa_champs_league": 34
         },
         "per_week": [
           64,
           88,
           60,
-          50
+          45
         ],
-        "total_28d": 262,
-        "per_30d": 281,
+        "total_28d": 257,
+        "per_30d": 275,
         "events_within_56h_of_window_start": 0
       }
     },
     "d_snapshots": {
       "forward_28d": {
         "per_sport": {
-          "soccer_epl": 17,
+          "soccer_epl": 16,
           "soccer_france_ligue_one": 23,
           "soccer_germany_bundesliga": 17,
           "soccer_italy_serie_a": 26,
-          "soccer_spain_la_liga": 28,
-          "soccer_uefa_champs_league": 12
+          "soccer_spain_la_liga": 27,
+          "soccer_uefa_champs_league": 6
         },
         "per_week": [
           59,
-          47,
+          45,
           11,
-          6
+          0
         ],
-        "total_28d": 123,
-        "per_30d": 132,
-        "events_within_56h_of_window_start": 46,
+        "total_28d": 115,
+        "per_30d": 123,
+        "events_within_56h_of_window_start": 41,
         "per_tier": {
-          "24": 38,
-          "3": 52,
-          "48": 33
+          "24": 36,
+          "3": 48,
+          "48": 31
         },
         "firing": "lazy (last minute of tolerance window)"
       },
@@ -849,35 +863,37 @@
         "last": "2026-11-09T19:00:00+00:00"
       },
       "soccer_italy_serie_a": {
-        "n_toa": 20,
+        "n_toa": 19,
         "n_understat_added": 20,
         "n_retimed_rounds": 2,
-        "n_events": 40,
-        "first": "2026-10-23T18:45:00+00:00",
+        "n_events": 39,
+        "first": "2026-10-24T13:00:00+00:00",
         "last": "2026-11-09T16:30:00+00:00"
       },
       "soccer_germany_bundesliga": {
-        "n_toa": 18,
+        "n_toa": 17,
         "n_understat_added": 9,
         "n_retimed_rounds": 1,
-        "n_events": 27,
-        "first": "2026-10-23T18:30:00+00:00",
+        "n_events": 26,
+        "first": "2026-10-24T13:30:00+00:00",
         "last": "2026-11-08T13:30:00+00:00"
       },
       "soccer_france_ligue_one": {
-        "n_toa": 18,
+        "n_toa": 17,
         "n_understat_added": 9,
         "n_retimed_rounds": 0,
-        "n_events": 27,
-        "first": "2026-10-23T18:45:00+00:00",
+        "n_events": 26,
+        "first": "2026-10-24T18:45:00+00:00",
         "last": "2026-11-07T19:45:00+00:00"
       },
       "soccer_uefa_champs_league": {
         "n_observed": 18,
-        "n_estimated": 36,
+        "n_estimated": 18,
         "estimated_matchdays": [
           "2026-11-03",
-          "2026-11-04",
+          "2026-11-04"
+        ],
+        "estimated_matchdays_dropped_in_break": [
           "2026-11-17",
           "2026-11-18"
         ]
@@ -932,7 +948,8 @@
           "2026-12-02",
           "2026-12-15",
           "2026-12-16"
-        ]
+        ],
+        "estimated_matchdays_dropped_in_break": []
       }
     }
   },
@@ -968,5 +985,45 @@
   "reviewer_expected_per_30d_no_break": {
     "c_gated_6h_72h": "480-520",
     "d_snapshots": "170-200"
+  },
+  "budget_scenarios": {
+    "base_policy": "d_snapshots (T-48/24/3 per kickoff slot), no-break 28d",
+    "base_28d": 223,
+    "per_event": {
+      "t24_correct_score_btts_credits": 2,
+      "t1_bet_market_credits": 1
+    },
+    "scores": {
+      "credits_per_call": 2,
+      "calls_per_28d": 4,
+      "total_28d": 8
+    },
+    "candidates_5_per_week": {
+      "events_28d": 20,
+      "extras_t24_28d": 40,
+      "extras_t24_plus_t1_28d": 60,
+      "combined_t24_28d": 271,
+      "combined_t24_30d": 290,
+      "combined_t24_t1_28d": 291,
+      "combined_t24_t1_30d": 312
+    },
+    "candidates_10_per_week": {
+      "events_28d": 40,
+      "extras_t24_28d": 80,
+      "extras_t24_plus_t1_28d": 120,
+      "combined_t24_28d": 311,
+      "combined_t24_30d": 333,
+      "combined_t24_t1_28d": 351,
+      "combined_t24_t1_30d": 376
+    },
+    "candidates_15_per_week": {
+      "events_28d": 60,
+      "extras_t24_28d": 120,
+      "extras_t24_plus_t1_28d": 180,
+      "combined_t24_28d": 351,
+      "combined_t24_30d": 376,
+      "combined_t24_t1_28d": 411,
+      "combined_t24_t1_30d": 440
+    }
   }
 }

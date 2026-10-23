@@ -1,16 +1,17 @@
-"""Recon follow-up (review B2/S4/S10): The Odds API — event-level markets,
-Ligue 1 totals under the correct key, UCL /scores cost, Fortuna presence.
+"""Recon follow-up (reviews B2/S4/S10 + final-round S4): The Odds API —
+event-level markets, Ligue 1 totals under the correct key, UCL /scores
+behaviour, Fortuna presence.
 
 Idempotent: probes whose results already exist in odds_api.json are skipped
 (pass --redo to force re-spending credits). Replaces the hand-written
-`followup_probes` block (this script performs the removal) and migrates
-bodies that an earlier version mislabeled as "error".
+`followup_probes` block (this script performs the removal).
 
-TOA credit budget (fresh full run): <= 5
-  - /events                          : 0 credits (verified by delta)
-  - event odds x3 markets            : 3 credits (1 each, regions=eu)
-  - Ligue 1 totals                   : 1 credit
-  - UCL /scores                      : measured (expected 0)
+Credit budget (fresh full run): 4-6
+  - /sports and /events               : 0 credits (baseline via /sports, then
+                                         /events delta genuinely measured)
+  - event odds x3 markets             : 3 credits (1 each, regions=eu)
+  - Ligue 1 totals                    : 1 credit
+  - UCL /scores daysFrom=3            : 2 credits (measured earlier the same)
 """
 
 from __future__ import annotations
@@ -108,14 +109,17 @@ def main() -> None:
                     f"remaining={resp.headers.get('x-requests-remaining')}"))
         return body, delta
 
-    # 0. Free /events call: calibration that its delta is 0 + an event id
+    # 0. Baseline usage via free /sports, then a /events call whose delta
+    #    is genuinely measured against that baseline (must be 0)
     if not only_scores:
+        get("/sports", {}, "sports list (usage baseline)")
         events, delta = get("/sports/soccer_epl/events", {"regions": "eu"},
                             "epl events (delta calibration)")
         followup["events_call"] = {
             "n_events": len(events) if isinstance(events, list) else None,
             "credits_delta": delta,
-            "note": "must be 0 — /events is free",
+            "note": "must be 0 — /events is free (delta measured against a "
+                    "/sports baseline)",
         }
         event_id = events[0]["id"] if events else None
         existing = followup.get("event_odds_probes", {})
@@ -165,17 +169,22 @@ def main() -> None:
         else:
             print("ligue one totals: already probed, skipping")
 
-    # 3. UCL /scores (daysFrom must be >= 1; earlier run failed with 0)
+    # 3. UCL /scores: daysFrom=3 without daysTo — does the window expose
+    #    recently COMPLETED matches (results after matchdays)?
     body, credits = get("/sports/soccer_uefa_champs_league/scores",
-                        {"daysFrom": 1, "daysTo": 7}, "ucl scores")
-    entry = {"credits": credits, "params": {"daysFrom": 1, "daysTo": 7}}
+                        {"daysFrom": 3}, "ucl scores daysFrom=3")
+    entry = {"credits": credits, "params": {"daysFrom": 3}}
     if isinstance(body, list):
         completed = [e for e in body if e.get("completed")]
         entry.update({
             "n_events": len(body),
             "n_completed": len(completed),
-            "sample": [{"home": e.get("home_team"), "away": e.get("away_team"),
-                        "scores": e.get("scores")} for e in completed[:3]],
+            "window": sorted({(e.get("commence_time") or "")[:10]
+                              for e in body}),
+            "sample_completed": [
+                {"home": e.get("home_team"), "away": e.get("away_team"),
+                 "commence": e.get("commence_time"), "scores": e.get("scores")}
+                for e in completed[:3]],
         })
     elif isinstance(body, dict):
         entry["error"] = body

@@ -53,7 +53,7 @@ def tavily_search(session: requests.Session, query: str) -> dict:
         if resp.status_code in (401, 403):
             # fall back to the legacy body auth
             resp = session.post(
-                "api.tavily.com/search".join(["https://", ""]),
+                "https://api.tavily.com/search",
                 json={**body, "api_key": key},
                 timeout=30,
             )

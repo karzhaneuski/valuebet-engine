@@ -156,9 +156,13 @@ def align(understat: dict[str, list[dict]], toa: dict[str, list[dict]]) -> dict:
         "delta_min": deltas[0] if deltas else None,
         "delta_max": deltas[-1] if deltas else None,
         "nonzero_deltas": [d for d in deltas if d != 0],
-        "interpretation": "Understat naive datetimes are UTC when this offset "
-                          "is 0; nonzero deltas are expected for postponed "
-                          "matches matched to their rescheduled slot",
+        "interpretation": "Understat naive datetimes are UTC when this "
+                          "offset is 0. Nonzero deltas cluster at -24..-30 h "
+                          "(-1425..-1785 min) — these are placeholder DAYS "
+                          "(Understat places far rounds on a default day "
+                          "while the real round spans Fri-Mon), not "
+                          "postponements; small deltas (minutes..hours) are "
+                          "kickoff-time drift or short postponements.",
         "team_name_pairs": sorted({(p["toa_home"], p["understat_home"])
                                    for p in pairs}),
         "pairs": pairs,
@@ -273,12 +277,31 @@ def merged_events(sport: str, league: str | None, toa_events: list[dict],
     return events, stats
 
 
-def estimate_ucl(ucl_events: list[dict], win_start: datetime,
-                 win_end: datetime) -> tuple[list[dict], list[str]]:
-    """Extend observed UCL matchday cadence to cover the window (flagged)."""
+def break_windows(understat: dict[str, list[dict]]) -> list[tuple[date, date]]:
+    """International-break windows: gaps of >= BREAK_GAP_DAYS days without any
+    top-5 league match anywhere in the season calendar (open interval)."""
+    days = league_match_days(
+        understat,
+        datetime(2000, 1, 1), datetime(2100, 1, 1))
+    windows = []
+    for a, b in zip(days, days[1:]):
+        if (b - a).days >= BREAK_GAP_DAYS:
+            windows.append((a + timedelta(days=1), b - timedelta(days=1)))
+    return windows
+
+
+def estimate_ucl(ucl_events: list[dict], win_start: datetime, win_end: datetime,
+                 breaks: list[tuple[date, date]]) -> tuple[list[dict], list[str],
+                                                           list[str]]:
+    """Extend observed UCL matchday cadence to cover the window (flagged).
+
+    Estimated matchdays that would land inside an international-break window
+    are dropped: no UCL is played during FIFA breaks (the cadence extension
+    is an estimate anyway; dropped dates are reported).
+    """
     days = sorted({e["start"].date() for e in ucl_events})
     if not days:
-        return [], []
+        return [], [], []
     cadence = 14  # league-phase matchday every ~2 weeks (assumed default)
     if len(days) >= 2:
         gaps = [(b - a).days for a, b in zip(days, days[1:])
@@ -286,21 +309,33 @@ def estimate_ucl(ucl_events: list[dict], win_start: datetime,
         if gaps:
             cadence = round(sum(gaps) / len(gaps))
     est_events: list[dict] = []
+    dropped: set[str] = set()
+
+    def in_break(d: date) -> bool:
+        return any(bs <= d <= be for bs, be in breaks)
+
     for e in ucl_events:
         k = 0
         while (s := e["start"] + timedelta(days=cadence * k)) <= win_end:
             if s >= win_start:
-                est_events.append({**e, "id": f"ucl-est:{e['id']}:{k}",
-                                   "start": s, "estimated": True})
+                if in_break(s.date()):
+                    dropped.add(str(s.date()))
+                else:
+                    est_events.append({**e, "id": f"ucl-est:{e['id']}:{k}",
+                                       "start": s, "estimated": True})
             k += 1
         k = -1
         while (s := e["start"] + timedelta(days=cadence * k)) >= win_start:
             if s <= win_end:
-                est_events.append({**e, "id": f"ucl-est:{e['id']}:{k}",
-                                   "start": s, "estimated": True})
+                if in_break(s.date()):
+                    dropped.add(str(s.date()))
+                else:
+                    est_events.append({**e, "id": f"ucl-est:{e['id']}:{k}",
+                                       "start": s, "estimated": True})
             k -= 1
     est_events.sort(key=lambda e: e["start"])
-    return est_events, sorted({str(e["start"].date()) for e in est_events})
+    return (est_events, sorted({str(e["start"].date()) for e in est_events}),
+            sorted(dropped))
 
 
 # --- window helpers ---------------------------------------------------------
@@ -452,6 +487,8 @@ def main() -> None:
         "end": (nb_start + timedelta(days=WINDOW_DAYS)).isoformat(),
         "contains_intl_break": False}
 
+    breaks = break_windows(understat)
+
     report: dict = {
         "run_date_utc": now.isoformat(),
         "cost_model": {
@@ -462,6 +499,7 @@ def main() -> None:
         "understat_alignment": {k: v for k, v in alignment.items()
                                 if k != "pairs"},
         "windows": windows,
+        "international_break_windows": [[str(a), str(b)] for a, b in breaks],
         "time_variants": {
             "retimed": "placeholder rounds re-timed from the empirical "
                        "(weekday, kickoff) distribution of real rounds "
@@ -489,14 +527,17 @@ def main() -> None:
                 observed = [dict(e, estimated=False)
                             for e in toa_events.get(sport, [])
                             if ws <= e["start"] <= we]
-                est, est_days = estimate_ucl(
-                    [dict(e) for e in toa_events.get(sport, [])], ws, we)
+                est, est_days, dropped_days = estimate_ucl(
+                    [dict(e) for e in toa_events.get(sport, [])], ws, we,
+                    breaks)
                 evs = sorted(observed + est, key=lambda e: e["start"])
                 merged_retimed[sport] = evs
                 merged_asis[sport] = evs  # TOA times; no placeholders here
                 inputs[sport] = {"n_observed": len(observed),
                                  "n_estimated": len(est),
-                                 "estimated_matchdays": est_days}
+                                 "estimated_matchdays": est_days,
+                                 "estimated_matchdays_dropped_in_break":
+                                     dropped_days}
             else:
                 evs, stats = merged_events(sport, league,
                                            toa_events.get(sport, []),
@@ -526,6 +567,37 @@ def main() -> None:
                 a = simulate(policy, merged_asis, ws, we)
                 report["policies_asis"].setdefault(policy, {})[win_name] = a
                 print(f"  (asis) 28d={a['total_28d']} 30d={a['per_30d']}")
+
+    # S6: combined budget scenarios — policy + per-candidate event markets
+    # + /scores polling. Arithmetic from the measured cost model; per 28 days.
+    base = report["policies"]["d_snapshots"]["no_break_28d"]["total_28d"]
+    scores_28d = 2 * 4  # 2 credits per /scores call, ~twice a week
+    scenarios: dict = {
+        "base_policy": "d_snapshots (T-48/24/3 per kickoff slot), no-break 28d",
+        "base_28d": base,
+        "per_event": {"t24_correct_score_btts_credits": 2,
+                      "t1_bet_market_credits": 1},
+        "scores": {"credits_per_call": 2, "calls_per_28d": 4,
+                   "total_28d": scores_28d},
+    }
+    for cand in (5, 10, 15):
+        events = cand * 4  # candidates per 28 days
+        t24 = events * 2
+        t1 = events
+        scenarios[f"candidates_{cand}_per_week"] = {
+            "events_28d": events,
+            "extras_t24_28d": t24,
+            "extras_t24_plus_t1_28d": t24 + t1,
+            "combined_t24_28d": base + t24 + scores_28d,
+            "combined_t24_30d": round((base + t24 + scores_28d) * 30 / 28),
+            "combined_t24_t1_28d": base + t24 + t1 + scores_28d,
+            "combined_t24_t1_30d": round(
+                (base + t24 + t1 + scores_28d) * 30 / 28),
+        }
+    report["budget_scenarios"] = scenarios
+    print("budget_scenarios:",
+          {k: v.get("combined_t24_30d")
+           for k, v in scenarios.items() if isinstance(v, dict)})
 
     OUT.write_text(json.dumps(report, indent=2, default=str))
     print(f"saved {OUT} and {EVENTS_OUT}")
