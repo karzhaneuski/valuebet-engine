@@ -182,6 +182,10 @@ class OddsSnapshot(Base):
     # phase-5 firing discipline (docs/decisions.md, final round S1)
     planned_offset_min: Mapped[int | None] = mapped_column(Integer)
     actual_offset_min: Mapped[int | None] = mapped_column(Integer)
+    # true when the degradation ladder downgraded T-3 from per-kickoff-slot
+    # to per-day (docs/decisions.md, final round S3)
+    t3_day_degraded: Mapped[bool] = mapped_column(Boolean, default=False,
+                                                  nullable=False)
     source: Mapped[str] = mapped_column(sa_enum(*ODD_SOURCES, name="odd_source"))
     captured_at_utc: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
 

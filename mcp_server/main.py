@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from core.logging import configure, get_logger
 
 configure()
-logger = get_logger("mcp")
+logger = get_logger("mcp_server")
 
 app = FastAPI(title="ValueBet Engine MCP", version="0.1.0")
 

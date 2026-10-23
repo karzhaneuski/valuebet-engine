@@ -249,3 +249,19 @@ def test_shadow_llm_requires_llm_call(db_url) -> None:
         created_at_utc=dt.datetime(2026, 10, 24, 9, 0, tzinfo=dt.UTC)))
     session.commit()
     session.close()
+
+
+def test_snapshot_t3_day_degraded_default_false(db_url) -> None:
+    with session_scope(db_url) as s:
+        s.add(OddsSnapshot(
+            toa_sport_key=None, toa_event_id=None, bookmaker="fortuna",
+            market="totals", line=Decimal("2.5"), outcome="Under",
+            price=Decimal("2.1"), tier="manual", source="manual_fortuna",
+            captured_at_utc=dt.datetime(2026, 10, 24, 9, 0, tzinfo=dt.UTC)))
+    with session_scope(db_url) as s:
+        snap = s.scalars(select(OddsSnapshot)).one()
+        assert snap.t3_day_degraded is False
+    col = {c["name"]: c for c in
+           inspect(get_engine(db_url)).get_columns("odds_snapshots")}[
+        "t3_day_degraded"]
+    assert col["nullable"] is False

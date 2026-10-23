@@ -127,6 +127,7 @@ def upgrade() -> None:
     sa.Column('tier', sa.Enum('T-48', 'T-24', 'T-3', 'T-1', 'manual', name='odd_tier', native_enum=False, create_constraint=True), nullable=False),
     sa.Column('planned_offset_min', sa.Integer(), nullable=True),
     sa.Column('actual_offset_min', sa.Integer(), nullable=True),
+    sa.Column('t3_day_degraded', sa.Boolean(), server_default=sa.text('0'), nullable=False),
     sa.Column('source', sa.Enum('toa', 'manual_fortuna', name='odd_source', native_enum=False, create_constraint=True), nullable=False),
     sa.Column('captured_at_utc', sa.DateTime(timezone=True), nullable=False),
     sa.CheckConstraint("source = 'manual_fortuna' OR (toa_sport_key IS NOT NULL AND toa_event_id IS NOT NULL)", name='ck_odds_snapshots_toa_ids'),
