@@ -73,12 +73,16 @@ odds_policy:
   max_firing_delay_min: 15
   retry_on_error: 1
   t1_bet_market: false
+  monthly_quota: 500
   hard_stop_credits: 450
   degradation_ladder:
     - cap_additional_markets_top5_week
     - disable_t48
     - disable_t24
     - t3_slot_to_day
+  pacing: { enabled: true, safety_margin_credits: 25 }
+  t4_recheck: true
+  postponement: { shift_min: 15, no_result_after_h: 3, void_after_h: 48 }
   scores_poll_after_matchday: true
   scores_poll_weekly: true
 
@@ -87,10 +91,10 @@ prefilter:
   edge_fraction: 0.5
   weekly_cap: 15
 
-books:
-  market_reference_books: [Pinnacle, consensus_of_allowed]
+books:                            # keys as returned by The Odds API
+  market_reference_books: [pinnacle, consensus_of_allowed]
   bookmaker_whitelist: [fortuna]
-  excluded_books: [1xBet, BetOnline.ag, MyBookie.ag, GTbets, Betfair, Matchbook]
+  excluded_books: [onexbet, betonlineag, mybookieag, gtbets, betfair, matchbook]
 
 totals_lines:
   requested: [0.5, 1.5, 2.5, 3.5, 4.5]
@@ -105,6 +109,6 @@ llm:
 scheduler:
   timezone: UTC
   refresh_history_cron: "30 5 * * *"
-  refresh_odds_cron: "0 */6 * * *"
+  events_poll_cron: "0 */6 * * *"   # free /events only; snapshots are event-driven
   retrain_model_cron: "0 6 * * *"
   news_windows: [T-24h, T-2h]

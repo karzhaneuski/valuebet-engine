@@ -6,8 +6,10 @@ declares shape and defaults; behaviour lives in the later phases.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -36,13 +38,17 @@ class DatabaseConfig(BaseModel):
 
 
 class ModelConfig(BaseModel):
-    """Dixon-Coles hyperparameters; xi and w are tuned in phase 4."""
+    """Dixon-Coles hyperparameters; xi and w are tuned in phase 4.
+
+    home_advantage_prior / promoted_team_prior are STARTING VALUES for the
+    phase-3 fitter, not tuned constants.
+    """
 
     xi: float = 0.005          # time decay per day, exp(-xi * days)
     weight_xg: float = 0.5     # w in w*goals + (1-w)*xG
     max_score: int = 10        # score matrix 0..10 x 0..10
-    home_advantage_prior: float = 0.25
-    promoted_team_prior: str = "league_weakest_third"
+    home_advantage_prior: float = 0.25   # phase-3 starting value
+    promoted_team_prior: str = "league_weakest_third"  # phase-3 starting rule
 
 
 class ThresholdsConfig(BaseModel):
@@ -68,22 +74,53 @@ class OddsTierWindows(BaseModel):
     t3: tuple[float, float] = (1.0, 4.0)
 
 
+class PacingConfig(BaseModel):
+    """remaining/days_left pacing rule (decisions, final round S3)."""
+
+    enabled: bool = True
+    # projected burn = used + spent_per_day_so_far * days_left; degrade
+    # early when projection would cross hard_stop + safety_margin
+    safety_margin_credits: int = 25
+
+
+class PostponementConfig(BaseModel):
+    """Postponement rules (docs/decisions.md, phase 0 / S5)."""
+
+    shift_min: int = 15            # commence_time moved by more than this
+    no_result_after_h: int = 3     # no result by KO + this -> suspected
+    void_after_h: int = 48         # recommendations older than this voided
+
+
+DegradationStep = Literal[
+    "cap_additional_markets_top5_week",
+    "disable_t48",
+    "disable_t24",
+    "t3_slot_to_day",
+]
+
+
+def _default_ladder() -> list[DegradationStep]:
+    return ["cap_additional_markets_top5_week", "disable_t48",
+            "disable_t24", "t3_slot_to_day"]
+
+
 class OddsPolicyConfig(BaseModel):
     """Snapshot policy (d) with per-slot T-3 as default (decisions, S1)."""
 
     tier_windows: OddsTierWindows = Field(default_factory=OddsTierWindows)
-    t3_granularity: str = "slot"          # slot | day (day = degradation)
+    t3_granularity: Literal["slot", "day"] = "slot"  # day = degradation only
     max_firing_delay_min: int = 15        # fire <= lower bound + this
     retry_on_error: int = 1
     t1_bet_market: bool = False           # optional T-1 candidate snapshot
-    hard_stop_credits: int = 450          # of 500 monthly
-    # degradation ladder at the stop (decisions, final round S3)
-    degradation_ladder: list[str] = Field(default_factory=lambda: [
-        "cap_additional_markets_top5_week",
-        "disable_t48",
-        "disable_t24",
-        "t3_slot_to_day",
-    ])
+    monthly_quota: int = 500              # TOA free tier
+    hard_stop_credits: int = 450          # of monthly_quota
+    # degradation ladder at the stop (decisions, final round S3); the order
+    # is fixed, T-3 is never disabled
+    degradation_ladder: list[DegradationStep] = Field(
+        default_factory=_default_ladder)
+    pacing: PacingConfig = Field(default_factory=PacingConfig)
+    t4_recheck: bool = True               # recheck /events at T-4 per candidate
+    postponement: PostponementConfig = Field(default_factory=PostponementConfig)
     scores_poll_after_matchday: bool = True
     scores_poll_weekly: bool = True
 
@@ -99,13 +136,15 @@ class PrefilterConfig(BaseModel):
 class BooksConfig(BaseModel):
     """Bookmaker roles (decisions S10: Fortuna is the only bettable book)."""
 
+    # bookmaker identifiers are TOA bookmaker KEYS (odds_api.json), not
+    # display names; "consensus_of_allowed" is our own consensus marker
     market_reference_books: list[str] = Field(default_factory=lambda: [
-        "Pinnacle", "consensus_of_allowed",
+        "pinnacle", "consensus_of_allowed",
     ])
     bookmaker_whitelist: list[str] = Field(default_factory=lambda: ["fortuna"])
     excluded_books: list[str] = Field(default_factory=lambda: [
-        "1xBet", "BetOnline.ag", "MyBookie.ag", "GTbets",  # offshore
-        "Betfair", "Matchbook",                            # exchanges
+        "onexbet", "betonlineag", "mybookieag", "gtbets",  # offshore
+        "betfair", "matchbook",                            # exchanges
     ])
 
 
@@ -129,11 +168,16 @@ class LlmModelsConfig(BaseModel):
 
 
 class SchedulerConfig(BaseModel):
-    """Cron entries; real jobs arrive in phase 7."""
+    """Cron entries; real jobs arrive in phase 7.
+
+    events_poll_cron polls ONLY the free TOA /events endpoint (kickoffs and
+    postponements); paid odds snapshots are event-driven via tier windows —
+    flat 6h odds polling was rejected in docs/decisions.md.
+    """
 
     timezone: str = "UTC"
     refresh_history_cron: str = "30 5 * * *"
-    refresh_odds_cron: str = "0 */6 * * *"
+    events_poll_cron: str = "0 */6 * * *"
     retrain_model_cron: str = "0 6 * * *"
     news_windows: list[str] = Field(default_factory=lambda: ["T-24h", "T-2h"])
 
@@ -166,9 +210,16 @@ class AppConfig(BaseModel):
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:
-    """Parse config.yaml into the typed AppConfig model."""
+    """Parse config.yaml into the typed AppConfig model.
+
+    The DATABASE_URL environment variable overrides database.url (the same
+    override exists in alembic/env.py) so containers can point at a volume
+    without touching the committed config.
+    """
     cfg_path = Path(path) if path else Path(__file__).resolve().parents[1] / "config.yaml"
     data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    if os.environ.get("DATABASE_URL"):
+        data.setdefault("database", {})["url"] = os.environ["DATABASE_URL"]
     return AppConfig.model_validate(data)
 
 
