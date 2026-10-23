@@ -7,7 +7,57 @@ dependencies = [
     "pandas",
     "requests",
     "soccerdata==2026.43.0",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "structlog>=24.1",
+    "pyyaml>=6.0",
+    "fastapi>=0.111",
+    "uvicorn>=0.30",
+    "streamlit>=1.35",
+    "apscheduler>=3.10",
 ]
 
-# Phase 0 only: minimal tooling for recon scripts under scripts/recon/.
-# The full scaffold (ruff, mypy, pytest config) arrives in phase 1.
+[dependency-groups]
+dev = [
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "pytest>=8.2",
+    "httpx>=0.27",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [".venv", "reports"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+# scripts/recon/* is exploratory phase-0 code kept for reproducibility;
+# style issues there are accepted except real errors.
+per-file-ignores = { }
+
+[tool.mypy]
+python_version = "3.12"
+files = ["core", "api", "mcp", "tests"]
+exclude = ["scripts/"]
+plugins = ["pydantic.mypy"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["core.model.*", "core.value.*"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_calls = true
+warn_return_any = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.uv]
+package = false
