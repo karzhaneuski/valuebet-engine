@@ -11,6 +11,8 @@ import sys
 
 import structlog
 
+from core.http import RedactingFilter, redact_processor
+
 
 def configure(dev_mode: bool = False) -> None:
     """Set up structlog once per process; idempotent."""
@@ -18,6 +20,8 @@ def configure(dev_mode: bool = False) -> None:
     # httpx logs full request URLs (including apiKey query params) at INFO
     for noisy in ("httpx", "httpcore"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(RedactingFilter())
     renderer = (
         structlog.dev.ConsoleRenderer()
         if dev_mode
@@ -26,6 +30,7 @@ def configure(dev_mode: bool = False) -> None:
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
+            redact_processor,
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso", utc=True),
             structlog.processors.StackInfoRenderer(),
