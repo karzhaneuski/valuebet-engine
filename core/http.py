@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping, MutableMapping
 from typing import Any
 
 import httpx
@@ -121,11 +122,12 @@ class RedactingFilter(logging.Filter):
         return True
 
 
-def redact_processor(logger, method: str, event_dict: dict) -> dict:
+def redact_processor(logger: object, method: str,
+                     event_dict: MutableMapping[str, object]) -> Mapping[str, object]:
     """structlog processor: redact every string value in the event."""
-    for key, value in event_dict.items():
+    for key, value in list(event_dict.items()):
         if isinstance(value, str):
             event_dict[key] = redact_text(value)
-        elif isinstance(value, Exception):
+        elif isinstance(value, BaseException):
             event_dict[key] = redact_text(str(value))
     return event_dict
