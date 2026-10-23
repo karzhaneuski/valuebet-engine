@@ -48,7 +48,9 @@ def main() -> None:
         return body
 
     report = json.loads(OUT.read_text())
-    probe: dict = {"probed_on": str(date.today())}
+    probe: dict = {"probed_on": str(date.today()),
+                   "free_plan_season_window": "2022-2024 (3 seasons; 2025/26 "
+                                              "and current 2026/27 blocked)"}
 
     # 1. Season window boundary: 2024-25 (mid-April 2025) vs 2025-26 (April 2026)
     for season, from_, to_ in [(2024, "2025-04-01", "2025-04-08"),
@@ -68,6 +70,20 @@ def main() -> None:
     probe["injuries_season_2026"] = {
         "errors": body.get("errors") or None,
         "n_results": body.get("results", 0),
+    }
+
+    # 2b. UCL (league=2) inside the allowed window
+    body = call("/fixtures",
+                {"league": 2, "season": 2024, "from": "2025-01-01",
+                 "to": "2025-02-15"},
+                "UCL 2024-25 fixtures")
+    probe["ucl_season_2024_fixtures"] = {
+        "errors": body.get("errors") or None,
+        "n_results": body.get("results", 0),
+        "sample": [{"date": f["fixture"]["date"],
+                    "home": f["teams"]["home"]["name"],
+                    "away": f["teams"]["away"]["name"]}
+                   for f in body.get("response", [])[:3]],
     }
 
     # 3. Endpoints on the allowed 2024-25 season

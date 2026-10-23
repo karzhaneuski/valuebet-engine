@@ -50,10 +50,8 @@ def main() -> None:
     session = requests.Session()
     session.headers["x-apisports-key"] = os.environ["API_FOOTBALL_KEY"]
     report: dict = {"run_date": str(TODAY), "requests": []}
-    used = 0
 
     def call(path: str, params: dict, label: str) -> dict:
-        nonlocal used
         time.sleep(1.1)
         try:
             resp = session.get(f"{BASE}{path}", params=params, timeout=30)
@@ -62,29 +60,27 @@ def main() -> None:
             print(scrub(f"{label}: REQUEST FAILED {type(exc).__name__}: {exc}"))
             report["requests"].append({"label": label, "path": path, "failed": True})
             return {}
-        limit = resp.headers.get("x-ratelimit-limit")
-        remaining = resp.headers.get("x-ratelimit-remaining")
-        if limit is not None:
-            used = int(limit) - int(remaining)
         record = {
             "label": label,
             "path": path,
             "http": resp.status_code,
             "api_errors": body.get("errors") or None,
             "results": body.get("results"),
-            "ratelimit_limit": limit,
-            "ratelimit_remaining": remaining,
         }
         report["requests"].append(record)
         status = "OK" if not body.get("errors") else f"errors={body.get('errors')}"
-        print(scrub(f"{label}: http={resp.status_code} {status} results={body.get('results')} "
-                    f"remaining={remaining}"))
+        print(scrub(f"{label}: http={resp.status_code} {status} "
+                    f"results={body.get('results')}"))
         return body
 
     # 1. Account status: plan + factual daily limit
-    status_body = call("/status", {}, "account status")
+    status_body = call("/status", {}, "plan status")
     if status_body.get("response"):
-        report["status"] = status_body["response"]
+        r0 = status_body["response"]
+        report["status"] = {
+            "plan": r0.get("subscription", {}).get("plan"),
+            "daily_limit": r0.get("requests", {}).get("limit_day"),
+        }
 
     # 2. Fixtures next 7 days, season 2026, per league
     upcoming: list[dict] = []
@@ -199,11 +195,9 @@ def main() -> None:
             "bet_names": sorted(bets),
         }
 
-    report["requests_used_this_run"] = used
     report["upcoming_for_search"] = upcoming
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(report, indent=2, default=str))
-    print(f"requests used this run: {used}")
     print(f"saved {OUT}")
 
 
