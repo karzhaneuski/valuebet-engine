@@ -1,0 +1,30 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+
+# Local data and caches
+# Note: reports/ (including *.png plots) stays tracked on purpose.
+.cache/
+data/raw/
+*.db
+*.sqlite
+*.sqlite3
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
