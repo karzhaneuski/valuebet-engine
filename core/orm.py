@@ -327,3 +327,42 @@ class LlmCall(Base):
     thoughts_tokens: Mapped[int | None] = mapped_column(Integer)
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(8, 4))
     created_at_utc: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MatchLineup(Base):
+    """Per-match player usage (Understat): starters vs subs + minutes.
+
+    Feeds the phase-5 key-player rule (>=70% starts in last 8 matches).
+    """
+
+    __tablename__ = "match_lineups"
+    __table_args__ = (
+        UniqueConstraint("match_id", "team_id", "player",
+                         name="uq_match_lineups_row"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
+    player: Mapped[str] = mapped_column(String(120))
+    # Understat marks substitutes with position == 'Sub' (phase-0 finding)
+    started: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    minutes: Mapped[int | None] = mapped_column(Integer)
+
+
+class ClosingOdds(Base):
+    """football-data closing O/U 2.5 prices — the CLV reference (decisions)."""
+
+    __tablename__ = "closing_odds"
+    __table_args__ = (
+        UniqueConstraint("match_id", "bookmaker",
+                         name="uq_closing_odds_match_book"),
+        CheckConstraint("bookmaker IN ('AvgC', 'MaxC', 'PC')",
+                        name="ck_closing_odds_bookmaker"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
+    bookmaker: Mapped[str] = mapped_column(String(10))
+    over_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
+    under_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))

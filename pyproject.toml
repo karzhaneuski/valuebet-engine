@@ -55,6 +55,10 @@ no_implicit_optional = true
 check_untyped_defs = true
 
 [[tool.mypy.overrides]]
+module = ["soccerdata", "soccerdata.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["core.model.*", "core.value.*"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
