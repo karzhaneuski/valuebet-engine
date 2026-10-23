@@ -25,7 +25,7 @@
     "1XB": "1XBet",
     "B365": "Bet365",
     "BF": "Betfair",
-    "BFD": "Betfair draw odds",
+    "BFD": "Betfred",
     "BFE": "Betfair Exchange",
     "BMGM": "BetMGM",
     "BV": "Betvictor",
@@ -39,6 +39,6 @@
     "SKB": "UNKNOWN \u2014 not found in notes.txt",
     "V": "UNKNOWN \u2014 not found in notes.txt",
     "VC": "VC Bet",
-    "WH": "UNKNOWN \u2014 not found in notes.txt"
+    "WH": "William Hill"
   }
 }

@@ -34,7 +34,7 @@ def main() -> None:
             codes = re.findall(r"([A-Za-z0-9]{1,5})[HDA<>]", m.group(1))
             name = m.group(2).strip(" .-")
             for code in codes:
-                base = re.sub(r"[HDA<>]$", "", code).upper()
+                base = code.upper()  # marker letter already excluded above
                 if base and len(base) <= 5:
                     mapping.setdefault(base, name)
     # explicit "XX = Name Bookmaker" lines without the odds suffix
