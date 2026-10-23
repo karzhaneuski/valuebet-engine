@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from sqlalchemy import func, select
 
 from core.db import get_engine, session_scope
 from core.orm import Base, Team, TeamAlias
-from scripts.seed_team_aliases import load_pairs, seed
+from scripts.seed_team_aliases import EXCLUDED_PAIRS, AliasConflictError, load_pairs, seed
 
 RECON = Path(__file__).resolve().parents[1] / "reports/recon/odds_budget.json"
 
@@ -53,3 +54,31 @@ def test_canonical_name_is_toa(tmp_path) -> None:
         alias = s.scalars(select(TeamAlias).where(
             TeamAlias.alias == "Roma", TeamAlias.source == "understat")).first()
         assert alias is not None and alias.team_id == team.id
+
+
+def test_bad_fuzzy_pair_excluded(tmp_path) -> None:
+    # phase-0 fuzzy matcher matched on the token "Club": Racing Santander
+    # was paired with Athletic Club — excluded by list, not silently
+    assert ("Real Racing Club de Santander", "Athletic Club") in EXCLUDED_PAIRS
+    url = make_db(tmp_path)
+    seed(load_pairs(RECON), url)
+    with session_scope(url) as s:
+        racing = s.scalars(select(Team).where(
+            Team.name == "Real Racing Club de Santander")).one()
+        understat = s.scalars(select(TeamAlias).where(
+            TeamAlias.source == "understat",
+            TeamAlias.team_id == racing.id)).one()
+        assert understat.alias == "Racing Santander"
+
+
+def test_alias_conflict_raises(tmp_path) -> None:
+    # an alias already bound to another team must raise, not skip
+    url = make_db(tmp_path)
+    with session_scope(url) as s:
+        other = Team(name="Some Other Team")
+        s.add(other)
+        s.flush()
+        s.add(TeamAlias(team_id=other.id, source="toa",
+                        alias="Arsenal"))  # TOA name of a seeded team
+    with pytest.raises(AliasConflictError):
+        seed(load_pairs(RECON), url)
