@@ -42,3 +42,16 @@ def test_upgrade_head_and_downgrade(tmp_path) -> None:
     run_alembic(url, "downgrade", "base")
     tables_after = set(inspect(get_engine(url)).get_table_names())
     assert not (EXPECTED_TABLES & tables_after)
+
+
+def test_migration_matches_orm_metadata(tmp_path) -> None:
+    """S8: after upgrade head, autogenerate comparison against the ORM
+    metadata must be empty (what `alembic check` verifies)."""
+    import subprocess
+    url = f"sqlite:///{tmp_path}/check.db"
+    run_alembic(url, "upgrade", "head")
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "-x", f"db={url}", "check"],
+        cwd=REPO, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "No new upgrade operations detected" in result.stdout

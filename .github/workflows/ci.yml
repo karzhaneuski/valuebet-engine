@@ -21,10 +21,19 @@ jobs:
         run: uv run mypy
       - name: Pytest
         run: uv run pytest
-      - name: Alembic migration from scratch
+      - name: Alembic migration from scratch + seed
+        env:
+          DATABASE_URL: sqlite:///./ci-check.db
         run: |
-          uv run alembic -x db=sqlite:///./ci-check.db upgrade head
+          uv run alembic upgrade head
           uv run python scripts/seed_team_aliases.py
+          rm -f ci-check.db
+      - name: Alembic check (migration matches ORM)
+        env:
+          DATABASE_URL: sqlite:///./ci-check.db
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
           rm -f ci-check.db
 
   docker-arm64:
@@ -41,4 +50,9 @@ jobs:
           context: .
           platforms: linux/arm64
           push: false
+          load: true
           tags: valuebet-engine:ci
+      - name: Smoke test (imports incl. native/tls deps)
+        run: >
+          docker run --rm --platform linux/arm64 valuebet-engine:ci
+          python -c "import soccerdata, core.config; print('ok')"

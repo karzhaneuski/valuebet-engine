@@ -33,6 +33,19 @@ uv run mypy
 uv run pytest
 ```
 
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`):
+
+- **lint-type-test** — ruff, mypy, pytest; затем миграция Alembic с нуля + сид
+  team_aliases (одна база через `DATABASE_URL`) и `alembic check` — проверка,
+  что миграция совпадает с ORM-метаданными.
+- **docker-arm64** — сборка образа под `linux/arm64` (buildx + qemu) и
+  smoke-прогон `python -c "import soccerdata, core.config"` в образе:
+  проверяет нативные зависимости (tls-клиент soccerdata качает
+  `tls-client-linux-arm64.so` в рантайме; cffi в lock без linux-колёс —
+  компилируется из sdist, поэтому в builder-стейдж установлен gcc/libffi-dev).
+
 ## Docker (linux/arm64)
 
 ```bash
