@@ -1,0 +1,524 @@
+{
+  "calls": [
+    {
+      "label": "list sports",
+      "http": 200,
+      "used_after": "0",
+      "remaining_after": "500",
+      "credits_delta": 0
+    },
+    {
+      "label": "epl h2h (eu)",
+      "http": 200,
+      "used_after": "1",
+      "remaining_after": "499",
+      "credits_delta": 1
+    },
+    {
+      "label": "epl totals (eu)",
+      "http": 200,
+      "used_after": "2",
+      "remaining_after": "498",
+      "credits_delta": 1
+    },
+    {
+      "label": "epl spreads (eu)",
+      "http": 200,
+      "used_after": "3",
+      "remaining_after": "497",
+      "credits_delta": 1
+    },
+    {
+      "label": "epl btts (eu)",
+      "http": 422,
+      "used_after": "3",
+      "remaining_after": "497",
+      "credits_delta": 0,
+      "error": {
+        "message": "Markets not supported by this endpoint: btts",
+        "error_code": "INVALID_MARKET",
+        "details_url": "https://the-odds-api.com/liveapi/guides/v4/api-error-codes.html#invalid-market"
+      }
+    },
+    {
+      "label": "epl alternate_totals (eu)",
+      "http": 422,
+      "used_after": "3",
+      "remaining_after": "497",
+      "credits_delta": 0,
+      "error": {
+        "message": "Markets not supported by this endpoint: alternate_totals",
+        "error_code": "INVALID_MARKET",
+        "details_url": "https://the-odds-api.com/liveapi/guides/v4/api-error-codes.html#invalid-market"
+      }
+    },
+    {
+      "label": "epl correct_score (eu)",
+      "http": 422,
+      "used_after": "3",
+      "remaining_after": "497",
+      "credits_delta": 0,
+      "error": {
+        "message": "Markets not supported by this endpoint: correct_score",
+        "error_code": "INVALID_MARKET",
+        "details_url": "https://the-odds-api.com/liveapi/guides/v4/api-error-codes.html#invalid-market"
+      }
+    },
+    {
+      "label": "soccer_spain_la_liga totals (eu)",
+      "http": 200,
+      "used_after": "4",
+      "remaining_after": "496",
+      "credits_delta": 1
+    },
+    {
+      "label": "soccer_italy_serie_a totals (eu)",
+      "http": 200,
+      "used_after": "5",
+      "remaining_after": "495",
+      "credits_delta": 1
+    },
+    {
+      "label": "soccer_germany_bundesliga totals (eu)",
+      "http": 200,
+      "used_after": "6",
+      "remaining_after": "494",
+      "credits_delta": 1
+    },
+    {
+      "label": "soccer_france_ligue_1 totals (eu)",
+      "http": 404,
+      "used_after": "6",
+      "remaining_after": "494",
+      "credits_delta": 0,
+      "error": {
+        "message": "Unknown sport",
+        "error_code": "UNKNOWN_SPORT",
+        "details_url": "https://the-odds-api.com/liveapi/guides/v4/api-error-codes.html#unknown-sport"
+      }
+    },
+    {
+      "label": "soccer_uefa_champs_league totals (eu)",
+      "http": 200,
+      "used_after": "7",
+      "remaining_after": "493",
+      "credits_delta": 1
+    },
+    {
+      "label": "epl events",
+      "http": 200,
+      "used_after": "7",
+      "remaining_after": "493",
+      "credits_delta": 0
+    },
+    {
+      "label": "epl h2h+totals (eu)",
+      "http": 200,
+      "used_after": "9",
+      "remaining_after": "491",
+      "credits_delta": 2
+    }
+  ],
+  "sport_keys_found": {
+    "soccer_epl": true,
+    "soccer_spain_la_liga": true,
+    "soccer_italy_serie_a": true,
+    "soccer_germany_bundesliga": true,
+    "soccer_france_ligue_1": false,
+    "soccer_uefa_champs_league": true
+  },
+  "epl_market_probes": {
+    "h2h": {
+      "credits": 1,
+      "n_events": 21,
+      "bookmakers": [
+        "1xBet",
+        "888sport",
+        "BetAnything",
+        "BetOnline.ag",
+        "Betclic (FR)",
+        "Betfair",
+        "Betsson",
+        "Codere (IT)",
+        "Coolbet",
+        "GTbets",
+        "LeoVegas (SE)",
+        "Marathon Bet",
+        "Matchbook",
+        "MyBookie.ag",
+        "Nordic Bet",
+        "PMU (FR)",
+        "Pinnacle",
+        "Tipico",
+        "Unibet (FR)",
+        "Unibet (NL)",
+        "Unibet (SE)",
+        "William Hill",
+        "Winamax (DE)",
+        "Winamax (FR)"
+      ],
+      "totals_points": [],
+      "outcome_names_sample": [
+        "Arsenal",
+        "Aston Villa",
+        "Bournemouth",
+        "Brentford",
+        "Brighton and Hove Albion",
+        "Chelsea",
+        "Coventry City",
+        "Crystal Palace",
+        "Draw",
+        "Everton",
+        "Fulham",
+        "Hull City"
+      ]
+    },
+    "totals": {
+      "credits": 1,
+      "n_events": 21,
+      "bookmakers": [
+        "1xBet",
+        "BetAnything",
+        "BetOnline.ag",
+        "Betsson",
+        "Codere (IT)",
+        "Coolbet",
+        "GTbets",
+        "LeoVegas (SE)",
+        "Marathon Bet",
+        "Matchbook",
+        "MyBookie.ag",
+        "Nordic Bet",
+        "PMU (FR)",
+        "Pinnacle",
+        "Tipico",
+        "Unibet (NL)",
+        "Unibet (SE)",
+        "William Hill"
+      ],
+      "totals_points": [
+        2.25,
+        2.5,
+        2.75,
+        3.0,
+        3.25,
+        3.5
+      ],
+      "outcome_names_sample": [
+        "Over",
+        "Under"
+      ]
+    },
+    "spreads": {
+      "credits": 1,
+      "n_events": 21,
+      "bookmakers": [
+        "1xBet",
+        "BetAnything",
+        "BetOnline.ag",
+        "Coolbet",
+        "GTbets",
+        "Marathon Bet",
+        "Matchbook",
+        "MyBookie.ag",
+        "Pinnacle"
+      ],
+      "totals_points": [],
+      "outcome_names_sample": [
+        "Arsenal",
+        "Aston Villa",
+        "Bournemouth",
+        "Brentford",
+        "Brighton and Hove Albion",
+        "Chelsea",
+        "Coventry City",
+        "Crystal Palace",
+        "Everton",
+        "Fulham",
+        "Hull City",
+        "Ipswich Town"
+      ]
+    },
+    "btts": {
+      "credits": 0
+    },
+    "alternate_totals": {
+      "credits": 0
+    },
+    "correct_score": {
+      "credits": 0
+    }
+  },
+  "totals_other_sports": {
+    "soccer_spain_la_liga": {
+      "credits": 1,
+      "n_events": 20,
+      "bookmakers": [
+        "1xBet",
+        "BetOnline.ag",
+        "Betsson",
+        "Codere (IT)",
+        "Coolbet",
+        "LeoVegas (SE)",
+        "Marathon Bet",
+        "Matchbook",
+        "Nordic Bet",
+        "PMU (FR)",
+        "Pinnacle",
+        "Tipico",
+        "Unibet (NL)",
+        "Unibet (SE)",
+        "William Hill"
+      ],
+      "totals_points": [
+        1.5,
+        2.0,
+        2.25,
+        2.5,
+        2.75,
+        3.0,
+        3.5,
+        4.0,
+        4.25,
+        4.5
+      ],
+      "outcome_names_sample": [
+        "Over",
+        "Under"
+      ]
+    },
+    "soccer_italy_serie_a": {
+      "credits": 1,
+      "n_events": 20,
+      "bookmakers": [
+        "1xBet",
+        "BetAnything",
+        "BetOnline.ag",
+        "Betsson",
+        "Codere (IT)",
+        "Coolbet",
+        "GTbets",
+        "LeoVegas (SE)",
+        "Marathon Bet",
+        "Matchbook",
+        "Nordic Bet",
+        "PMU (FR)",
+        "Pinnacle",
+        "Tipico",
+        "Unibet (NL)",
+        "Unibet (SE)",
+        "William Hill"
+      ],
+      "totals_points": [
+        0.5,
+        2.25,
+        2.5,
+        2.75,
+        3.0,
+        3.25,
+        3.5,
+        3.75
+      ],
+      "outcome_names_sample": [
+        "Over",
+        "Under"
+      ]
+    },
+    "soccer_germany_bundesliga": {
+      "credits": 1,
+      "n_events": 18,
+      "bookmakers": [
+        "1xBet",
+        "BetOnline.ag",
+        "Betsson",
+        "Codere (IT)",
+        "Coolbet",
+        "GTbets",
+        "LeoVegas (SE)",
+        "Marathon Bet",
+        "Matchbook",
+        "Nordic Bet",
+        "PMU (FR)",
+        "Pinnacle",
+        "Tipico",
+        "Unibet (NL)",
+        "Unibet (SE)",
+        "William Hill"
+      ],
+      "totals_points": [
+        2.5,
+        3.0,
+        3.25,
+        3.5,
+        3.75,
+        4.0,
+        4.5
+      ],
+      "outcome_names_sample": [
+        "Over",
+        "Under"
+      ]
+    },
+    "soccer_france_ligue_1": {
+      "credits": 0
+    },
+    "soccer_uefa_champs_league": {
+      "credits": 1,
+      "n_events": 18,
+      "bookmakers": [
+        "1xBet",
+        "Betsson",
+        "Codere (IT)",
+        "Coolbet",
+        "GTbets",
+        "LeoVegas (SE)",
+        "Marathon Bet",
+        "Nordic Bet",
+        "PMU (FR)",
+        "Pinnacle",
+        "Unibet (NL)",
+        "Unibet (SE)",
+        "William Hill"
+      ],
+      "totals_points": [
+        2.5,
+        2.75,
+        3.0,
+        3.25,
+        3.5,
+        4.0,
+        4.5
+      ],
+      "outcome_names_sample": [
+        "Over",
+        "Under"
+      ]
+    }
+  },
+  "events_epl": {
+    "credits": 0,
+    "n_events": 21,
+    "sample": [
+      {
+        "home": "Ipswich Town",
+        "away": "Nottingham Forest",
+        "commence": "2026-10-23T19:00:00Z",
+        "id": "d0202960708a442401d7fc7bd74a0183"
+      },
+      {
+        "home": "Aston Villa",
+        "away": "Manchester City",
+        "commence": "2026-10-24T11:30:00Z",
+        "id": "aca5dd297dbee71f576f7641569fe578"
+      },
+      {
+        "home": "Arsenal",
+        "away": "Everton",
+        "commence": "2026-10-24T14:00:00Z",
+        "id": "f66e4f29c1b7bcfc5ab58c0b88c8850b"
+      },
+      {
+        "home": "Coventry City",
+        "away": "Fulham",
+        "commence": "2026-10-24T14:00:00Z",
+        "id": "0fbb2626ed9534b9dcf21d16925f9bd7"
+      },
+      {
+        "home": "Chelsea",
+        "away": "Tottenham Hotspur",
+        "commence": "2026-10-24T16:30:00Z",
+        "id": "0382a9faef0bb8df1bcc436536cffb05"
+      },
+      {
+        "home": "Manchester United",
+        "away": "Bournemouth",
+        "commence": "2026-10-25T14:00:00Z",
+        "id": "33fb7467b23c91d57dc976d9ab05ea97"
+      },
+      {
+        "home": "Hull City",
+        "away": "Brentford",
+        "commence": "2026-10-25T14:00:00Z",
+        "id": "69493b5ebb84f24ab1d6023a30ee89f0"
+      },
+      {
+        "home": "Liverpool",
+        "away": "Brighton and Hove Albion",
+        "commence": "2026-10-25T14:00:00Z",
+        "id": "290ba8cd3f3a2e9252effca673bf5549"
+      }
+    ]
+  },
+  "combined_call": {
+    "credits": 2,
+    "n_events": 21,
+    "bookmakers": [
+      "1xBet",
+      "888sport",
+      "BetAnything",
+      "BetOnline.ag",
+      "Betclic (FR)",
+      "Betfair",
+      "Betsson",
+      "Codere (IT)",
+      "Coolbet",
+      "GTbets",
+      "LeoVegas (SE)",
+      "Marathon Bet",
+      "Matchbook",
+      "MyBookie.ag",
+      "Nordic Bet",
+      "PMU (FR)",
+      "Pinnacle",
+      "Tipico",
+      "Unibet (FR)",
+      "Unibet (NL)",
+      "Unibet (SE)",
+      "William Hill",
+      "Winamax (DE)",
+      "Winamax (FR)"
+    ],
+    "totals_points": [
+      2.25,
+      2.5,
+      2.75,
+      3.0,
+      3.25,
+      3.5
+    ],
+    "outcome_names_sample": [
+      "Arsenal",
+      "Aston Villa",
+      "Bournemouth",
+      "Brentford",
+      "Brighton and Hove Albion",
+      "Chelsea",
+      "Coventry City",
+      "Crystal Palace",
+      "Draw",
+      "Everton",
+      "Fulham",
+      "Hull City"
+    ]
+  },
+  "followup_probes": {
+    "soccer_france_ligue_one": {
+      "http": 200,
+      "events": 18,
+      "totals_lines": [
+        2.25,
+        2.5,
+        2.75,
+        3.0,
+        3.25,
+        3.5
+      ],
+      "note": "correct sport key for Ligue 1"
+    },
+    "events_odds_endpoint": {
+      "http": 404,
+      "note": "/v4/sports/{sport}/events/odds does not exist; btts/correct_score INVALID_MARKET on the only odds endpoint -> not available on this free key"
+    },
+    "free_quota_start": 500
+  }
+}
