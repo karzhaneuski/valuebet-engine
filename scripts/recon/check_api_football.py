@@ -66,6 +66,9 @@ def main() -> None:
             "http": resp.status_code,
             "api_errors": body.get("errors") or None,
             "results": body.get("results"),
+            # per-MINUTE rate limit (10/min on the free plan); the daily
+            # limit (100/day) comes from /status -> report["status"]
+            "ratelimit_limit_per_min": resp.headers.get("x-ratelimit-limit"),
         }
         report["requests"].append(record)
         status = "OK" if not body.get("errors") else f"errors={body.get('errors')}"
