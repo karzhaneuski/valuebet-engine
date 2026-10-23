@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import pool
 
+from alembic import context
 from core.config import load_config
 from core.db import get_engine
 from core.orm import Base

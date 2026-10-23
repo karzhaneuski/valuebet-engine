@@ -20,11 +20,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import select
 
-from core.config import load_config  # noqa: E402
-from core.db import session_scope  # noqa: E402
-from core.orm import Team, TeamAlias  # noqa: E402
+from core.config import load_config
+from core.db import session_scope
+from core.orm import Team, TeamAlias
 
 RECON = Path("reports/recon/odds_budget.json")
 

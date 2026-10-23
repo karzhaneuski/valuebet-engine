@@ -30,7 +30,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -108,6 +108,8 @@ class Match(Base):
 
     home_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
     away_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
+    home_team: Mapped[Team] = relationship(foreign_keys=[home_team_id])
+    away_team: Mapped[Team] = relationship(foreign_keys=[away_team_id])
 
     # external ids: understat game id; TOA event id (unique). football-data
     # rows are identified by (date, home/away aliases) — no stable id.
