@@ -256,3 +256,42 @@ tests use the new path.
 
 **Reason**: a local `mcp/` package shadows the SDK of the same name; the
 rename is the smallest change that keeps both importable.
+
+## 2026-10-24 — Phase 2: Understat archive adapter (one private call isolated)
+
+**Decision**: pre-window seasons (2021/22) are downloaded once through
+Understat's public JSON endpoint `getLeagueData/{slug}/{season}` and stored
+forever under `data/raw/understat/`. The endpoint only answers with the
+library's `X-Requested-With` header, which the public `reader.get()` does
+not send, so the adapter (`core/ingest/understat_archive.py`) makes a single
+call to `reader._request_api` — the ONLY private-API usage, isolated in that
+one module as agreed. `_read_league_season` is NOT used; payload parsing
+lives in the adapter.
+
+**Reason**: soccerdata's discovery window covers only the last 5 seasons;
+the archive keeps 6 seasons of history without re-hitting the informal
+source.
+
+## 2026-10-24 — Phase 2: cross-source alias policy is deterministic-only
+
+**Decision**: automatic team matching applies exactly three deterministic
+rules — exact alias, normalization (fixed abbreviation table, stop tokens
+without "club"/"de"), and single-candidate contiguous containment ("Brighton"
+⊂ "Brighton and Hove Albion"). Anything similarity-based is NEVER applied
+automatically; it lands in the ingest report for manual confirmation. The
+phase-0 fuzzy mistake (Racing ↔ Athletic Club) is covered by a regression
+test. Also: the first TOA correction of an Understat placeholder kickoff is
+NOT a postponement — the shift rule only applies when the stored kickoff was
+already TOA-authoritative.
+
+**Reason**: review requirement (no auto-fuzzy); observed false
+"postponed_suspected" flags during the first real events run.
+
+## 2026-10-24 — Phase 2: /scores creates missing UCL matches
+
+**Decision**: finished UCL matchdays drop out of `/events` before `/scores`
+exposes them, so `apply_scores` creates the match (league `ucl`, TOA names
+canonical, stage `league_phase`) when it is missing, then writes the result.
+
+**Reason**: 9 completed matches of the 2026-10-21 matchday were visible in
+`scores daysFrom=3` but had no match rows (verified in the phase-2 run).

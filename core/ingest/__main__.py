@@ -189,7 +189,7 @@ def main(argv: list[str] | None = None) -> None:
     p.set_defaults(func=cmd_events)
 
     p = sub.add_parser("odds-snapshot", help="one-shot odds snapshot")
-    p.add_argument("--leagues", default="premier_league")
+    p.add_argument("--league", default="premier_league")
     p.add_argument("--markets", nargs="*",
                    default=["totals"],
                    help="totals | correct_score btts alternate_totals")

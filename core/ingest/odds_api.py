@@ -22,7 +22,7 @@ from core.config import AppConfig
 from core.db import session_scope
 from core.ingest.quota import QuotaGuard
 from core.logging import get_logger
-from core.orm import Match, OddsSnapshot, Result, TeamAlias
+from core.orm import Match, OddsSnapshot, Result, Team, TeamAlias
 
 logger = get_logger("ingest.odds_api")
 
@@ -103,9 +103,15 @@ class OddsApiClient:
                         s.add(match)
                         s.flush()
                         report.matches_created += 1
-                # postponement: commence shifted by more than cfg minutes
+                    else:
+                        # link the pair-matched match to its TOA event so
+                        # vanished-event detection works on later runs
+                        match.toa_event_id = eid
+                # postponement: a previously AUTHORITATIVE (TOA) kickoff
+                # shifted by more than cfg minutes. Replacing an Understat
+                # placeholder with the real time is not a postponement.
                 stored = _as_utc(match.commence_time_utc)
-                if stored is not None:
+                if stored is not None and match.kickoff_source == "toa":
                     shift = abs((commence - stored).total_seconds() / 60)
                     if shift > cfg.shift_min and \
                             match.status in ("scheduled",
@@ -253,8 +259,14 @@ class OddsApiClient:
         return resp.json()
 
     def apply_scores(self, body: list[dict]) -> dict:
-        """Finished events -> results rows + finished status."""
+        """Finished events -> results rows + finished status.
+
+        UCL matchdays drop out of /events before /scores shows them, so a
+        missing match is CREATED here from the scores payload (TOA names as
+        canonical, league slug 'ucl'); unmatched team names are reported.
+        """
         written = 0
+        unmatched: set[str] = set()
         with session_scope(self._db_url) as s:
             for ev in body:
                 if not ev.get("completed"):
@@ -263,7 +275,40 @@ class OddsApiClient:
                 match = s.scalars(select(Match).where(
                     Match.toa_event_id == eid)).first()
                 if match is None:
-                    continue
+                    home_name = str(ev.get("home_team"))
+                    away_name = str(ev.get("away_team"))
+                    commence = ev.get("commence_time")
+                    kickoff = dt.datetime.fromisoformat(
+                        commence.replace("Z", "+00:00")) \
+                        if commence else dt.datetime.now(dt.UTC)
+                    team_ids = []
+                    for name in (home_name, away_name):
+                        alias = s.scalars(select(TeamAlias).where(
+                            TeamAlias.source == "toa",
+                            TeamAlias.alias == name)).first()
+                        if alias is not None:
+                            team_ids.append(alias.team_id)
+                            continue
+                        team = s.scalars(select(Team).where(
+                            Team.name == name)).first()
+                        if team is None:
+                            team = Team(name=name, league="ucl")
+                            s.add(team)
+                            s.flush()
+                            s.add(TeamAlias(team_id=team.id, source="toa",
+                                            alias=name))
+                        team_ids.append(team.id)
+                    match = Match(
+                        league="ucl",
+                        season=kickoff.year if kickoff.month >= 7
+                        else kickoff.year - 1,
+                        stage="league_phase",
+                        date_utc=kickoff.date(),
+                        commence_time_utc=kickoff, kickoff_source="toa",
+                        status="scheduled", home_team_id=team_ids[0],
+                        away_team_id=team_ids[1], toa_event_id=eid)
+                    s.add(match)
+                    s.flush()
                 scores = {sc.get("name"): sc.get("score")
                           for sc in ev.get("scores", [])}
                 hg_raw = scores.get(ev.get("home_team"))
@@ -283,7 +328,8 @@ class OddsApiClient:
                     written += 1
                 match.status = "finished"
         return {"completed_seen": sum(1 for e in body if e.get("completed")),
-                "results_written": written}
+                "results_written": written,
+                "unmatched_teams": sorted(unmatched)}
 
 
 def _as_utc(value: dt.datetime | None) -> dt.datetime | None:

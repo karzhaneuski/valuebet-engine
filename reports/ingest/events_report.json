@@ -1,0 +1,82 @@
+{
+  "premier_league": {
+    "events": 40,
+    "created": 0,
+    "kickoffs_updated": 11,
+    "postponed_suspected": 0,
+    "unmatched": [
+      "Everton",
+      "Fulham",
+      "Brighton and Hove Albion",
+      "Leeds United",
+      "Nottingham Forest"
+    ]
+  },
+  "la_liga": {
+    "events": 38,
+    "created": 0,
+    "kickoffs_updated": 10,
+    "postponed_suspected": 0,
+    "unmatched": [
+      "Espanyol",
+      "Real Betis",
+      "Real Madrid",
+      "CA Osasuna",
+      "M\u00e1laga",
+      "Alav\u00e9s"
+    ]
+  },
+  "serie_a": {
+    "events": 38,
+    "created": 0,
+    "kickoffs_updated": 15,
+    "postponed_suspected": 0,
+    "unmatched": [
+      "Bologna",
+      "Juventus"
+    ]
+  },
+  "bundesliga": {
+    "events": 34,
+    "created": 0,
+    "kickoffs_updated": 15,
+    "postponed_suspected": 0,
+    "unmatched": [
+      "Hamburger SV"
+    ]
+  },
+  "ligue_1": {
+    "events": 34,
+    "created": 0,
+    "kickoffs_updated": 15,
+    "postponed_suspected": 0,
+    "unmatched": [
+      "Le Mans FC"
+    ]
+  },
+  "ucl": {
+    "events": 36,
+    "created": 0,
+    "kickoffs_updated": 6,
+    "postponed_suspected": 0,
+    "unmatched": [
+      "Galatasaray",
+      "Shakhtar Donetsk",
+      "Sporting Lisbon",
+      "Bod\u00f8/Glimt",
+      "Feyenoord",
+      "LASK",
+      "\u0160K Slovan Bratislava",
+      "AEK Athens",
+      "Real Madrid",
+      "Fenerbahce",
+      "Slavia Praha",
+      "Real Betis",
+      "PSV Eindhoven",
+      "Club Brugge",
+      "Porto",
+      "Viking FK",
+      "Sabah FK"
+    ]
+  }
+}

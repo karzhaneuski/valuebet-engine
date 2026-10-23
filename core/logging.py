@@ -15,6 +15,9 @@ import structlog
 def configure(dev_mode: bool = False) -> None:
     """Set up structlog once per process; idempotent."""
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.INFO)
+    # httpx logs full request URLs (including apiKey query params) at INFO
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     renderer = (
         structlog.dev.ConsoleRenderer()
         if dev_mode

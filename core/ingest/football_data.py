@@ -171,7 +171,7 @@ class FootballDataLoader:
     # --- persistence ----------------------------------------------------------
 
     def upsert(self, rows: list[FdRow]) -> FdReport:
-        report = FdReport(rows=len(rows))
+        report = FdReport()
         with session_scope(self._db_url) as s:
             matcher = AliasMatcher(
                 {(a.source, a.alias): a.team_id

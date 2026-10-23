@@ -50,6 +50,6 @@ def test_phase0_fuzzy_mistake_is_not_repeated() -> None:
 
 
 def test_normalize_stop_tokens_and_accents() -> None:
-    assert normalize("FC Köln") == "koln"
+    assert normalize("FC Köln") == "cologne"  # abbreviation maps the fd spelling
     assert normalize("The Arsenal FC") == "arsenal"
     assert normalize("Nott'm Forest") == "nottingham forest"

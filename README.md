@@ -25,6 +25,21 @@ uv run uvicorn mcp.main:app --port 8002
 uv run streamlit run dashboard/app.py            # http://localhost:8501
 ```
 
+## Загрузка данных (фаза 2)
+
+```bash
+uv run python -m core.ingest backfill    # история: Understat (6 сезонов) + football-data + закрывающие тоталы
+uv run python -m core.ingest refresh     # текущий сезон (повторная загрузка)
+uv run python -m core.ingest events      # TOA /events: кик-оффы, переносы (бесплатно)
+uv run python -m core.ingest odds-snapshot --league premier_league --tier T-24      # тоталы, 1 кредит
+uv run python -m core.ingest odds-snapshot --league premier_league --markets btts correct_score --tier T-3 --event-id <id>
+uv run python -m core.ingest scores      # результаты ЛЧ (2 кредита)
+uv run python -m core.ingest backfill --lineups-since 2026-10-22   # составы (1 запрос/матч)
+```
+
+Каждый платный вызов TOA проходит квот-гард (жёсткий стоп 450, pacing) и
+пишется в `api_quota_usage`/`quota_counters`.
+
 ## Проверки
 
 ```bash

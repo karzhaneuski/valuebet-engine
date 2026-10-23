@@ -22,6 +22,19 @@ from pathlib import Path
 
 UNDERSTAT_URL = "https://understat.com/getLeagueData/{league}/{season}"
 
+# soccerdata league names -> understat URL slugs (phase-0 verified slugs)
+UNDERSTAT_SLUGS = {
+    "ENG-Premier League": "EPL",
+    "ESP-La Liga": "La_liga",
+    "ITA-Serie A": "Serie_A",
+    "GER-Bundesliga": "Bundesliga",
+    "FRA-Ligue 1": "Ligue_1",
+}
+
+
+def to_slug(league: str) -> str:
+    return UNDERSTAT_SLUGS.get(league, league.replace(" ", "_"))
+
 
 @dataclass
 class ArchiveRow:
@@ -55,10 +68,13 @@ def store_archive(archive_dir: Path, league: str, season: int,
     import soccerdata
 
     reader = soccerdata.Understat(data_dir=cache_dir)
-    url = UNDERSTAT_URL.format(league=league, season=season)
-    # league_id is only used by the library for cache file naming; using a
-    # stable pseudo-id keeps the request cache predictable
-    payload = reader.get(url, cache_dir / f"archive_{league}_{season}.json")
+    url = UNDERSTAT_URL.format(league=to_slug(league), season=season)
+    # The endpoint only answers with the library's X-Requested-With header,
+    # which reader.get() does not send. _read_league_season is NOT used; the
+    # one remaining private call is _request_api, isolated here on purpose
+    # (docs/decisions.md, phase 2).
+    payload = reader._request_api(
+        url, cache_dir / f"archive_{league}_{season}.json")
     data = json.load(payload)
     archive_dir.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data))

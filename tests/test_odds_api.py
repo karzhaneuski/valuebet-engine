@@ -200,3 +200,26 @@ def test_quota_guard_blocks_snapshot_at_stop(tmp_path) -> None:
             updated_at_utc=dt.datetime.now(dt.UTC)))
     with pytest.raises(Exception, match="hard stop"):
         client.snapshot_sport_totals("soccer_epl", "T-24")
+
+
+@respx.mock
+def test_scores_creates_missing_ucl_match(tmp_path) -> None:
+    """UCL matchdays drop out of /events before /scores shows them: the
+    scores payload itself must create the match for settlement."""
+    url, _config, client = make_client(tmp_path)
+    body = [{"id": "ucl-42", "completed": True,
+             "home_team": "Real Madrid", "away_team": "AC Milan",
+             "commence_time": "2026-10-21T19:00:00Z",
+             "scores": [{"name": "Real Madrid", "score": "3"},
+                        {"name": "AC Milan", "score": "1"}]}]
+    respx.get(f"{BASE}/sports/soccer_uefa_champs_league/scores").mock(
+        return_value=httpx.Response(200, json=body,
+                                    headers={"x-requests-remaining": "470"}))
+    result = client.apply_scores(client.fetch_scores(days_from=3))
+    assert result["results_written"] == 1
+    with session_scope(url) as s:
+        m = s.scalars(select(Match).where(
+            Match.toa_event_id == "ucl-42")).one()
+        assert m.league == "ucl" and m.status == "finished"
+        assert m.home_team.name == "Real Madrid"
+        assert m.season == 2026

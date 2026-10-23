@@ -246,29 +246,31 @@ class UnderstatLoader:
 
     def _team(self, session, matcher: AliasMatcher, name: str, league_slug: str,
               report: UnderstatReport):
+        """Resolve an Understat team name. Understat is a source of team
+        identity: unknown names create a new team (canonical = Understat
+        spelling); TOA canonical names win where an alias already links
+        them."""
         m: AliasMatch = matcher.match("understat", name)
         team = None
         if m.matched is not None:
             team = session.scalars(
                 select(Team).where(Team.name == m.matched)).first()
-        if team is None and m.method == "exact":
+        if team is None:
+            # the matcher is a snapshot taken before this loop; re-check
+            # by name so a team created seconds ago is not duplicated
+            team = session.scalars(
+                select(Team).where(Team.name == name)).first()
+        if team is None:
             team = Team(name=name, league=league_slug)
             session.add(team)
             session.flush()
             report.teams_created.append(name)
+        exists = session.scalars(select(TeamAlias).where(
+            TeamAlias.source == "understat",
+            TeamAlias.alias == name)).first()
+        if exists is None:
             session.add(TeamAlias(team_id=team.id, source="understat",
                                   alias=name))
-        elif team is not None and m.method == "normalized":
-            # remember the spelling so next time it is an exact hit
-            exists = session.scalars(select(TeamAlias).where(
-                TeamAlias.source == "understat",
-                TeamAlias.alias == name)).first()
-            if exists is None:
-                session.add(TeamAlias(team_id=team.id, source="understat",
-                                      alias=name))
-        if team is None:
-            report.unmatched.append(name)
-            return None
         if team.league is None:
             team.league = league_slug
         return team

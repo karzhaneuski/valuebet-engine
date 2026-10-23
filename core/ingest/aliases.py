@@ -47,9 +47,14 @@ FD_KNOWN_ABBREVIATIONS: dict[str, str] = {
     "stade de reims": "reims",
     "stade brestois": "brest",
     "stade rennais": "rennes",
-    "paris saint germain": "paris saint germain",
-    "monaco": "monaco",
-    "ment": "ment",
+    "paris sg": "paris saint germain",
+    "ein frankfurt": "eintracht frankfurt",
+    "espanol": "espanyol",
+    "greuther furth": "greuther fuerth",
+    "hamburg": "hamburger sv",
+    "milan": "ac milan",
+    "st etienne": "saint etienne",
+    "koln": "cologne",
 }
 
 # "club"/"de" are NOT stop tokens: Athletic Club vs Racing Club
@@ -64,6 +69,15 @@ def normalize(name: str) -> str:
     tokens = [t for t in s.split() if t and t not in STOP_TOKENS]
     joined = " ".join(tokens)
     return FD_KNOWN_ABBREVIATIONS.get(joined, joined)
+
+
+def _is_subsequence(short: str, long: str) -> bool:
+    """True when short's tokens appear in long as a contiguous block."""
+    s_tokens = short.split()
+    l_tokens = long.split()
+    n = len(s_tokens)
+    return any(l_tokens[i:i + n] == s_tokens
+               for i in range(len(l_tokens) - n + 1))
 
 
 def token_set(name: str) -> set[str]:
@@ -101,6 +115,17 @@ class AliasMatcher:
         hit = self._by_norm.get(norm)
         if hit is not None:
             return AliasMatch(matched=self._names[hit], method="normalized")
+        # deterministic containment: the name's tokens are a contiguous
+        # subsequence of exactly ONE known alias (fd shorthands like
+        # "Brighton" ⊂ "Brighton and Hove Albion"); ambiguity -> report
+        if len(norm) >= 4:
+            supers = [team_id for norm_key, team_id
+                      in self._by_norm.items()
+                      if _is_subsequence(norm, norm_key) and norm != norm_key]
+            unique = {t for t in supers}
+            if len(unique) == 1:
+                return AliasMatch(matched=self._names[supers[0]],
+                                  method="contained")
         # fuzzy: report only, never auto-apply
         tokens = token_set(name)
         scored: list[tuple[str, float]] = []
