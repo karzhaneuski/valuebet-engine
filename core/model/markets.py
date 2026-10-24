@@ -34,6 +34,11 @@ def _check_matrix(m: npt.NDArray[np.float64]) -> None:
         raise ValueError(f"score matrix must be a square ndarray, got {m!r}")
     if m.shape[0] < 2:
         raise ValueError("score matrix must cover at least scores 0 and 1")
+    if float(m.min()) < -1e-12:
+        raise ValueError(f"score matrix has negative cells (min {m.min():.3e})")
+    if not np.isclose(float(m.sum()), 1.0, atol=1e-6):
+        raise ValueError(
+            f"score matrix must sum to 1, got {float(m.sum()):.6f}")
 
 
 def _check_score(m: npt.NDArray[np.float64], h: int, a: int) -> None:

@@ -182,6 +182,26 @@ def team_match_counts(
     return out
 
 
+def xg_per_goal(db_url: str, seasons: list[int]) -> dict[str, float]:
+    """Understat sum(xG)/sum(goals) per league over the seasons."""
+    with session_scope(db_url) as s:
+        rows = s.execute(
+            select(Match.league, MatchStat)
+            .join(MatchStat, MatchStat.match_id == Match.id)
+            .where(MatchStat.source == "understat",
+                   Match.status == "finished",
+                   Match.season.in_(seasons))
+        ).all()
+    goals: dict[str, float] = {}
+    xg: dict[str, float] = {}
+    for league, st in rows:
+        if st.home_goals is None or st.home_xg is None:
+            continue
+        goals[league] = goals.get(league, 0.0) + st.home_goals + st.away_goals
+        xg[league] = xg.get(league, 0.0) + float(st.home_xg) + float(st.away_xg)
+    return {lg: xg[lg] / goals[lg] for lg in xg if goals[lg] > 0}
+
+
 def pearson(xs: list[float], ys: list[float]) -> float:
     if len(xs) < 2:
         return float("nan")
@@ -291,23 +311,57 @@ def main() -> None:
         lines.append(f"| {league} | {home} - {away} | {pm:.3f} | {pk:.3f} "
                      f"| {d:+.3f} | {src} ({nb}) |")
 
+    # --- summary with confidence intervals and slopes (review S6) ----
+    def corr_ci(r: float, n: int) -> tuple[float, float]:
+        if n < 4 or not -1.0 < r < 1.0:
+            return (float("nan"), float("nan"))
+        z = np.arctanh(r)
+        se = 1.0 / np.sqrt(n - 3)
+        return (float(np.tanh(z - 1.96 * se)), float(np.tanh(z + 1.96 * se)))
+
     lines += ["", "### Per-league summary", "",
-              "| league | n | mean Δ | mean |Δ| | corr(model, market) | bias flag (>0.05) |",
+              "| league | n | mean delta [95% CI] | corr [95% CI] | "
+              "sd(model) / sd(market) | bias flag (>0.05) |",
               "|---|---|---|---|---|---|"]
+    pooled_d: list[float] = []
+    pooled_m: list[float] = []
+    pooled_k: list[float] = []
     for league in TOP_LEAGUES:
         sub = [r for r in rows if r[0] == league]
         if not sub:
             lines.append(f"| {league} | 0 | - | - | - | - |")
             continue
         diffs = [r[5] for r in sub]
-        corr = pearson([r[3] for r in sub], [r[4] for r in sub])
+        pooled_d += diffs
+        pooled_m += [r[3] for r in sub]
+        pooled_k += [r[4] for r in sub]
         mean_d = float(np.mean(diffs))
+        half = 1.96 * float(np.std(diffs, ddof=1)) / np.sqrt(len(diffs))
+        corr = pearson([r[3] for r in sub], [r[4] for r in sub])
+        lo, hi = corr_ci(corr, len(sub))
         flag = "**BIAS?**" if abs(mean_d) > 0.05 else "ok"
-        lines.append(f"| {league} | {len(sub)} | {mean_d:+.4f} | "
-                     f"{float(np.mean(np.abs(diffs))):.4f} | {corr:.3f} | "
-                     f"{flag} |")
+        lines.append(
+            f"| {league} | {len(sub)} | {mean_d:+.4f} "
+            f"[{mean_d - half:+.4f}, {mean_d + half:+.4f}] | "
+            f"{corr:.3f} [{lo:.3f}, {hi:.3f}] | "
+            f"{float(np.std([r[3] for r in sub], ddof=1)):.3f} / "
+            f"{float(np.std([r[4] for r in sub], ddof=1)):.3f} | {flag} |")
+    if pooled_d:
+        slope = float(np.polyfit(pooled_m, pooled_k, 1)[0])
+        mean_d = float(np.mean(pooled_d))
+        half = 1.96 * float(np.std(pooled_d, ddof=1)) / np.sqrt(len(pooled_d))
+        lines.append(
+            f"| **pooled** | {len(pooled_d)} | {mean_d:+.4f} "
+            f"[{mean_d - half:+.4f}, {mean_d + half:+.4f}] | - | "
+            f"{float(np.std(pooled_m, ddof=1)):.3f} / "
+            f"{float(np.std(pooled_k, ddof=1)):.3f} | "
+            f"market-on-model slope **{slope:.3f}** |")
 
     top = sorted(rows, key=lambda r: -abs(r[5]))[:5]
+    thin_in_top = sum(
+        1 for lg, h, a, *_ in top
+        if min(history[lg].get(h, 0), history[lg].get(a, 0)) < 100
+        or models[lg].prior_teams & {h, a})
     lines += ["", "### Largest disagreements", ""]
     for league, home, away, pm, pk, d, src, nb in top:
         nh = history[league].get(home, 0)
@@ -315,41 +369,52 @@ def main() -> None:
         note = "prior (no-history) team" if models[league].prior_teams & {
             home, away} else f"history depth: {nh}/{na} matches"
         lines.append(f"- {league}: {home} - {away}: model {pm:.3f} vs market "
-                     f"{pk:.3f} ({d:+.3f}, {src}, {nb} books) - {note}")
+                     f"{pk:.3f} ({d:+.3f}, {src}, {nb} "
+                     f"book{'s' if nb != 1 else ''}) - {note}")
+
+    # xG conversion per league over the two seasons (from the data)
+    xg_ratios = xg_per_goal(db_url, LAST_TWO_SEASONS)
+    lines += ["", "### What the disagreements may be caused by", ""]
+    lines.append(
+        f"- Thin top-flight history: {thin_in_top} of the top-5 "
+        "disagreements involve a team with <100 league matches in the DB "
+        "(no second-division data) or a prior-only team; the market "
+        "additionally prices form, injuries and lineups the model cannot "
+        "see (phase-5/6 job).")
+    lines.append(
+        "- Low-scoring matchups disagree through the teams' low RATES, "
+        "not through rho: the Dixon-Coles tau only moves mass inside the "
+        "total-goals bands 0, 1 and 2 while preserving the marginals, so "
+        "P(total >= 3) - and with it over 2.5 - is exactly rho-invariant "
+        "(tested in tests/test_dixon_coles.py).")
+    lines.append(
+        "- The 50/50 goals/xG mix smooths hot/cold scoring streaks more "
+        "than the market does.")
+    lines.append(
+        "- Some consensus de-vig values rest on few books (see the "
+        "source column); Pinnacle is available for a minority of events.")
 
     lines += [
         "",
-        "### What the disagreements may be caused by",
-        "",
-        "- Newly promoted teams carry little top-flight history in the DB",
-        "  (no second-division data): Deportivo La Coruna has 9 matches,",
-        "  Levante 84 mostly from older seasons - the fitted attack/defence",
-        "  for such teams is thin-data and the market prices current form,",
-        "  injuries and lineups that the model cannot see (that context is",
-        "  the phase-5/6 job).",
-        "- Extreme low-scoring matchups (Getafe games) sit where the",
-        "  Dixon-Coles rho/tau adjustment matters most; a rho estimate off",
-        "  by a hundredth moves P(0-0)/P(1-0) cells and shifts over 2.5.",
-        "- The 50/50 goals/xG mix smooths hot/cold scoring streaks: the",
-        "  market reacted to recent high-scoring runs (Liverpool-Arsenal)",
-        "  faster than the model does.",
-        "- Some consensus de-vig values rest on 3 books only (snapshot",
-        "  coverage varies by match); Pinnacle is available for few events.",
-        "",
         "### Notes",
         "",
-        "- Mean-goals deltas are POSITIVE in all leagues because the model",
-        "  level is recency-weighted (xi=0.005, half-life ~139 days) while",
-        "  the 2025+2026 flat average includes the lower-scoring 2025/26",
-        "  season; the per-season split above shows the model sits near the",
-        "  current-season rate. A leakage-free level check is phase 4.",
-        "- The market comparison is genuinely out of sample: fitted at",
-        "  as_of, upcoming matches only, latest snapshot per bookmaker,",
-        "  excluded books removed, Pinnacle preferred (decisions S10).",
-        "- No league shows |mean delta| > 0.05 (bias flag); correlations",
-        "  0.78 (PL, n=15) and 0.91 (La Liga, n=15). Serie A / Bundesliga /",
-        "  Ligue 1 have no totals snapshots in the DB for upcoming matches",
-        "  yet (snapshot policy covers the current weekend window).",
+        "- IN-SAMPLE check: the model-vs-actual-goals comparison above "
+        "uses matches the model was trained on (weighted by recency); "
+        "leakage-free calibration is phase 4.",
+        "- Why model means sit above the flat two-season actuals: the "
+        "mixed target itself converts above goals - Understat "
+        "sum(xG)/sum(goals) over these two seasons is "
+        + ", ".join(f"{lg}: {xg_ratios.get(lg, float('nan')):.3f}"
+                    for lg in TOP_LEAGUES if lg in xg_ratios)
+        + f" (at w={config.model.weight_xg} that lifts the fitted level "
+          "by (1-w)*(ratio-1)) - and the model is recency-weighted "
+          f"(xi={config.model.xi}) while the actual average includes the "
+          "older, lower-scoring season (see the per-season split).",
+        "- The market comparison is out of sample: fitted at as_of, "
+        "upcoming matches only, latest snapshot per bookmaker, excluded "
+        "books removed, Pinnacle preferred (decisions S10).",
+        "- Mean-delta CIs are normal-approximation (n is small); "
+        "correlation CIs use Fisher z.",
         "",
     ]
 

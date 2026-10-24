@@ -74,6 +74,7 @@ def config_hash(config: ModelConfig) -> str:
             "promoted_team_prior": config.promoted_team_prior,
             "prior_sigma": config.prior_sigma,
             "result_lag_minutes": config.result_lag_minutes,
+            "rho_bounds": list(RHO_BOUNDS),
         },
         sort_keys=True,
     )

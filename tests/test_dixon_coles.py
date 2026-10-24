@@ -577,6 +577,33 @@ def test_json_round_trip_preserves_predictions_bit_for_bit() -> None:
     assert np.array_equal(a, b)
 
 
+def test_config_hash_covers_rho_bounds(monkeypatch) -> None:
+    import core.model.dixon_coles as dc
+
+    base = config_hash(ModelConfig())
+    monkeypatch.setattr(dc, "RHO_BOUNDS", (-0.2, 0.2))
+    assert config_hash(ModelConfig()) != base
+    monkeypatch.setattr(dc, "RHO_BOUNDS", (-0.15, 0.15))
+    assert config_hash(ModelConfig()) == base
+
+
+def test_tau_does_not_move_totals_above_two() -> None:
+    """The DC tau redistributes mass only inside the totals 0/1/2 bands
+    while preserving the marginals, so P(total >= 3) - and with it
+    over 2.5 / over 3.5 - is exactly rho-invariant; the lower overs do
+    move."""
+    from core.model.markets import total_over
+
+    m0 = true_model(rho=0.0).score_matrix("Bravo", "Echo")
+    m_rho = true_model(rho=-0.08).score_matrix("Bravo", "Echo")
+    assert total_over(m0, 2.5) == pytest.approx(total_over(m_rho, 2.5),
+                                                abs=1e-12)
+    assert total_over(m0, 3.5) == pytest.approx(total_over(m_rho, 3.5),
+                                                abs=1e-12)
+    assert total_over(m0, 0.5) != pytest.approx(total_over(m_rho, 0.5),
+                                                abs=1e-9)
+
+
 def test_config_hash_is_stable_and_sensitive() -> None:
     base = ModelConfig()
     assert config_hash(base) == config_hash(ModelConfig())

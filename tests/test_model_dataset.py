@@ -198,6 +198,33 @@ def test_future_match_never_changes_fit_bit_for_bit(db_url) -> None:
     assert second.to_json() == first.to_json()
 
 
+def test_future_only_team_enters_universe_and_gets_prior(db_url) -> None:
+    """NIT: the league roster is discovered from FUTURE rows too - a team
+    seen only in an upcoming fixture joins the universe and receives the
+    prior when fitting (documented in dataset.py / decisions.md)."""
+    with session_scope(db_url) as s:
+        rng_matches = [("Arsenal", "Chelsea"), ("Chelsea", "Arsenal"),
+                       ("Arsenal", "Liverpool"), ("Liverpool", "Chelsea")] * 4
+        for i, (h, a) in enumerate(rng_matches):
+            add_match(s, home=h, away=a, season=2023 + i // 4,
+                      kickoff=AS_OF - dt.timedelta(days=i % 20 + 1),
+                      match_id=i + 1)
+        # a future fixture introduces a brand-new team
+        add_match(s, home="Arsenal", away="Broadway United", season=2027,
+                  kickoff=AS_OF + dt.timedelta(days=3), status="scheduled",
+                  goals=None, xg=None, match_id=500)
+    config = ModelConfig(xi=0.005, weight_xg=0.5)
+    model, _ = fit_league(db_url, "premier_league", AS_OF, config)
+    data = load_training_data(db_url, "premier_league", AS_OF)
+    assert "Broadway United" in data.team_universe
+    assert "Broadway United" in model.attacks
+    assert model.prior_teams == frozenset({"Broadway United"})
+    # the prior value is the weakest-third baseline, identical for all
+    # zero-match teams, and the team is predictable
+    m = model.score_matrix("Broadway United", "Arsenal")
+    assert m.shape == (11, 11)
+
+
 def test_quarantined_match_ids_parses_b5_entries() -> None:
     report = {
         "football_data": [
