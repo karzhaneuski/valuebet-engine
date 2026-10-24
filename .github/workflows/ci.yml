@@ -17,10 +17,12 @@ jobs:
         run: uv sync --dev
       - name: Secrets scan (history + working tree)
         run: |
-          if git log --all -p | grep -qE 'AIza[A-Za-z0-9._-]{20,}|tvly-[A-Za-z0-9.-]{16,}|BSA[A-Za-z0-9._-]{15,}|(ODDS_API_KEY|API_FOOTBALL_KEY|TAVILY_API_KEY|BRAVE_SEARCH_API_KEY|GEMINI_API_KEY|API_TOKEN|api_?key|apiKey)[=:]?[A-Za-z0-9._-]{20,}'; then
+          PAT=$(uv run python -c 'from core.http import ASSIGNMENT_PATTERN; print(ASSIGNMENT_PATTERN.pattern)')
+          echo "scan pattern: $PAT"
+          if git log --all -p | grep -qP "$PAT"; then
             echo "secret-like pattern found in git history"; exit 1
           fi
-          if git grep -qE '(apiKey|api_key)=[A-Za-z0-9_-]{20,}' -- . ':!*.lock' ; then
+          if git grep -qP "$PAT" -- . ':!*.lock'; then
             echo "secret-like pattern found in tracked files"; exit 1
           fi
       - name: Ruff
