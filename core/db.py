@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -19,7 +20,7 @@ _session_factory: sessionmaker[Session] | None = None
 
 
 @event.listens_for(Engine, "connect")
-def _sqlite_fk_on(dbapi_connection, connection_record) -> None:
+def _sqlite_fk_on(dbapi_connection: Any, connection_record: Any) -> None:
     """SQLite ships with foreign keys OFF; enforce them on every connect
     (application, tests and alembic all go through create_engine)."""
     import sqlite3

@@ -39,7 +39,7 @@ class Base(DeclarativeBase):
     pass
 
 
-class UTCDateTime(TypeDecorator):
+class UTCDateTime(TypeDecorator[dt.datetime | None]):
     """DateTime that always reads back as timezone-aware UTC (SQLite loses
     the tzinfo on storage; S7) and normalizes aware inputs to UTC on write
     (NIT: literally stored mixed offsets break comparisons)."""
@@ -47,12 +47,16 @@ class UTCDateTime(TypeDecorator):
     impl = DateTime(timezone=True)
     cache_ok = True
 
-    def process_bind_param(self, value, dialect):
+    def process_bind_param(
+        self, value: dt.datetime | None, dialect: object
+    ) -> dt.datetime | None:
         if value is not None and value.tzinfo is not None:
             return value.astimezone(dt.UTC)
         return value
 
-    def process_result_value(self, value, dialect):
+    def process_result_value(
+        self, value: dt.datetime | None, dialect: object
+    ) -> dt.datetime | None:
         if value is not None and value.tzinfo is None:
             return value.replace(tzinfo=dt.UTC)
         return value

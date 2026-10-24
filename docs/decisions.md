@@ -329,3 +329,67 @@ the original kickoff and the shift moment are persisted
 (`matches.original_kickoff_utc`, `rescheduled_at_utc`). Only phase 7 lifts
 the status: a result arrives via `/scores`, or the match is played per
 Understat. This replaced the interim auto-clear rule (dead code removed).
+
+## 2026-10-24 — Phase 3: training-data selection rules
+
+**Decision** (phase-3 model, dataset side):
+
+- only `status='finished'` matches with a known score enter training —
+  this single filter already excludes postponed*, void and scheduled;
+- B5 quarantine (fd row refused: date mismatch > 1 day + score
+  disagreement) is not persisted in the DB, so the loader takes
+  `excluded_match_ids` and the caller parses `match#<id>` entries from
+  the ingest report's `football_data[].quarantined` lists
+  (`dataset.quarantined_match_ids`); `inverted_pairs` are NOT excluded
+  (they name a different, valid db match);
+- kickoff is `commence_time_utc` with the strict SQL filter
+  `commence_time_utc < as_of`; a finished match with NULL commence time
+  is skipped with a warning — we cannot prove it kicked off before
+  as_of, and a fallback guess could leak the future in the phase-4
+  walk-forward;
+- goals come from the score: understat stats first, football-data stats
+  as fallback; xG from understat only; matches without xG stay in
+  training on goals alone (w=1 for that match);
+- the team universe for promoted-team priors is every team in ANY match
+  row of the league (any status, any season): a promoted team is
+  discovered through its (future) scheduled matches; long-relegated
+  teams also receive an inert prior — harmless, and keeps the rule
+  deterministic.
+
+**Reason**: phase-3 task additions (phase-2 outcomes) + leak-safety;
+verified by tests incl. the bit-for-bit "future match added → parameters
+unchanged" test.
+
+## 2026-10-24 — Phase 3: Dixon-Coles likelihood details
+
+**Decision** (math conventions in `core/model/dixon_coles.py`):
+
+- rates: `lam_home = exp(attack_home + defence_away + gamma)`,
+  `lam_away = exp(attack_away + defence_home)` — gamma enters the HOME
+  rate only (Dixon & Coles 1997);
+- identifiability: the likelihood is invariant under (attack+c,
+  defence+c) and (defence+c, gamma−c) shifts; BOTH `sum(attack) = 0` and
+  `sum(defence) = 0` are enforced via n-1 free parameters each. Without
+  the second constraint gamma drifts along an exactly flat direction
+  (found empirically: two fits with gamma = −0.55 and +0.17 at identical
+  likelihood);
+- tau applies to the OBSERVED integer score (0-0/1-0/0-1/1-1); the
+  quasi-Poisson part acts on the mixed target `y = w*goals + (1-w)*xG`
+  with `lgamma(y+1)` replacing the factorial (non-integer targets are
+  the whole point of w<1);
+- time decay uses fractional days `(as_of - kickoff)/24h` inside
+  `exp(-xi * days)`;
+- rho is bounded to [-0.15, 0.15] (empirical league estimates are
+  ~|0.05|; the bound keeps tau positive for realistic rate products;
+  points with tau <= 0 are rejected with a large objective value);
+- `home_advantage_prior` (gamma start) and `promoted_team_prior`
+  (weakest-third rule: mean attack/defence of the weakest third by
+  attack − defence) are STARTING values/rules from config, both marked
+  as phase-4 tunables;
+- the analytic gradient (incl. tau chains) is checked against finite
+  differences in tests; fitting uses L-BFGS-B with a closed-form start
+  (log scored/conceded averages) and tightened tolerances.
+
+**Reason**: review checklist of phase 3 (tau correctness, non-integer
+quasi-likelihood, no-leakage, promoted teams); the flat-direction
+pitfall was caught by the synthetic-recovery test.
