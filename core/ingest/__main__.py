@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from core.config import load_config, load_secrets
 from core.db import session_scope
+from core.http import register_secret_values
 from core.ingest.football_data import FootballDataLoader
 from core.ingest.odds_api import OddsApiClient
 from core.ingest.understat import UnderstatLoader
@@ -144,6 +145,17 @@ def cmd_events(args: argparse.Namespace) -> None:
     out.write_text(json.dumps(report, indent=2, default=str))
 
 
+def pick_latest_event_id(db_url: str, league: str) -> str | None:
+    """TOA event id of the league's most recently scheduled match
+    (S9: odds-snapshot works without an explicit --event-id)."""
+    with session_scope(db_url) as s:
+        match = s.scalars(select(Match).where(
+            Match.league == league,
+            Match.toa_event_id.isnot(None)).order_by(
+            Match.commence_time_utc.desc())).first()
+        return match.toa_event_id if match else None
+
+
 def cmd_odds_snapshot(args: argparse.Namespace) -> None:
     config = load_config()
     client = OddsApiClient(_db_url(), config,
@@ -154,14 +166,8 @@ def cmd_odds_snapshot(args: argparse.Namespace) -> None:
         result = client.snapshot_sport_totals(league.toa_sport_key,
                                               args.tier)
     else:
-        event_id = args.event_id
-        if not event_id:
-            with session_scope(_db_url()) as s:
-                match = s.scalars(select(Match).where(
-                    Match.league == args.leagues,
-                    Match.toa_event_id.isnot(None)).order_by(
-                    Match.commence_time_utc.desc())).first()
-                event_id = match.toa_event_id if match else None
+        event_id = args.event_id or pick_latest_event_id(_db_url(),
+                                                         args.league)
         if not event_id:
             sys.exit("event-id required for event-level markets")
         assert league.toa_sport_key is not None
@@ -179,8 +185,8 @@ def cmd_scores(args: argparse.Namespace) -> None:
     print(json.dumps(result))
 
 
-def main(argv: list[str] | None = None) -> None:
-    configure(dev_mode=True)
+def build_parser() -> argparse.ArgumentParser:
+    """CLI parser (exposed for tests)."""
     parser = argparse.ArgumentParser(prog="core.ingest")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -216,6 +222,18 @@ def main(argv: list[str] | None = None) -> None:
                        help="run all database invariants, exit != 0 on FAIL")
     p.set_defaults(func=cmd_checks)
 
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    configure(dev_mode=True)
+    # S11: runtime secret values must be redacted from any log line
+    secrets = load_secrets()
+    register_secret_values([v for v in (
+        secrets.odds_api_key, secrets.api_football_key,
+        secrets.tavily_api_key, secrets.brave_search_api_key,
+        secrets.gemini_api_key, secrets.api_token) if v])
+    parser = build_parser()
     args = parser.parse_args(argv)
     args.func(args)
 

@@ -23,12 +23,20 @@ import httpx
 SENSITIVE_PARAMS = ("apiKey", "api_key", "key", "token", "apikey")
 
 _SECRET_VALUE_PATTERNS = [
-    re.compile(r"(apiKey|api_key|apikey|key|token)=[A-Za-z0-9_\-]{8,}",
+    re.compile(r"(apiKey|api_key|apikey|key|token)=[A-Za-z0-9_.\-]{8,}",
                re.IGNORECASE),
-    re.compile(r"AIza[A-Za-z0-9_\-]{20,}"),
-    re.compile(r"tvly-[A-Za-z0-9\-_]{10,}"),
-    re.compile(r"BSA[A-Za-z0-9_\-]{15,}"),
+    re.compile(r"AIza[A-Za-z0-9_.\-]{20,}"),   # Gemini keys contain dots
+    re.compile(r"tvly-[A-Za-z0-9.\-_]{10,}"),
+    re.compile(r"BSA[A-Za-z0-9_.\-]{15,}"),
 ]
+
+# generic KEY=VALUE / "KEY": "VALUE" forms for all our env names
+_ENV_NAMES = ("ODDS_API_KEY|API_FOOTBALL_KEY|TAVILY_API_KEY|"
+              "BRAVE_SEARCH_API_KEY|GEMINI_API_KEY|API_TOKEN|"
+              "api_?key|apiKey|token")
+ASSIGNMENT_PATTERN = re.compile(
+    r"(" + _ENV_NAMES + r")[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9._\-]{20,}",
+    re.IGNORECASE)
 
 _redact_values: list[str] = []
 
@@ -48,6 +56,7 @@ def redact_text(text: str) -> str:
     for value in _redact_values:
         text = text.replace(value, "***")
     text = _PARAM_PATTERN.sub(r"\1=***", text)
+    text = ASSIGNMENT_PATTERN.sub(r"\1=***", text)
     for pattern in _SECRET_VALUE_PATTERNS[1:]:
         text = pattern.sub("***", text)
     return text
