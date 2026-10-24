@@ -69,6 +69,8 @@ def cmd_backfill(args: argparse.Namespace) -> None:
                  "missing_match": fd_r.missing_match,
                  "unmatched_teams": sorted(set(fd_r.unmatched_teams)),
                  "date_mismatches": fd_r.date_mismatches,
+                 "quarantined": fd_r.quarantined,
+                 "inverted_pairs": fd_r.inverted_pairs,
                  "closing_written": fd_r.closing_written})
             print(f"fd {slug} {season}: {fd_r.matched}/{fd_r.rows} matched, "
                   f"closing {fd_r.closing_written}, "

@@ -92,16 +92,25 @@ def test_pair_not_date_is_the_join_key(tmp_path) -> None:
     loader = FootballDataLoader(url, config, cache_dir=tmp_path / "fd")
     rows = loader.parse("premier_league", 2025, raw=FIXTURE.read_bytes())
     first = rows[0]
-    seed_understat_side(url, first.home, first.away,
-                        canonical_home=first.home,
-                        canonical_away=first.away,
-                        understat_home=first.home,
-                        understat_away=first.away,
-                        commence=dt.datetime(2026, 1, 31, 15, 0,
-                                             tzinfo=dt.UTC))
+    m = seed_understat_side(url, first.home, first.away,
+                            canonical_home=first.home,
+                            canonical_away=first.away,
+                            understat_home=first.home,
+                            understat_away=first.away,
+                            commence=dt.datetime(2026, 1, 31, 15, 0,
+                                                 tzinfo=dt.UTC))
+    # the far-date row is only bound when the understat score agrees;
+    # give the match matching stats so the row IS written
+    from core.orm import MatchStat
+
+    assert m is not None
+    with session_scope(url) as s:
+        s.add(MatchStat(match_id=m.id, source="understat",
+                        home_goals=first.fthg, away_goals=first.ftag))
     report = loader.upsert([first])
     assert report.matched == 1  # pair matched despite the date difference
     assert report.date_mismatches  # and the >±1 day delta is reported
+    assert report.quarantined == [] and report.inverted_pairs == []
 
 
 def test_unmatched_team_reported_not_skipped_silently(tmp_path) -> None:
@@ -113,3 +122,96 @@ def test_unmatched_team_reported_not_skipped_silently(tmp_path) -> None:
     report = loader.upsert([first])  # empty DB: no teams at all
     assert set([first.home, first.away]) <= set(report.unmatched_teams)
     assert report.matched == 0
+
+
+# --- 0.2: classification of far-date rows and report fields ---------------
+
+
+def _fd_row(date: dt.date, home: str, away: str, hg: int, ag: int):
+    from decimal import Decimal
+
+    from core.ingest.football_data import FdRow
+
+    return FdRow(league_slug="premier_league", season=2026, date=date,
+                 time=dt.time(12, 30), home=home, away=away,
+                 fthg=hg, ftag=ag, avgc_over=Decimal("1.95"),
+                 avgc_under=Decimal("1.85"), maxc_over=None,
+                 maxc_under=None, pc_over=None, pc_under=None)
+
+
+def _seed_two_matches(url: str) -> None:
+    """The 10559 scene: an exact pairing scheduled months away with no
+    stats, and the inverted (already played) pairing on the fd date."""
+    import datetime as dtx
+
+    from core.orm import MatchStat
+
+    with session_scope(url) as s:
+        rennes = Team(name="Rennes", league="premier_league")
+        psg = Team(name="Paris Saint Germain", league="premier_league")
+        s.add_all([rennes, psg])
+        s.flush()
+        for t, a in ((rennes, "Rennes"), (psg, "Paris Saint Germain"),
+                     (psg, "PSG")):
+            s.add(TeamAlias(team_id=t.id, source="football_data", alias=a))
+        future = Match(league="premier_league", season=2026,
+                       date_utc=dtx.date(2027, 3, 6),
+                       commence_time_utc=dtx.datetime(2027, 3, 6, 20, 0,
+                                                      tzinfo=dt.UTC),
+                       kickoff_source="understat_placeholder",
+                       status="scheduled", home_team_id=rennes.id,
+                       away_team_id=psg.id)
+        played = Match(league="premier_league", season=2026,
+                       date_utc=dtx.date(2026, 8, 23),
+                       commence_time_utc=dtx.datetime(2026, 8, 23, 19, 0,
+                                                      tzinfo=dt.UTC),
+                       kickoff_source="understat_placeholder",
+                       status="finished", home_team_id=psg.id,
+                       away_team_id=rennes.id)
+        s.add_all([future, played])
+        s.flush()
+        s.add(MatchStat(match_id=played.id, source="understat",
+                        home_goals=3, away_goals=1))
+
+
+def test_far_date_inverted_row_classified_once(tmp_path) -> None:
+    """A far-date fd row whose same-day INVERTED fixture exists is an
+    inverted pair - and must not also dangle in date_mismatches."""
+    url = make_db(tmp_path)
+    loader = FootballDataLoader(url, load_config(),
+                                cache_dir=tmp_path / "fd")
+    _seed_two_matches(url)
+    row = _fd_row(dt.date(2026, 8, 23), "Rennes", "PSG", 3, 1)
+    report = loader.upsert([row])
+    assert report.matched == 1
+    assert len(report.inverted_pairs) == 1
+    assert report.date_mismatches == []
+    assert report.quarantined == []
+
+
+def test_far_date_without_stats_is_quarantined_only(tmp_path) -> None:
+    """Same far-date row but no inverted fixture and no understat score:
+    quarantined, not date_mismatches."""
+    url = make_db(tmp_path)
+    loader = FootballDataLoader(url, load_config(),
+                                cache_dir=tmp_path / "fd")
+    # exact pairing far in the future, no stats, no inverted leg
+    with session_scope(url) as s:
+        home = Team(name="Rennes", league="premier_league")
+        away = Team(name="Paris Saint Germain", league="premier_league")
+        s.add_all([home, away])
+        s.flush()
+        for t, a in ((home, "Rennes"), (away, "PSG")):
+            s.add(TeamAlias(team_id=t.id, source="football_data", alias=a))
+        s.add(Match(league="premier_league", season=2026,
+                    date_utc=dt.date(2027, 3, 6),
+                    commence_time_utc=dt.datetime(2027, 3, 6, 20, 0,
+                                                  tzinfo=dt.UTC),
+                    kickoff_source="understat_placeholder",
+                    status="scheduled", home_team_id=home.id,
+                    away_team_id=away.id))
+    row = _fd_row(dt.date(2026, 8, 23), "Rennes", "PSG", 0, 0)
+    report = loader.upsert([row])
+    assert len(report.quarantined) == 1
+    assert report.date_mismatches == []
+    assert report.inverted_pairs == []

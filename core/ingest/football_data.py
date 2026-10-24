@@ -270,15 +270,15 @@ class FootballDataLoader:
                     report.missing_match.append(label)
                     continue
                 report.matched += 1
-                # ±1 day validation only (decisions.md rule)
+                # ±1 day validation only (decisions.md rule); the
+                # date_mismatches journal entry is added AFTER the
+                # inverted/quarantine resolution below, so a row that is
+                # already classified (inverted pair / quarantine) does not
+                # also dangle in date_mismatches
                 kickoff = row.kickoff_utc
                 delta = None
                 if kickoff is not None and match.date_utc is not None:
                     delta = abs(kickoff.date() - match.date_utc).days
-                    if delta > 1:
-                        report.date_mismatches.append(
-                            f"match#{match.id}: fd {kickoff.date()} vs db "
-                            f"{match.date_utc}")
                 if delta is not None and delta > 1 and kickoff is not None:
                     # B5: a same-date INVERTED fixture exists -> the fd row
                     # belongs to it, not to this far-away pairing (the
@@ -313,6 +313,12 @@ class FootballDataLoader:
                             f"{match.date_utc}, score "
                             f"{row.fthg}:{row.ftag}")
                         continue
+                if delta is not None and delta > 1 and kickoff is not None:
+                    # survived the checks above (or delta check passed):
+                    # record the date discrepancy for a row we actually wrote
+                    report.date_mismatches.append(
+                        f"match#{match.id}: fd {kickoff.date()} vs db "
+                        f"{match.date_utc}")
                 stat = s.scalars(select(MatchStat).where(
                     MatchStat.match_id == match.id,
                     MatchStat.source == "football_data")).first()
