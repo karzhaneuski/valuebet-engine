@@ -64,7 +64,8 @@ class FakeLoader:
                 names[int(uid)] = (m.home_team.name, m.away_team.name)
         return names
 
-    def lineup_rows(self, understat_id: int) -> list[dict]:
+    def lineup_rows(self, understat_id: int, league_slug: str,
+                    season: int) -> list[dict]:
         self.attempts[understat_id] = self.attempts.get(understat_id, 0) + 1
         if understat_id in self.fail_ids or \
                 (understat_id in self.fail_once_ids
@@ -132,3 +133,94 @@ def test_s6_retry_then_success_and_report(tmp_path) -> None:
     assert loader.attempts[801] == 2  # exhausted the attempts
     assert any(f["understat_id"] == 801 for f in report["failed_matches"])
     assert report["rows_written"] == 2  # only match 800 settled
+
+
+# --- 0.1/0.3: duplicate roster rows, error text, one reader per season ----
+
+
+class FakeReader:
+    """Mimics soccerdata.Understat: read_schedule once, then per-match
+    player stats (with duplicates like the real match 30804 data)."""
+
+    def __init__(self, frames: dict[int, object], calls: dict):
+        self._frames = frames
+        self._calls = calls
+        self.schedule_calls = 0
+
+    def read_schedule(self, **_: object):
+        self.schedule_calls += 1
+        self._calls["readers"] = self._calls.get("readers", 0)
+        import pandas as pd
+
+        return pd.DataFrame()
+
+    def read_player_match_stats(self, match_id: int):
+        return self._frames[int(match_id)]
+
+
+def _dup_frame():
+    """Rows like understat match 30804: each player duplicated with
+    different surrogate ids / roster_in references."""
+    import pandas as pd
+
+    rows = []
+    for pid, player, team, minutes in [
+        (1, "Alpha One", "Alpha", 90), (2, "Alpha Two", "Alpha", 64),
+        (3, "Alpha Sub", "Alpha", 26), (11, "Beta One", "Beta", 90),
+    ]:
+        for _ in range(2):  # the understat glitch: every row twice
+            rows.append({"team": team, "player": player,
+                         "player_id": pid, "position": "Sub" if minutes < 30
+                         else "MC", "minutes": minutes})
+    return pd.DataFrame(rows)
+
+
+def test_lineup_rows_deduplicates_understat_glitch(tmp_path) -> None:
+    frame = _dup_frame()
+    calls: dict = {}
+    loader = UnderstatLoader(
+        f"sqlite:///{tmp_path}/x.db", load_config(),
+        reader_factory=lambda lg, se: FakeReader({700: frame}, calls))
+    rows = loader.lineup_rows(700, "premier_league", 2026)
+    assert len(rows) == 4                       # 8 rows -> 4 unique players
+    assert {r["understat_player_id"] for r in rows} == {1, 2, 3, 11}
+    assert rows[0]["started"] is True and rows[2]["started"] is False
+
+
+def test_one_reader_and_one_schedule_read_per_league_season(tmp_path) -> None:
+    frame = _dup_frame()
+    calls: dict = {"factories": 0}
+    readers: list[FakeReader] = []
+
+    def factory(lg: str, se: int) -> FakeReader:
+        calls["factories"] += 1
+        r = FakeReader({700 + i: frame for i in range(3)}, calls)
+        readers.append(r)
+        return r
+
+    loader = UnderstatLoader(f"sqlite:///{tmp_path}/x.db", load_config(),
+                             reader_factory=factory)
+    for i in range(3):
+        loader.lineup_rows(700 + i, "premier_league", 2026)
+    assert calls["factories"] == 1              # one reader per season
+    assert readers[0].schedule_calls == 1       # schedule read once, pinned
+    loader.lineup_rows(700, "la_liga", 2026)    # other league -> new reader
+    assert calls["factories"] == 2
+
+
+def test_failed_matches_carry_error_text(tmp_path) -> None:
+    url = make_db(tmp_path)
+    seed_finished(url, count=1, understat_from=900)
+
+    class ExplodingLoader(FakeLoader):
+        def lineup_rows(self, understat_id: int, league_slug: str,
+                        season: int) -> list[dict]:
+            raise ValueError("boom boom")
+
+    config = load_config().model_copy(deep=True)
+    config.ingest.retry_attempts = 1
+    report = backfill_lineups(url, config, "2026-10-01",
+                              loader=ExplodingLoader(url))
+    assert len(report["failed_matches"]) == 1
+    error = report["failed_matches"][0]["error"]
+    assert "ValueError" in error and "boom boom" in error

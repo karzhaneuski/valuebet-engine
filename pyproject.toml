@@ -63,6 +63,10 @@ module = ["soccerdata", "soccerdata.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["pandas", "pandas.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 # the full --strict flag set, spelled out because `strict = true` in a
 # per-module section leaks globally (verified with mypy 1.19); the phase
 # gate is additionally `uv run mypy --strict core/model`
