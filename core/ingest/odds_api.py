@@ -415,7 +415,9 @@ class OddsApiClient:
         if exists is None:
             session.add(TeamAlias(team_id=team.id, source="toa",
                                   alias=name))
-            matcher._aliases[("toa", name)] = team.id  # keep snapshot fresh
+        # keep both matcher snapshots fresh after possible team creation
+        matcher._aliases[("toa", name)] = team.id
+        names[team.id] = team.name
         return team
 
     def _ensure_toa_team(self, session: Session, name: str,

@@ -129,7 +129,9 @@ class AliasMatcher:
         """roster: team ids of the league-season; containment is restricted
         to roster teams that have no alias of ``source`` yet."""
         exact = self._aliases.get((source, name))
-        if exact is not None:
+        # a dangling alias (team deleted / rolled back) must not crash the
+        # run: treat it as absent; loaders will recreate and rebind
+        if exact is not None and exact in self._names:
             return AliasMatch(matched=self._names[exact], method="exact")
         norm = normalize(name)
         hit = self._by_norm.get(norm)

@@ -1,82 +1,44 @@
 {
   "premier_league": {
-    "events": 40,
-    "created": 0,
-    "kickoffs_updated": 11,
+    "events": 20,
+    "created": 4,
+    "kickoffs_updated": 0,
     "postponed_suspected": 0,
-    "unmatched": [
-      "Everton",
-      "Fulham",
-      "Brighton and Hove Albion",
-      "Leeds United",
-      "Nottingham Forest"
-    ]
+    "unmatched": []
   },
   "la_liga": {
-    "events": 38,
-    "created": 0,
-    "kickoffs_updated": 10,
+    "events": 19,
+    "created": 2,
+    "kickoffs_updated": 1,
     "postponed_suspected": 0,
-    "unmatched": [
-      "Espanyol",
-      "Real Betis",
-      "Real Madrid",
-      "CA Osasuna",
-      "M\u00e1laga",
-      "Alav\u00e9s"
-    ]
+    "unmatched": []
   },
   "serie_a": {
-    "events": 38,
+    "events": 19,
     "created": 0,
-    "kickoffs_updated": 15,
+    "kickoffs_updated": 0,
     "postponed_suspected": 0,
-    "unmatched": [
-      "Bologna",
-      "Juventus"
-    ]
+    "unmatched": []
   },
   "bundesliga": {
-    "events": 34,
+    "events": 17,
     "created": 0,
-    "kickoffs_updated": 15,
+    "kickoffs_updated": 1,
     "postponed_suspected": 0,
-    "unmatched": [
-      "Hamburger SV"
-    ]
+    "unmatched": []
   },
   "ligue_1": {
-    "events": 34,
+    "events": 17,
     "created": 0,
-    "kickoffs_updated": 15,
+    "kickoffs_updated": 0,
     "postponed_suspected": 0,
-    "unmatched": [
-      "Le Mans FC"
-    ]
+    "unmatched": []
   },
   "ucl": {
-    "events": 36,
-    "created": 0,
-    "kickoffs_updated": 6,
+    "events": 18,
+    "created": 12,
+    "kickoffs_updated": 0,
     "postponed_suspected": 0,
-    "unmatched": [
-      "Galatasaray",
-      "Shakhtar Donetsk",
-      "Sporting Lisbon",
-      "Bod\u00f8/Glimt",
-      "Feyenoord",
-      "LASK",
-      "\u0160K Slovan Bratislava",
-      "AEK Athens",
-      "Real Madrid",
-      "Fenerbahce",
-      "Slavia Praha",
-      "Real Betis",
-      "PSV Eindhoven",
-      "Club Brugge",
-      "Porto",
-      "Viking FK",
-      "Sabah FK"
-    ]
+    "unmatched": []
   }
 }
