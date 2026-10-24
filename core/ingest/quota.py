@@ -75,6 +75,7 @@ class QuotaGuard:
         conn = sqlite3.connect(_sqlite_path(self._db_url), timeout=30.0,
                                isolation_level=None)
         try:
+            conn.execute("PRAGMA foreign_keys=ON")
             conn.execute("BEGIN IMMEDIATE")
             conn.execute(
                 "INSERT OR IGNORE INTO quota_counters "

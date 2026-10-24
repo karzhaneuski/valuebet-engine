@@ -233,7 +233,18 @@ def test_shadow_llm_requires_llm_call(db_url) -> None:
     with pytest.raises(IntegrityError):
         session.flush()
     session.rollback()
-    # with an llm_call it is valid
+    session.close()
+    # valid case on a FRESH session (the rollback above wiped the
+    # un-committed match too — with FK enforcement that matters)
+    session = factory()
+    t1, t2 = Team(name="S1"), Team(name="S2")
+    session.add_all([t1, t2])
+    session.flush()
+    m2 = Match(league="premier_league", season=2026,
+               date_utc=dt.date(2026, 10, 24), kickoff_source="toa",
+               home_team_id=t1.id, away_team_id=t2.id)
+    session.add(m2)
+    session.flush()
     call = LlmCall(purpose="shadow", prompt="...", model="gemini-3.8-flash",
                    model_version="3.0",
                    thinking_config='{"thinkingBudget": 4096}',
@@ -242,7 +253,7 @@ def test_shadow_llm_requires_llm_call(db_url) -> None:
     session.add(call)
     session.flush()
     session.add(Recommendation(
-        match_id=m.id, market="goals_range", outcome="2-4",
+        match_id=m2.id, market="goals_range", outcome="2-4",
         goals_range_lo=2, goals_range_hi=4, bookmaker="fortuna",
         odds=Decimal("1.8"), p_model=Decimal("0.6100"), edge=Decimal("0.0980"),
         variant="shadow_llm", llm_call_id=call.id,
@@ -265,3 +276,15 @@ def test_snapshot_t3_day_degraded_default_false(db_url) -> None:
            inspect(get_engine(db_url)).get_columns("odds_snapshots")}[
         "t3_day_degraded"]
     assert col["nullable"] is False
+
+
+def test_alias_fk_enforced(db_url) -> None:
+    """B1: with PRAGMA foreign_keys=ON an alias for a missing team fails."""
+    from core.db import get_session_factory
+    factory = get_session_factory(db_url)
+    session = factory()
+    session.add(TeamAlias(team_id=999999, source="toa", alias="Ghost"))
+    with pytest.raises(IntegrityError):
+        session.flush()
+    session.rollback()
+    session.close()

@@ -10,12 +10,24 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
+
+
+@event.listens_for(Engine, "connect")
+def _sqlite_fk_on(dbapi_connection, connection_record) -> None:
+    """SQLite ships with foreign keys OFF; enforce them on every connect
+    (application, tests and alembic all go through create_engine)."""
+    import sqlite3
+
+    if isinstance(dbapi_connection, sqlite3.Connection):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 def get_engine(url: str) -> Engine:

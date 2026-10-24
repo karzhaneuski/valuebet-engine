@@ -44,6 +44,10 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     engine = get_engine(database_url())
     with engine.connect() as connection:
+        # batch ALTERs on SQLite require disabled FK enforcement while
+        # tables are rebuilt; a foreign_key_check afterwards proves the
+        # data is still consistent. Only around real DDL runs — the
+        # `alembic check` compare mode must not touch pragmas.
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
