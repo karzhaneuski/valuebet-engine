@@ -371,3 +371,82 @@ def test_s7_fd_midnight_gmt_and_bst() -> None:
     # 2 Jul (BST=UTC+1): 00:15 London == 23:15 UTC on the PREVIOUS day
     bst = dt.datetime(2026, 7, 2, 0, 15, tzinfo=london).astimezone(dt.UTC)
     assert (bst.hour, bst.day) == (23, 1)
+
+
+# --- B2 (final round): TOA never creates top-5 teams --------------------------
+
+def test_b2_toa_brighton_binds_without_creating(tmp_path) -> None:
+    """TOA 'Brighton and Hove Albion' against a roster whose team is
+    aliased 'Brighton' (understat/fd): bidirectional containment binds to
+    the EXISTING team; zero teams/matches created."""
+    url = make_db(tmp_path)
+    ko = dt.datetime(2026, 10, 28, 19, 0, tzinfo=dt.UTC)
+    with session_scope(url) as s:
+        brighton = Team(name="Brighton", league="premier_league")
+        liverpool = Team(name="Liverpool", league="premier_league")
+        s.add_all([brighton, liverpool])
+        s.flush()
+        for t, name in ((brighton, "Brighton"), (liverpool, "Liverpool")):
+            s.add(TeamAlias(team_id=t.id, source="understat", alias=name))
+            s.add(TeamAlias(team_id=t.id, source="football_data",
+                            alias=name))
+        s.add(Match(league="premier_league", season=2026,
+                    date_utc=ko.date(), commence_time_utc=ko,
+                    kickoff_source="understat_placeholder",
+                    status="scheduled", home_team_id=liverpool.id,
+                    away_team_id=brighton.id, understat_id=500))
+    client = OddsApiClient(url, load_config(), "k")
+    report = client.apply_events(
+        "soccer_epl",
+        [_event("e-b2", "Liverpool", "Brighton and Hove Albion", ko)],
+        "premier_league", 2026, now=NOW)
+    with session_scope(url) as s:
+        assert len(s.scalars(select(Team)).all()) == 2  # nothing created
+        assert len(s.scalars(select(Match)).all()) == 1
+        m = s.scalars(select(Match)).one()
+        assert m.toa_event_id == "e-b2"
+        assert m.away_team.name == "Brighton"
+        toa_alias = s.scalars(select(TeamAlias).where(
+            TeamAlias.source == "toa",
+            TeamAlias.alias == "Brighton and Hove Albion")).one()
+        assert toa_alias.team_id == m.away_team_id
+    assert report.matches_created == 0
+    assert report.unmatched_teams == []
+    assert report.teams_created == []
+
+
+def test_b2_toa_unmatched_in_top5_reported_not_created(tmp_path) -> None:
+    url = make_db(tmp_path)
+    ko = dt.datetime(2026, 10, 28, 19, 0, tzinfo=dt.UTC)
+    seed_pair(url, kickoff=ko, status="scheduled", understat_id=501)
+    client = OddsApiClient(url, load_config(), "k")
+    report = client.apply_events(
+        "soccer_epl",
+        [_event("e-x", "Home FC", "Mysterious Unknown XI", ko)],
+        "premier_league", 2026, now=NOW)
+    with session_scope(url) as s:
+        assert len(s.scalars(select(Team)).all()) == 2  # nothing created
+    assert report.unmatched_teams == ["Mysterious Unknown XI"]
+
+
+# --- S6: lineups backfill takes only unloaded matches ---------------------------
+
+def test_s6_backfill_query_skips_loaded_matches(tmp_path) -> None:
+    """The pending query (NOT EXISTS lineups) is applied BEFORE any
+    download: a loaded match must not appear in the candidate list."""
+
+    url = make_db(tmp_path)
+    ko = dt.datetime(2026, 10, 20, 15, 0, tzinfo=dt.UTC)
+    seed_pair(url, kickoff=ko, status="finished", understat_id=601)
+    with session_scope(url) as s:
+        m = s.scalars(select(Match)).one()
+        s.add(MatchLineup(match_id=m.id, team_id=m.home_team_id,
+                          player="Someone", started=True, minutes=90))
+    with session_scope(url) as s:
+        has_lineups = select(MatchLineup.match_id).where(
+            MatchLineup.match_id == Match.id).exists()
+        pending = s.scalars(select(Match).where(
+            Match.status == "finished",
+            Match.understat_id.isnot(None),
+            ~has_lineups)).all()
+        assert pending == []  # the loaded match is filtered out early

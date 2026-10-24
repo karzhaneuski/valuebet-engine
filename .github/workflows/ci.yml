@@ -36,6 +36,14 @@ jobs:
           uv run alembic upgrade head
           uv run python scripts/seed_team_aliases.py
           rm -f ci-check.db
+      - name: Ingest invariants on fixture database
+        env:
+          DATABASE_URL: sqlite:///./ci-fixture.db
+        run: |
+          uv run python scripts/build_fixture_db.py
+          uv run python -m core.ingest checks
+          rm -f ci-fixture.db
+
       - name: Alembic check (migration matches ORM)
         env:
           DATABASE_URL: sqlite:///./ci-check.db

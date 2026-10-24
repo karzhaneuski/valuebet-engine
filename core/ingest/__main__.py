@@ -134,6 +134,8 @@ def cmd_events(args: argparse.Namespace) -> None:
                                "kickoffs_updated": r.kickoffs_updated,
                                "postponed_suspected":
                                    r.postponed_suspected,
+                               "un_suspected": r.un_suspected,
+                               "teams_created": r.teams_created,
                                "unmatched": r.unmatched_teams}
         print(f"events {league.slug}: {r.events_seen} events, "
               f"+{r.matches_created} new, {r.postponed_suspected} suspected")
@@ -210,8 +212,20 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--days-from", type=int, default=3)
     p.set_defaults(func=cmd_scores)
 
+    p = sub.add_parser("checks",
+                       help="run all database invariants, exit != 0 on FAIL")
+    p.set_defaults(func=cmd_checks)
+
     args = parser.parse_args(argv)
     args.func(args)
+
+
+def cmd_checks(args: argparse.Namespace) -> None:
+    from core.ingest.checks_runner import run_all_checks
+
+    failed = run_all_checks(_db_url(), load_config())
+    if failed:
+        sys.exit(f"checks FAILED: {failed} invariant(s) violated")
 
 
 if __name__ == "__main__":

@@ -142,7 +142,8 @@ class AliasMatcher:
             for norm_key, team_id in self._by_norm.items():
                 if team_id in roster and team_id not in have_source_alias \
                         and norm != norm_key \
-                        and _is_subsequence(norm, norm_key):
+                        and (_is_subsequence(norm, norm_key)
+                             or _is_subsequence(norm_key, norm)):
                     supers.append(team_id)
             if len(set(supers)) == 1:
                 return AliasMatch(matched=self._names[supers[0]],

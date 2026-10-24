@@ -399,14 +399,20 @@ class OddsApiClient:
     def _team_for(self, session: Session, matcher: AliasMatcher,
                   names: dict[int, str], roster: set[int], name: str,
                   league_slug: str, report: EventsReport) -> Team | None:
-        """B6: deterministic match (exact -> normalized -> roster
-        containment); on hit remember the toa alias; otherwise create the
-        team (same rule for /events and /scores)."""
+        """B2: deterministic match (exact -> normalized -> bidirectional
+        roster containment). In TOP-5 leagues a miss is reported as
+        unmatched and NOTHING is created — teams there are owned by the
+        Understat/football-data loaders. Only UCL creates teams from TOA
+        (same rule as /scores)."""
         m = matcher.match("toa", name, roster=roster)
         team = None
         if m.matched is not None:
             team = session.scalars(select(Team).where(
                 Team.name == m.matched)).first()
+        if team is None and league_slug != "ucl":
+            if name not in report.unmatched_teams:
+                report.unmatched_teams.append(name)
+            return None
         if team is None:
             team = self._ensure_toa_team(session, name, league_slug,
                                          report.teams_created)
