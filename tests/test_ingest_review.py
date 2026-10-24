@@ -318,7 +318,7 @@ def test_s10_toa_to_toa_shift_is_postponement(tmp_path) -> None:
         assert m.status == "postponed_suspected"  # survives the loop
         assert m.original_kickoff_utc is not None
         assert m.rescheduled_at_utc is not None
-    assert stable.un_suspected == 0
+    assert not getattr(stable, "un_suspected", None)  # dead rule removed
 
 
 # --- S3: UCL pair search before create -----------------------------------------

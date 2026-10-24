@@ -124,6 +124,22 @@ def check_events_report(
                 f"missing_key={missing or 'none'}")
 
 
+def check_stale_scheduled(db_url: str,
+                          now: dt.datetime | None) -> tuple[bool, str]:
+    """WARN-level: kickoff more than 48h ago but still 'scheduled'. Not a
+    FAIL (phase 7 settles it), but the list must be visible."""
+    now = now or dt.datetime.now(dt.UTC)
+    with session_scope(db_url) as s:
+        stale = s.scalars(select(Match).where(
+            Match.status == "scheduled",
+            Match.commence_time_utc < now - dt.timedelta(hours=48))
+            .order_by(Match.commence_time_utc)).all()
+    names = [f"match#{m.id} {m.home_team.name} v {m.away_team.name} "
+             f"{m.commence_time_utc:%Y-%m-%d}" for m in stale]
+    return True, f"stale scheduled matches ({len(stale)}): " + (
+        "; ".join(names) if names else "none")
+
+
 def run_all_checks(db_url: str, config: AppConfig,
                    now: dt.datetime | None = None) -> int:
     """Prints PASS/FAIL per invariant; returns the number of FAILs."""
@@ -138,8 +154,14 @@ def run_all_checks(db_url: str, config: AppConfig,
                     *check_future_kickoff_clean(db_url, now)))
     results.append(("foreign_key_check", *check_foreign_keys(db_url)))
     results.append(("events_report_top5", *check_events_report()))
+    warn_name, warn_ok, warn_detail = "stale_scheduled", *check_stale_scheduled(
+        db_url, now)
+    results.append((warn_name, warn_ok, warn_detail))
     failed = 0
     for name, ok, detail in results:
-        print(f"{'PASS' if ok else 'FAIL'} {name}: {detail}")
+        level = "PASS" if ok else "FAIL"
+        if name == "stale_scheduled" and ok:
+            level = "WARN" if "matches (0)" not in detail else "PASS"
+        print(f"{level} {name}: {detail}")
         failed += 0 if ok else 1
     return failed

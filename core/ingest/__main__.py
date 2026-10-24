@@ -196,7 +196,6 @@ def cmd_events(args: argparse.Namespace) -> None:
                                "kickoffs_updated": r.kickoffs_updated,
                                "postponed_suspected":
                                    r.postponed_suspected,
-                               "un_suspected": r.un_suspected,
                                "teams_created": r.teams_created,
                                "unmatched": r.unmatched_teams}
         print(f"events {league.slug}: {r.events_seen} events, "

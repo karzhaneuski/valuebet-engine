@@ -320,3 +320,12 @@ The endpoint keeps a short backward window (`daysFrom=3` was verified to
 return the previous matchday; older results are not visible), so a missed
 window loses the result until another source covers it. The phase-7
 scheduler should poll after each UCL matchday and at least twice per week.
+
+## 2026-10-24 — Phase 2 (final round): postponed_suspected is cleared in phase 7
+
+**Decision**: once a kickoff shift is confirmed (>15 min on a
+TOA-authoritative kickoff), the flag is never cleared by the events poller —
+the original kickoff and the shift moment are persisted
+(`matches.original_kickoff_utc`, `rescheduled_at_utc`). Only phase 7 lifts
+the status: a result arrives via `/scores`, or the match is played per
+Understat. This replaced the interim auto-clear rule (dead code removed).
