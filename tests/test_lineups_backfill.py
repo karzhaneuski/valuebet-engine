@@ -59,8 +59,9 @@ class FakeLoader:
             names = {}
             for m in s.scalars(select(Match).where(
                     Match.understat_id.isnot(None))).all():
-                names[int(m.understat_id)] = (m.home_team.name,
-                                              m.away_team.name)
+                uid = m.understat_id
+                assert uid is not None  # filtered in the query
+                names[int(uid)] = (m.home_team.name, m.away_team.name)
         return names
 
     def lineup_rows(self, understat_id: int) -> list[dict]:
@@ -80,6 +81,7 @@ class FakeLoader:
 
     def upsert_lineups(self, match, rows: list[dict]) -> int:
         return self._real.upsert_lineups(match, rows)
+
 
 
 def test_s6_skips_loaded_and_continues_after_failure(tmp_path) -> None:

@@ -8,6 +8,7 @@ import json
 import sys
 import time
 from pathlib import Path
+from typing import Protocol
 
 from sqlalchemy import select
 
@@ -82,8 +83,16 @@ def cmd_backfill(args: argparse.Namespace) -> None:
     print(f"report saved: {out}")
 
 
+class LineupsLoader(Protocol):
+    """Anything that can fetch lineup rows for an Understat game."""
+
+    def lineup_rows(self, understat_id: int) -> list[dict]: ...
+
+    def upsert_lineups(self, match, rows: list[dict]) -> int: ...
+
+
 def backfill_lineups(db: str, config, since: str,
-                     loader: UnderstatLoader | None = None) -> dict:
+                     loader: LineupsLoader | None = None) -> dict:
     """S6: lineups backfill.
 
     - only matches WITHOUT lineups are taken (NOT EXISTS, checked before
@@ -93,7 +102,7 @@ def backfill_lineups(db: str, config, since: str,
       continues;
     - the report is refreshed after every match.
     """
-    us = loader or UnderstatLoader(db, config)
+    us = loader if loader is not None else UnderstatLoader(db, config)
     since_d = dt.date.fromisoformat(since)
     with session_scope(db) as s:
         has_lineups = select(MatchLineup.match_id).where(
@@ -103,13 +112,15 @@ def backfill_lineups(db: str, config, since: str,
             Match.status == "finished",
             Match.understat_id.isnot(None),
             ~has_lineups).order_by(Match.date_utc)).all()
-        todo = [(m.id, int(m.understat_id)) for m in pending]
+        todo = [(m.id, m.understat_id) for m in pending
+                if m.understat_id is not None]
     print(f"lineups: {len(todo)} matches without lineups since {since}")
     written_total = 0
     failed: list[dict] = []
     for i, (match_id, understat_id) in enumerate(todo, 1):
         attempts = config.ingest.retry_attempts
-        written = None
+        written: int | None = None
+        rows: list[dict] | None = None
         for attempt in range(1, attempts + 1):
             try:
                 rows = us.lineup_rows(understat_id)
