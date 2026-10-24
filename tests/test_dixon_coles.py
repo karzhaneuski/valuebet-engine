@@ -20,7 +20,9 @@ from core.model.dixon_coles import (
     FittedModel,
     _FitContext,
     _gammaln,
+    _last_completed_season,
     _neg_loglik,
+    _season_baseline,
     config_hash,
     fit_dixon_coles,
 )
@@ -55,6 +57,7 @@ def generate_matches(
     rounds: int = 60, seed: int = 42, with_xg: bool = True,
     drop_xg_every: int = 0, intercept: float = 0.0,
     gamma: float = TRUE_GAMMA, rho: float = TRUE_RHO,
+    season: int = 2021,
 ) -> list[TrainingMatch]:
     """Sample matches from the true DC model; xG ~ Poisson at the rates.
 
@@ -81,6 +84,7 @@ def generate_matches(
                     matches.append(TrainingMatch(
                         match_id=mid,
                         kickoff=AS_OF - dt.timedelta(days=float(rng.uniform(5, 400))),
+                        season=season,
                         home=h, away=a,
                         home_goals=gh, away_goals=ga,
                         home_xg=xg_h, away_xg=xg_a,
@@ -102,9 +106,13 @@ def test_neg_loglik_gradient_matches_finite_differences() -> None:
     gh = rng.integers(0, 4, n_matches)
     ga = rng.integers(0, 4, n_matches)
     tw = np.exp(-0.005 * rng.uniform(0.0, 400.0, n_matches))
+    rng_m = np.random.default_rng(99)
     ctx = _FitContext(
         home_idx=home_idx, away_idx=away_idx, yh=yh, ya=ya, gh=gh, ga=ga,
         time_w=tw, ll_const=_gammaln(yh) + _gammaln(ya), n_teams=n_teams,
+        m_attack=rng_m.normal(-0.1, 0.1, n_teams),
+        m_defence=rng_m.normal(0.1, 0.1, n_teams),
+        prior_sigma=0.5,   # penalty ON: FD must verify the prior term too
     )
     eps = 1e-6
     for rho in (0.0, 0.05, -0.08):
@@ -205,12 +213,12 @@ def test_time_decay_weights_older_matches_less() -> None:
     # dominate the fitted rates towards its own outcome
     config = ModelConfig(xi=0.02, weight_xg=1.0)
     old = TrainingMatch(
-        match_id=1, kickoff=AS_OF - dt.timedelta(days=300),
+        match_id=1, kickoff=AS_OF - dt.timedelta(days=300), season=2021,
         home="Alpha", away="Golf", home_goals=0, away_goals=3,
         home_xg=None, away_xg=None,
     )
     recent = TrainingMatch(
-        match_id=2, kickoff=AS_OF - dt.timedelta(days=1),
+        match_id=2, kickoff=AS_OF - dt.timedelta(days=1), season=2021,
         home="Alpha", away="Golf", home_goals=5, away_goals=0,
         home_xg=None, away_xg=None,
     )
@@ -225,10 +233,11 @@ def test_time_decay_weights_older_matches_less() -> None:
 
 def test_fit_rejects_matches_at_or_after_as_of() -> None:
     bad = TrainingMatch(
-        match_id=1, kickoff=AS_OF, home="Alpha", away="Bravo",
+        match_id=1, kickoff=AS_OF - dt.timedelta(minutes=60), season=2021,
+        home="Alpha", away="Bravo",
         home_goals=1, away_goals=1, home_xg=None, away_xg=None,
     )
-    with pytest.raises(ValueError, match="kickoff >= as_of"):
+    with pytest.raises(ValueError, match="result cannot be known"):
         fit_dixon_coles(
             [bad], league="synthetic", as_of=AS_OF,
             team_universe=set(TEAMS), config=ModelConfig(),
@@ -248,23 +257,209 @@ def test_fit_is_deterministic_bit_for_bit() -> None:
 # --- promoted-team prior ----------------------------------------------------
 
 
-def test_promoted_teams_get_weakest_third_prior() -> None:
-    matches = generate_matches(rounds=20, seed=11)
+def _yh_ya(matches: list[TrainingMatch], w: float) -> tuple[np.ndarray, np.ndarray]:
+    yh = np.array([m.home_goals if m.home_xg is None
+                   else w * m.home_goals + (1 - w) * m.home_xg
+                   for m in matches])
+    ya = np.array([m.away_goals if m.away_xg is None
+                   else w * m.away_goals + (1 - w) * m.away_xg
+                   for m in matches])
+    return yh, ya
+
+
+def test_prior_teams_relax_to_their_prior_means() -> None:
+    matches = generate_matches(rounds=20, seed=11, season=2020)
+    # push the season into the quiet past so it counts as completed
+    matches = [TrainingMatch(**{**m.__dict__,
+                                "kickoff": AS_OF - dt.timedelta(days=200)})
+               for m in matches]
+    config = ModelConfig(xi=0.0)
     fitted = fit_dixon_coles(
         matches, league="synthetic", as_of=AS_OF,
-        team_universe=set(TEAMS) | {"Promoted FC"}, config=ModelConfig(xi=0.0),
+        team_universe=set(TEAMS) | {"Promoted FC", "Also Promoted"},
+        config=config,
     )
-    assert "Promoted FC" in fitted.attacks
-    assert fitted.prior_teams == frozenset({"Promoted FC"})
-    strength = sorted(TEAMS, key=lambda t: fitted.attacks[t] - fitted.defences[t])
-    weakest_third = strength[: max(1, len(TEAMS) // 3)]
-    prior_att = sum(fitted.attacks[t] for t in weakest_third) / len(weakest_third)
-    prior_def = sum(fitted.defences[t] for t in weakest_third) / len(weakest_third)
-    assert fitted.attacks["Promoted FC"] == pytest.approx(prior_att, abs=1e-12)
-    assert fitted.defences["Promoted FC"] == pytest.approx(prior_def, abs=1e-12)
+    assert fitted.prior_teams == frozenset({"Promoted FC", "Also Promoted"})
+    # no data term -> the prior dominates: both relax to it (up to the
+    # sum-to-zero packing, which couples the last team to the others)
+    assert fitted.attacks["Promoted FC"] == pytest.approx(
+        fitted.attacks["Also Promoted"], abs=1e-3)
+    assert fitted.defences["Promoted FC"] == pytest.approx(
+        fitted.defences["Also Promoted"], abs=1e-3)
+    # and the prior equals the weakest-third baseline of the last
+    # completed season (all synthetic teams, computed in target space)
+    yh, ya = _yh_ya(matches, config.weight_xg)
+    _, prior_att, prior_def = _season_baseline(matches, yh, ya, 2020)
+    assert fitted.attacks["Promoted FC"] == pytest.approx(prior_att, abs=1e-3)
+    assert fitted.defences["Promoted FC"] == pytest.approx(prior_def, abs=1e-3)
     # prior teams are usable in predictions
-    m = fitted.score_matrix("Promoted FC", "Alpha")
-    assert m.shape == (11, 11)
+    assert fitted.score_matrix("Promoted FC", "Alpha").shape == (11, 11)
+
+
+def test_one_match_does_not_run_away_from_the_prior() -> None:
+    """Regression (review B1): w=1, one 0:3 match used to send the free
+    attack to lambda ~ 0 (and defence to mu ~ 7); with the Gaussian prior
+    the newcomer stays near its prior."""
+    established = generate_matches(rounds=15, seed=5, season=2020)
+    established = [TrainingMatch(**{**m.__dict__,
+                                    "kickoff": AS_OF - dt.timedelta(days=200)})
+                   for m in established]
+    newcomer_match = TrainingMatch(
+        match_id=999, kickoff=AS_OF - dt.timedelta(days=3), season=2021,
+        home="Newcomer", away="Alpha", home_goals=0, away_goals=3,
+        home_xg=None, away_xg=None,
+    )
+    config = ModelConfig(xi=0.0, weight_xg=1.0)
+    fitted = fit_dixon_coles(
+        [*established, newcomer_match], league="synthetic", as_of=AS_OF,
+        team_universe=set(TEAMS) | {"Newcomer"}, config=config,
+    )
+    yh, ya = _yh_ya(established, config.weight_xg)
+    _, prior_att, prior_def = _season_baseline(established, yh, ya, 2020)
+    a = fitted.attacks["Newcomer"]
+    d = fitted.defences["Newcomer"]
+    assert abs(a - prior_att) < 0.35   # pulled down by 0 goals, but bounded
+    assert a > prior_att - 0.35
+    assert abs(d - prior_def) < 0.35   # 3 conceded, still bounded
+    lam, mu = fitted._rates("Newcomer", "Alpha")
+    assert 0.05 < lam < 6.0 and 0.05 < mu < 6.0
+    assert not fitted.suspicious_params
+
+
+def test_three_matches_stay_within_one_sigma_of_the_prior() -> None:
+    established = generate_matches(rounds=15, seed=6, season=2020)
+    established = [TrainingMatch(**{**m.__dict__,
+                                    "kickoff": AS_OF - dt.timedelta(days=200)})
+                   for m in established]
+    # newcomer loses twice and scraps one goal: weak but not extreme
+    newcomer_games = [("Newcomer", "Bravo", 0, 2), ("Alpha", "Newcomer", 2, 0),
+                      ("Newcomer", "Charlie", 1, 2)]
+    newcomer = [
+        TrainingMatch(match_id=900 + i,
+                      kickoff=AS_OF - dt.timedelta(days=10 - i), season=2021,
+                      home=h, away=a, home_goals=gh, away_goals=ga,
+                      home_xg=None, away_xg=None)
+        for i, (h, a, gh, ga) in enumerate(newcomer_games)
+    ]
+    config = ModelConfig(xi=0.0, weight_xg=1.0)
+    fitted = fit_dixon_coles(
+        established + newcomer, league="synthetic", as_of=AS_OF,
+        team_universe=set(TEAMS) | {"Newcomer"}, config=config,
+    )
+    yh, ya = _yh_ya(established, config.weight_xg)
+    _, prior_att, prior_def = _season_baseline(established, yh, ya, 2020)
+    sigma = config.prior_sigma
+    assert abs(fitted.attacks["Newcomer"] - prior_att) < sigma
+    assert abs(fitted.defences["Newcomer"] - prior_def) < sigma
+
+
+def test_promoted_team_error_falls_with_matches_played() -> None:
+    """The fitted newcomer converges to its true strength as k grows.
+
+    The newcomer is a STRONG promoted team (surprise promotion): its
+    blind prior is far from the truth, so the decline is unambiguous.
+    Errors are averaged over 5 draw seeds: single small-k samples can be
+    lucky, the mean trend may not be.
+    """
+    true_att, true_def = 0.30, -0.20
+    established = generate_matches(rounds=25, seed=8, season=2020)
+    established = [TrainingMatch(**{**m.__dict__,
+                                    "kickoff": AS_OF - dt.timedelta(days=200)})
+                   for m in established]
+    truth = FittedModel(
+        league="synthetic", as_of=AS_OF, xi=0.0, w=1.0, n_matches=0,
+        attacks={**TRUE_ATTACKS, "Newcomer": true_att},
+        defences={**TRUE_DEFENCES, "Newcomer": true_def},
+        home_advantage=TRUE_GAMMA, rho=TRUE_RHO, intercept=0.0,
+        converged=True, config_hash="synthetic",
+    )
+    mean_errors = []
+    for k in (0, 2, 6, 24):
+        errs = []
+        for seed in (3, 4, 5, 6, 7):
+            rng = np.random.default_rng(seed * 100 + k)
+            extra = []
+            for i in range(k):
+                opp = TEAMS[i % len(TEAMS)]
+                home, away = ("Newcomer", opp) if i % 2 == 0 else (opp, "Newcomer")
+                m = truth.score_matrix(home, away)
+                cell = int(rng.choice(m.size, p=m.ravel()))
+                gh, ga = divmod(cell, m.shape[1])
+                extra.append(TrainingMatch(
+                    match_id=700 + i,
+                    kickoff=AS_OF - dt.timedelta(days=30 - i), season=2021,
+                    home=home, away=away, home_goals=gh, away_goals=ga,
+                    home_xg=None, away_xg=None))
+            fitted = fit_dixon_coles(
+                established + extra, league="synthetic", as_of=AS_OF,
+                team_universe=set(TEAMS) | {"Newcomer"},
+                config=ModelConfig(xi=0.0, weight_xg=1.0),
+            )
+            errs.append(max(abs(fitted.attacks["Newcomer"] - true_att),
+                            abs(fitted.defences["Newcomer"] - true_def)))
+        mean_errors.append(float(np.mean(errs)))
+    assert mean_errors[3] < mean_errors[0]   # 24 matches beat the prior
+    assert mean_errors[3] < mean_errors[1]   # ... and beat 2 matches
+    assert mean_errors[3] < mean_errors[2]   # ... and beat 6 matches
+
+
+def test_suspicious_params_guard_flags_pathological_fits() -> None:
+    from core.model.dixon_coles import _params_look_suspicious
+
+    matches = generate_matches(rounds=5, seed=4, season=2021)
+    ok = _params_look_suspicious(
+        "synthetic",
+        {t: 0.1 for t in TEAMS}, {t: -0.1 for t in TEAMS},
+        mu0=0.2, gamma=0.2, matches=matches)
+    assert ok is False
+    crazy = {t: 0.1 for t in TEAMS}
+    crazy["Golf"] = 3.5   # Golf IS a current-season team
+    bad = _params_look_suspicious(
+        "synthetic", crazy, {t: -0.1 for t in TEAMS},
+        mu0=0.2, gamma=0.2, matches=matches)
+    assert bad is True
+    bad_rates = _params_look_suspicious(
+        "synthetic",
+        {t: 2.6 for t in TEAMS}, {t: 2.6 for t in TEAMS},
+        mu0=0.2, gamma=0.2, matches=matches)
+    assert bad_rates is True  # exp(0.2+2.6+2.6) far above 6
+
+
+def test_last_completed_season_and_baseline_use_quiet_seasons_only() -> None:
+    old = [TrainingMatch(
+        match_id=i, kickoff=AS_OF - dt.timedelta(days=400 + i), season=2023,
+        home="Alpha", away="Bravo", home_goals=1, away_goals=0,
+        home_xg=None, away_xg=None) for i in range(6)]
+    done = [TrainingMatch(
+        match_id=100 + i, kickoff=AS_OF - dt.timedelta(days=120 + i),
+        season=2024, home=h, away=a, home_goals=2, away_goals=1,
+        home_xg=None, away_xg=None)
+        for i, (h, a) in enumerate([("Alpha", "Bravo"), ("Bravo", "Alpha"),
+                                    ("Alpha", "Charlie"), ("Charlie", "Alpha")])]
+    live = [TrainingMatch(
+        match_id=200, kickoff=AS_OF - dt.timedelta(days=5), season=2025,
+        home="Alpha", away="Bravo", home_goals=1, away_goals=1,
+        home_xg=None, away_xg=None)]
+    matches = old + done + live
+    assert _last_completed_season(matches, AS_OF) == 2024
+    # y arrays consistent with the matches' goals (w=1)
+    yh = np.array([1.0] * 6 + [2.0, 2.0, 2.0, 2.0] + [1.0])
+    ya = np.array([0.0] * 6 + [1.0, 1.0, 1.0, 1.0] + [1.0])
+    teams, pa, pd = _season_baseline(matches, yh, ya, 2024)
+    # the baseline only sees season-2024 teams and data: dropping the old
+    # (2023) and live (2025) matches must not change the prior at all
+    teams_ref, pa_ref, pd_ref = _season_baseline(
+        done, yh[6:10], ya[6:10], 2024)
+    assert teams == teams_ref == {"Alpha", "Bravo", "Charlie"}
+    assert pa == pytest.approx(pa_ref, abs=1e-12)
+    assert pd == pytest.approx(pd_ref, abs=1e-12)
+    # and a match exactly at as_of - lag boundary is never baseline data
+    near_now = TrainingMatch(
+        match_id=999, kickoff=AS_OF - dt.timedelta(minutes=149), season=2026,
+        home="Alpha", away="Bravo", home_goals=1, away_goals=1,
+        home_xg=None, away_xg=None)
+    assert _last_completed_season(
+        [*matches, near_now], AS_OF) == 2024  # 2026 is not quiet
 
 
 def test_unknown_team_raises_keyerror() -> None:

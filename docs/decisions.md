@@ -410,3 +410,45 @@ the home level. With mu0 the same data recovers intercept ≈ 0.40,
 gamma ≈ 0.24 and the mean scoring level (regression test
 `test_high_mean_league_recovers_scoring_level`). mu0 is a fitted
 parameter, not a config prior.
+
+## 2026-10-25 — Phase 3 review step A (B1+S1+S7): prior, result lag, season baseline
+
+**Decision**:
+
+1. **B1 — Gaussian prior on team parameters** (in the objective, review
+   B1): `objective = -ll + sum_t[(a_t-m_a,t)^2 + (d_t-m_d,t)^2]/(2*sigma^2)`
+   with sigma = `ModelConfig.prior_sigma` = 0.5 (starting value: ~1.5x
+   the empirical between-team sd of fitted attacks, ~0.33 in the smoke
+   fit — strong enough to bound 1-5-match teams, weak enough that >=15
+   matches dominate; phase-4 tunable, now in `config_hash`). The prior
+   mean m is 0 for teams that played in the last completed league season
+   and the weakest-third prior for everyone else (thin or no history),
+   so its weight fades on its own as data accumulates. Zero-match teams
+   are not fitted parameters at all: they receive the prior value after
+   the fit (sum-to-zero constraints never distort them — first attempt
+   fitted the whole universe and the packing constraint pushed the last
+   team 0.055 off its prior, i.e. ~5% off its lambda; reverted).
+   Circuit breaker after each fit: |attack|/|defence| > 3 or any current
+   season pair rate outside [0.05, 6] -> warning +
+   `FittedModel.suspicious_params` (serialized). Evidence
+   (`reports/model/walkforward_stepA_2026-10-25.md`): bin 1-5 matches,
+   w=1: -9.839 -> -3.067; w=0.5: -3.240 -> -3.039; all other bins >= as
+   good; market-on-model slope 0.744 -> 0.872.
+2. **S1 — result lag**: a match is trainable only when
+   `kickoff + result_lag < as_of` (`ModelConfig.result_lag_minutes`,
+   default 150 = 90 min play + stoppages/reporting buffer; tunable). The
+   filter runs inside the loader SQL and in `fit_dixon_coles`'s input
+   guard; `LoadStats.n_waiting_result` counts excluded finished rows.
+3. **S7 — season-scoped baseline**: the weakest-third prior is computed
+   from the teams/matches of the LAST COMPLETED season only (a season is
+   complete when its latest training match is >30 days old; fallback:
+   all training matches when no season is quiet). `TrainingMatch` now
+   carries `season`; the baseline reads that season's target values with
+   correct index alignment (a misalignment bug here was caught by the
+   unit test).
+
+**Reason**: review B1/S1/S7. The thin-history failure was real and is
+regression-tested (`test_one_match_does_not_run_away_from_the_prior`,
+`test_three_matches_stay_within_one_sigma_of_the_prior`,
+`test_promoted_team_error_falls_with_matches_played`,
+`test_result_lag_excludes_matches_still_in_play_window`).

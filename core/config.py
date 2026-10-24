@@ -38,7 +38,8 @@ class DatabaseConfig(BaseModel):
 
 
 class ModelConfig(BaseModel):
-    """Dixon-Coles hyperparameters; xi and w are tuned in phase 4.
+    """Dixon-Coles hyperparameters; xi, w, prior_sigma and the lag are
+    tuned in phase 4.
 
     home_advantage_prior / promoted_team_prior are STARTING VALUES for the
     phase-3 fitter, not tuned constants.
@@ -49,6 +50,14 @@ class ModelConfig(BaseModel):
     max_score: int = 10        # score matrix 0..10 x 0..10
     home_advantage_prior: float = 0.25   # phase-3 starting value
     promoted_team_prior: str = "league_weakest_third"  # phase-3 starting rule
+    # Gaussian prior on attack/defence (review B1): sigma ~ 1.5x the
+    # empirical between-team sd of fitted attacks (~0.33 in the smoke fit)
+    # so thin history (1-5 matches) is shrunk to its prior while >=15
+    # matches dominate; phase-4 tunable
+    prior_sigma: float = 0.5
+    # a result only becomes usable for training this long after kickoff
+    # (review S1): 90 min play + stoppages/reporting buffer
+    result_lag_minutes: int = 150
 
 
 class ThresholdsConfig(BaseModel):

@@ -143,6 +143,24 @@ def test_loader_skips_finished_matches_without_kickoff(db_url) -> None:
     assert data.stats.n_skipped_no_kickoff == 1
 
 
+def test_result_lag_excludes_matches_still_in_play_window(db_url) -> None:
+    """Review S1: a finished row whose kickoff + lag >= as_of is not
+    trainable - the result cannot be known at as_of."""
+    with session_scope(db_url) as s:
+        add_match(s, home="Arsenal", away="Chelsea",
+                  kickoff=AS_OF - dt.timedelta(days=2), match_id=1)
+        add_match(s, home="Arsenal", away="Liverpool",
+                  kickoff=AS_OF - dt.timedelta(minutes=60), match_id=2)
+        add_match(s, home="Chelsea", away="Liverpool",
+                  kickoff=AS_OF - dt.timedelta(minutes=150), match_id=3)
+        add_match(s, home="Liverpool", away="Everton",
+                  kickoff=AS_OF - dt.timedelta(minutes=151), match_id=4)
+    data = load_training_data(db_url, "premier_league", AS_OF,
+                              result_lag_minutes=150)
+    assert {m.match_id for m in data.matches} == {1, 4}
+    assert data.stats.n_waiting_result == 2   # ids 2 and 3
+
+
 def test_loader_requires_tzaware_as_of(db_url) -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
         load_training_data(db_url, "premier_league",

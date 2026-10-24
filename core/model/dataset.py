@@ -7,10 +7,12 @@ Selection rules (PROMPTS phase 3 + phase-2 outcomes):
   football-data row was refused (date mismatch > 1 day + score
   disagreement) are passed in as ``excluded_match_ids`` and skipped —
   the quarantine itself lives only in the ingest report, never in the DB;
-- strict ``kickoff_utc < as_of``: kickoff is ``commence_time_utc`` (the
-  authoritative kickoff, UTC). A finished match with NULL commence time
-  is skipped: we cannot prove it kicked off before as_of, and guessing
-  would leak the future (matters for the phase-4 walk-forward);
+- strict ``kickoff_utc + result_lag < as_of`` (review S1): a result is
+  only usable for training once the match is over and reported. kickoff
+  is ``commence_time_utc`` (the authoritative kickoff, UTC), the lag
+  (default 150 min) lives in ModelConfig. A finished match with NULL
+  commence time is skipped: we cannot prove it kicked off before as_of,
+  and guessing would leak the future;
 - goals come from the match score: understat stats first, football-data
   stats as fallback; xG comes from understat only. Matches without xG
   are kept and trained on goals alone (w=1 for that match, SPEC §4);
@@ -46,7 +48,8 @@ class TrainingMatch:
     """One finished match as seen by the fitter (raw values, no mixing)."""
 
     match_id: int
-    kickoff: dt.datetime          # tz-aware UTC, strictly < as_of
+    kickoff: dt.datetime          # tz-aware UTC, kickoff + lag < as_of
+    season: int                   # league season key (prior baselines)
     home: str
     away: str
     home_goals: int
@@ -64,6 +67,7 @@ class LoadStats:
     n_selected: int = 0
     n_excluded_quarantine: int = 0
     n_skipped_no_kickoff: int = 0     # finished, but commence_time_utc is NULL
+    n_waiting_result: int = 0         # finished row, kickoff within the lag
     n_skipped_no_score: int = 0       # finished before as_of, score unknown
     n_goals_from_football_data: int = 0
     n_missing_xg: int = 0             # trained on goals with w=1
@@ -127,17 +131,20 @@ def load_training_data(
     league: str,
     as_of: dt.datetime,
     excluded_match_ids: Collection[int] = frozenset(),
+    result_lag_minutes: int = 150,
 ) -> TrainingData:
     """Select finished, scored, pre-as_of matches of one league.
 
-    The as_of filter runs inside SQL (``commence_time_utc < as_of``), so a
-    match with kickoff at/after as_of can never enter the training set even
-    if its row claims status='finished'.
+    The eligibility filter runs inside SQL
+    (``commence_time_utc < as_of - result_lag``), so a match whose result
+    cannot be known yet at as_of never enters the training set even if its
+    row claims status='finished' (review S1).
     """
     if as_of.tzinfo is None:
         raise ValueError("as_of must be timezone-aware")
     stats = LoadStats(league=league, as_of=as_of)
     excluded = set(excluded_match_ids)
+    cutoff = as_of - dt.timedelta(minutes=result_lag_minutes)
 
     with session_scope(db_url) as s:
         away = aliased(Team)
@@ -148,7 +155,7 @@ def load_training_data(
             .where(
                 Match.league == league,
                 Match.status == "finished",
-                Match.commence_time_utc < as_of,
+                Match.commence_time_utc < cutoff,
             )
             .order_by(Match.commence_time_utc, Match.id)
         ).all()
@@ -171,8 +178,16 @@ def load_training_data(
                 Match.commence_time_utc.is_(None),
             )
         ) or 0
+        n_waiting = s.scalar(
+            select(func.count()).select_from(Match).where(
+                Match.league == league,
+                Match.status == "finished",
+                Match.commence_time_utc >= cutoff,
+            )
+        ) or 0
 
     stats.n_skipped_no_kickoff = int(n_no_kickoff)
+    stats.n_waiting_result = int(n_waiting)
     if stats.n_skipped_no_kickoff:
         stats.warnings.append(
             f"{stats.n_skipped_no_kickoff} finished matches of {league} have no "
@@ -204,6 +219,7 @@ def load_training_data(
         matches.append(TrainingMatch(
             match_id=m.id,
             kickoff=kickoff,
+            season=m.season,
             home=home_name,
             away=away_name,
             home_goals=hg,
