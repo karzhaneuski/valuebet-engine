@@ -1,18 +1,7 @@
 {
+  "already_normalized": true,
   "renamed_bookmakers": {},
-  "unmapped_bookmakers": [
-    "betonlineag",
-    "codere_it",
-    "leovegas_se",
-    "marathonbet",
-    "mybookieag",
-    "nordicbet",
-    "onexbet",
-    "pmu_fr",
-    "unibet_nl",
-    "unibet_se",
-    "williamhill"
-  ],
+  "unmapped_bookmakers": [],
   "tier_changes": {
     "off_window": 0,
     "reassigned": 0

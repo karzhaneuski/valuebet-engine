@@ -41,6 +41,12 @@ DISPLAY_TO_KEY = {
 
 OUT = Path("reports/ingest/normalize_snapshots_report.json")
 
+KNOWN_KEYS = {v for v in DISPLAY_TO_KEY.values()} | {
+    # keys observed in phase-0 odds_api.json that never had a display-name
+    # variant in our stored snapshots
+    "betclic_fr", "unibet_fr", "winamax_fr", "winamax_de",
+}
+
 
 def tier_for_lead(lead_hours: float | None, config) -> str | None:
     if lead_hours is None:
@@ -63,6 +69,8 @@ def main() -> None:
         for snap in snaps:
             # 1. bookmaker key
             key = DISPLAY_TO_KEY.get(snap.bookmaker.strip().lower())
+            if snap.bookmaker in KNOWN_KEYS:
+                continue  # already a TOA key (previous run)
             if key is None:
                 unmapped.add(snap.bookmaker)
             elif key != snap.bookmaker:
@@ -80,7 +88,10 @@ def main() -> None:
                 else:
                     tier_changes["reassigned"] += 1
                 snap.tier = new_tier
-    report = {"renamed_bookmakers": renamed, "unmapped_bookmakers":
+    already = not renamed and not tier_changes["off_window"] \
+        and not tier_changes["reassigned"]
+    report = {"already_normalized": already,
+              "renamed_bookmakers": renamed, "unmapped_bookmakers":
               sorted(unmapped), "tier_changes": tier_changes}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(report, indent=2))
