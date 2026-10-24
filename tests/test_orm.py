@@ -306,6 +306,7 @@ def test_utcdatetime_binds_non_utc_aware_to_utc(db_url) -> None:
                     home_team_id=t1.id, away_team_id=t2.id))
     with session_scope(db_url) as s:
         m = s.scalars(select(Match)).one()
+        assert m.commence_time_utc is not None
         assert m.commence_time_utc.utcoffset() == dt_.UTC.utcoffset(None)
-        assert m.commence_time_utc.hour == 19  # 22:30+03 == 19:30Z? no: 22:30+3=19:30Z
+        assert m.commence_time_utc.hour == 19  # 22:30+03:00 == 19:30Z
         assert m.commence_time_utc.minute == 30
