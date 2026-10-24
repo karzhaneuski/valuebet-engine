@@ -55,3 +55,18 @@ def test_migration_matches_orm_metadata(tmp_path) -> None:
         cwd=REPO, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "No new upgrade operations detected" in result.stdout
+
+
+def test_upgrade_downgrade_upgrade_cycle_with_fk_enforced(tmp_path) -> None:
+    """M: full up→down→up cycle on a copy must pass without IntegrityError;
+    the env guard turns FKs off only for real DDL runs and verifies with
+    foreign_key_check after each run."""
+    db = tmp_path / "cycle.db"
+    url = f"sqlite:///{db}"
+    run_alembic(url, "upgrade", "head")
+    run_alembic(url, "downgrade", "base")
+    run_alembic(url, "upgrade", "head")  # must not raise IntegrityError
+    from core.db import get_engine
+
+    tables = set(inspect(get_engine(url)).get_table_names())
+    assert tables >= EXPECTED_TABLES
