@@ -74,7 +74,7 @@ def test_redacting_filter_cleans_record() -> None:
 
 
 def test_redact_text_patterns() -> None:
-    out = redact_text("apiKey=abcdefgh12345678 and tvly-abcdefgh12345")
+    out = redact_text("apiKey=abcdefgh123 and tvly-abcdefgh12")
     assert "apiKey=***" in out
-    assert "abcdefgh12345678" not in out
-    assert "tvly-abcdefgh12345" not in out
+    assert "abcdefgh123" not in out
+    assert "tvly-abcdefgh12" not in out
