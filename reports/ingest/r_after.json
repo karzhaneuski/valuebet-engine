@@ -1,0 +1,47 @@
+{
+ "matches_by_league_season": {
+  "bundesliga|2021": 306,
+  "bundesliga|2022": 306,
+  "bundesliga|2023": 306,
+  "bundesliga|2024": 306,
+  "bundesliga|2025": 306,
+  "bundesliga|2026": 306,
+  "la_liga|2021": 380,
+  "la_liga|2022": 380,
+  "la_liga|2023": 380,
+  "la_liga|2024": 380,
+  "la_liga|2025": 380,
+  "la_liga|2026": 382,
+  "ligue_1|2021": 380,
+  "ligue_1|2022": 380,
+  "ligue_1|2023": 306,
+  "ligue_1|2024": 306,
+  "ligue_1|2025": 306,
+  "ligue_1|2026": 306,
+  "premier_league|2021": 380,
+  "premier_league|2022": 380,
+  "premier_league|2023": 380,
+  "premier_league|2024": 380,
+  "premier_league|2025": 380,
+  "premier_league|2026": 384,
+  "serie_a|2021": 380,
+  "serie_a|2022": 380,
+  "serie_a|2023": 380,
+  "serie_a|2024": 380,
+  "serie_a|2025": 380,
+  "serie_a|2026": 380,
+  "ucl|2026": 18
+ },
+ "match_stats_by_source": {
+  "football_data": 9253,
+  "understat": 9258
+ },
+ "closing_odds": 26498,
+ "aliases_by_source": {
+  "football_data": 138,
+  "toa": 111,
+  "understat": 138
+ },
+ "odds_snapshots_total": 996,
+ "odds_snapshots_with_match": 996
+}
