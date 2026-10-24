@@ -40,18 +40,21 @@ TRUE_GAMMA = 0.30
 TRUE_RHO = -0.06
 
 
-def true_model() -> FittedModel:
+def true_model(
+    intercept: float = 0.0, gamma: float = TRUE_GAMMA, rho: float = TRUE_RHO,
+) -> FittedModel:
     return FittedModel(
         league="synthetic", as_of=AS_OF, xi=0.0, w=0.5, n_matches=0,
         attacks=dict(TRUE_ATTACKS), defences=dict(TRUE_DEFENCES),
-        home_advantage=TRUE_GAMMA, rho=TRUE_RHO, converged=True,
-        config_hash="synthetic",
+        home_advantage=gamma, rho=rho, intercept=intercept,
+        converged=True, config_hash="synthetic",
     )
 
 
 def generate_matches(
     rounds: int = 60, seed: int = 42, with_xg: bool = True,
-    drop_xg_every: int = 0,
+    drop_xg_every: int = 0, intercept: float = 0.0,
+    gamma: float = TRUE_GAMMA, rho: float = TRUE_RHO,
 ) -> list[TrainingMatch]:
     """Sample matches from the true DC model; xG ~ Poisson at the rates.
 
@@ -59,7 +62,7 @@ def generate_matches(
     trained with w=1 for those matches).
     """
     rng = np.random.default_rng(seed)
-    model = true_model()
+    model = true_model(intercept=intercept, gamma=gamma, rho=rho)
     matches: list[TrainingMatch] = []
     mid = 0
     for _ in range(rounds):
@@ -105,7 +108,7 @@ def test_neg_loglik_gradient_matches_finite_differences() -> None:
     )
     eps = 1e-6
     for rho in (0.0, 0.05, -0.08):
-        x = rng.normal(0.0, 0.1, 2 * n_teams)
+        x = rng.normal(0.0, 0.1, 2 * n_teams + 1)
         x[-1] = rho
         _, g = _neg_loglik(x, ctx)
         g_fd = np.zeros_like(x)
@@ -143,6 +146,42 @@ def test_recovers_parameters_from_synthetic_data() -> None:
     assert "Alpha" in top and "Bravo" in top
     weakest = sorted(TEAMS, key=lambda t: fitted.attacks[t])[:1]
     assert weakest == ["Golf"]
+
+
+def test_high_mean_league_recovers_scoring_level() -> None:
+    """Regression (review, step 1): without mu0 the double sum-to-zero
+    constraint pins the away-side geometric mean rate to exactly 1 and a
+    high-scoring league cannot be fitted."""
+    intercept, gamma, rho = 0.40, 0.24, -0.05   # away ~1.5, home ~1.9
+    matches = generate_matches(rounds=60, seed=42, intercept=intercept,
+                               gamma=gamma, rho=rho)
+    fitted = fit_dixon_coles(
+        matches, league="synthetic", as_of=AS_OF,
+        team_universe=set(TEAMS), config=ModelConfig(xi=0.0, weight_xg=0.5),
+    )
+    assert fitted.converged
+    assert abs(sum(fitted.attacks.values())) < 1e-9
+    assert abs(sum(fitted.defences.values())) < 1e-9
+    assert fitted.intercept == pytest.approx(intercept, abs=0.1)
+    assert fitted.home_advantage == pytest.approx(gamma, abs=0.1)
+    # the mean scoring level itself is recovered, not pinned to ~1
+    truth = true_model(intercept=intercept, gamma=gamma, rho=rho)
+    pairs = [(h, a) for i, h in enumerate(TEAMS) for a in TEAMS[i + 1:]]
+    for side in (0, 1):
+        true_level = np.mean([
+            truth.expected_goals(h, a)[side] + truth.expected_goals(a, h)[side]
+            for h, a in pairs
+        ])
+        fit_level = np.mean([
+            fitted.expected_goals(h, a)[side] + fitted.expected_goals(a, h)[side]
+            for h, a in pairs
+        ])
+        assert fit_level == pytest.approx(true_level, abs=0.1), side
+    away_level = np.mean([
+        fitted.expected_goals(h, a)[1] + fitted.expected_goals(a, h)[1]
+        for h, a in pairs
+    ])
+    assert away_level > 1.3   # away level e^0.40 ~ 1.49, was pinned to 1 before
 
 
 def test_recovery_with_goals_only_matches_mixed_in() -> None:
@@ -256,21 +295,9 @@ def test_score_matrix_shape_sum_and_rates() -> None:
 
 
 def test_tau_moves_low_score_cells_in_the_right_direction() -> None:
-    base = FittedModel(
-        league="s", as_of=AS_OF, xi=0.0, w=0.5, n_matches=0,
-        attacks=dict(TRUE_ATTACKS), defences=dict(TRUE_DEFENCES),
-        home_advantage=TRUE_GAMMA, rho=0.0, converged=True, config_hash="s",
-    )
-    rho_pos = FittedModel(
-        league="s", as_of=AS_OF, xi=0.0, w=0.5, n_matches=0,
-        attacks=dict(TRUE_ATTACKS), defences=dict(TRUE_DEFENCES),
-        home_advantage=TRUE_GAMMA, rho=0.08, converged=True, config_hash="s",
-    )
-    rho_neg = FittedModel(
-        league="s", as_of=AS_OF, xi=0.0, w=0.5, n_matches=0,
-        attacks=dict(TRUE_ATTACKS), defences=dict(TRUE_DEFENCES),
-        home_advantage=TRUE_GAMMA, rho=-0.08, converged=True, config_hash="s",
-    )
+    base = true_model(rho=0.0)
+    rho_pos = true_model(rho=0.08)
+    rho_neg = true_model(rho=-0.08)
     m0, mp, mn = (m.score_matrix("Bravo", "Echo") for m in (base, rho_pos, rho_neg))
     # rho > 0: 0-0 and 1-1 lose mass, 1-0 and 0-1 gain it; rho < 0 mirrored
     assert mp[0, 0] < m0[0, 0] < mn[0, 0]

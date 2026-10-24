@@ -393,3 +393,20 @@ unchanged" test.
 **Reason**: review checklist of phase 3 (tau correctness, non-integer
 quasi-likelihood, no-leakage, promoted teams); the flat-direction
 pitfall was caught by the synthetic-recovery test.
+
+## 2026-10-24 — Phase 3 (step-1 review): intercept mu0 added to the DC rates
+
+**Decision**: the model rates are `log lam_home = mu0 + gamma +
+attack_home + defence_away` and `log lam_away = mu0 + attack_away +
+defence_home`, with `sum(attack) = 0` AND `sum(defence) = 0` both kept.
+`FittedModel` carries and serialises the new `intercept` (mu0) field.
+
+**Reason** (review catch): without mu0 the second constraint pins the
+away-side geometric mean rate to exactly exp(0) = 1, so the model
+structurally cannot fit a league scoring more than ~2 goals per game —
+demonstrated on a synthetic high-mean league (away level 1.5): the old
+fit gave mean E[away goals] = 1.09 and inflated gamma to 0.61 to carry
+the home level. With mu0 the same data recovers intercept ≈ 0.40,
+gamma ≈ 0.24 and the mean scoring level (regression test
+`test_high_mean_league_recovers_scoring_level`). mu0 is a fitted
+parameter, not a config prior.

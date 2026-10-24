@@ -10,12 +10,17 @@ SPEC §4, one league at a time:
   trained on goals alone (w=1 for that match, never dropped);
 - tau applies to the OBSERVED integer score (0-0/1-0/0-1/1-1) — the
   correction is about discrete scores, not about the xG-mixed target;
-- identifiability: the likelihood is invariant under (attack+c, defence+c)
-  and (defence+c, gamma-c) shifts, so both sum(attack) = 0 and
-  sum(defence) = 0 are enforced exactly by fitting n-1 free attacks and
-  n-1 free defences (the last of each is the negative sum of the rest);
-  without the second constraint gamma drifts freely along an exactly
-  flat direction.
+- rates: log lam_home = mu0 + gamma + attack_home + defence_away and
+  log lam_away = mu0 + attack_away + defence_home, where mu0 is the
+  league scoring level (intercept) and gamma the home advantage;
+- identifiability: without constraints the likelihood is invariant under
+  (attack+p, defence-p) and (defence-s, mu0+s) shifts, so the mean goals
+  level can hide anywhere; BOTH sum(attack) = 0 and sum(defence) = 0 are
+  enforced (n-1 free attacks, n-1 free defences) and the level lives in
+  mu0. Without mu0 the second constraint would pin the away-side
+  geometric mean rate to exactly 1 - the model could not fit a league
+  scoring more than ~2.0 goals per game (caught in review,
+  regression-tested with a high-mean synthetic).
 
 Optimisation: scipy L-BFGS-B with an analytic gradient (checked against
 finite differences in tests). rho is bounded to [-0.15, 0.15]: empirical
@@ -98,14 +103,15 @@ def _neg_loglik(
     """Weighted negative quasi-log-likelihood and its analytic gradient.
 
     Parameter layout: [attack_0..attack_{n-2}, defence_0..defence_{n-2},
-    gamma, rho]; the last attack and defence are the negative sums of the
-    free ones, pinning sum(attack) = 0 and sum(defence) = 0.
+    mu0, gamma, rho]; the last attack and defence are the negative sums
+    of the free ones, pinning sum(attack) = 0 and sum(defence) = 0.
     """
     n = ctx.n_teams
     att_free = x[: n - 1]
     def_free = x[n - 1 : 2 * n - 2]
-    gamma = float(x[2 * n - 2])
-    rho = float(x[2 * n - 1])
+    mu0 = float(x[2 * n - 2])
+    gamma = float(x[2 * n - 1])
+    rho = float(x[2 * n])
 
     attack = np.empty(n, dtype=np.float64)
     attack[: n - 1] = att_free
@@ -114,10 +120,10 @@ def _neg_loglik(
     defence[: n - 1] = def_free
     defence[n - 1] = -def_free.sum()
 
-    # home rate carries gamma (Dixon-Coles home advantage); the away
-    # rate does not
-    log_lam = attack[ctx.home_idx] + defence[ctx.away_idx] + gamma
-    log_mu = attack[ctx.away_idx] + defence[ctx.home_idx]
+    # mu0 is the league scoring level (both sides); gamma is the home
+    # advantage and enters the home rate only (Dixon & Coles 1997)
+    log_lam = attack[ctx.home_idx] + defence[ctx.away_idx] + mu0 + gamma
+    log_mu = attack[ctx.away_idx] + defence[ctx.home_idx] + mu0
     lam = np.exp(log_lam)
     mu = np.exp(log_mu)
     tw = ctx.time_w
@@ -126,8 +132,8 @@ def _neg_loglik(
     ll -= float(np.sum(tw * ctx.ll_const))
 
     # d/dθ of (y log λ - λ) with dλ/dθ = λ  ->  residual (y - λ);
-    # r_home feeds attack[home], defence[away], gamma (home rate only);
-    # r_away feeds attack[away], defence[home]
+    # r_home feeds attack[home], defence[away], gamma, mu0;
+    # r_away feeds attack[away], defence[home], mu0
     r_home = tw * (ctx.yh - lam)
     r_away = tw * (ctx.ya - mu)
     g_attack = (
@@ -138,6 +144,7 @@ def _neg_loglik(
         np.bincount(ctx.away_idx, weights=r_home, minlength=n)
         + np.bincount(ctx.home_idx, weights=r_away, minlength=n)
     )
+    g_mu0 = float(r_home.sum() + r_away.sum())
     g_gamma = float(r_home.sum())
     g_rho = 0.0
 
@@ -153,7 +160,7 @@ def _neg_loglik(
         Derivative arguments are per-match arrays or scalars (broadcast);
         None means the cell's tau does not depend on that rate at all.
         """
-        nonlocal ll, g_gamma, g_rho
+        nonlocal ll, g_gamma, g_mu0, g_rho
         if not mask.any():
             return
         if isinstance(tau, np.ndarray):
@@ -171,12 +178,14 @@ def _neg_loglik(
             np.add.at(g_attack, ctx.home_idx[mask], coef_l)
             np.add.at(g_defence, ctx.away_idx[mask], coef_l)
             g_gamma += float(coef_l.sum())  # gamma enters the home rate only
+            g_mu0 += float(coef_l.sum())
         if dtau_dmu is not None:
             dm = dtau_dmu[mask] if isinstance(dtau_dmu, np.ndarray) \
                 else dtau_dmu
             coef_m = w * (dm / t) * mu[mask]
             np.add.at(g_attack, ctx.away_idx[mask], coef_m)
             np.add.at(g_defence, ctx.home_idx[mask], coef_m)
+            g_mu0 += float(coef_m.sum())
         drho = dtau_drho[mask] if isinstance(dtau_drho, np.ndarray) \
             else dtau_drho
         g_rho += float(np.sum(w * (drho / t)))
@@ -196,11 +205,12 @@ def _neg_loglik(
     except _RejectedPoint:
         return _BAD_POINT, np.zeros_like(x)
 
-    grad = np.empty(2 * n, dtype=np.float64)
+    grad = np.empty(2 * n + 1, dtype=np.float64)
     grad[: n - 1] = g_attack[: n - 1] - g_attack[n - 1]
     grad[n - 1 : 2 * n - 2] = g_defence[: n - 1] - g_defence[n - 1]
-    grad[2 * n - 2] = g_gamma
-    grad[2 * n - 1] = g_rho
+    grad[2 * n - 2] = g_mu0
+    grad[2 * n - 1] = g_gamma
+    grad[2 * n] = g_rho
     # the accumulated gradient is d(ll)/dx; the objective is -ll
     return -ll, -grad
 
@@ -241,8 +251,9 @@ class FittedModel:
     n_matches: int
     attacks: dict[str, float]
     defences: dict[str, float]
-    home_advantage: float
+    home_advantage: float          # gamma: home-rate bonus, log-goals
     rho: float
+    intercept: float               # mu0: league scoring level, log-goals
     converged: bool
     config_hash: str
     prior_teams: frozenset[str] = frozenset()
@@ -257,9 +268,10 @@ class FittedModel:
                 f"team not in fitted model for {self.league!r}: "
                 f"{home!r} / {away!r}; known teams: {known}"
             )
-        lam = math.exp(self.attacks[home] + self.defences[away]
-                       + self.home_advantage)
-        mu = math.exp(self.attacks[away] + self.defences[home])
+        lam = math.exp(self.intercept + self.home_advantage
+                       + self.attacks[home] + self.defences[away])
+        mu = math.exp(self.intercept
+                      + self.attacks[away] + self.defences[home])
         return lam, mu
 
     def score_matrix(self, home: str, away: str) -> npt.NDArray[np.float64]:
@@ -315,6 +327,7 @@ class FittedModel:
             },
             "home_advantage": self.home_advantage,
             "rho": self.rho,
+            "intercept": self.intercept,
             "converged": self.converged,
             "config_hash": self.config_hash,
             "iterations": self.iterations,
@@ -337,6 +350,7 @@ class FittedModel:
             defences=defences,
             home_advantage=data["home_advantage"],
             rho=data["rho"],
+            intercept=data.get("intercept", 0.0),
             converged=data["converged"],
             config_hash=data["config_hash"],
             prior_teams=priors,
@@ -449,11 +463,12 @@ def fit_dixon_coles(
     att0 -= att0.mean()
     def0 -= def0.mean()
 
-    x0 = np.zeros(2 * n, dtype=np.float64)
+    x0 = np.zeros(2 * n + 1, dtype=np.float64)
     x0[: n - 1] = att0[: n - 1]     # last attack/defence are derived
     x0[n - 1 : 2 * n - 2] = def0[: n - 1]
-    x0[2 * n - 2] = config.home_advantage_prior   # gamma start; rho starts 0
-    bounds = [(None, None)] * (2 * n - 1) + [RHO_BOUNDS]
+    x0[2 * n - 2] = math.log(league_rate + 0.5)   # mu0 start: level
+    x0[2 * n - 1] = config.home_advantage_prior   # gamma start; rho starts 0
+    bounds = [(None, None)] * (2 * n) + [RHO_BOUNDS]
 
     res = minimize(
         _neg_loglik, x0, args=(ctx,), method="L-BFGS-B", jac=True,
@@ -497,8 +512,9 @@ def fit_dixon_coles(
         n_matches=len(matches),
         attacks=attacks,
         defences=defences,
-        home_advantage=float(res.x[2 * n - 2]),
-        rho=float(res.x[2 * n - 1]),
+        home_advantage=float(res.x[2 * n - 1]),
+        rho=float(res.x[2 * n]),
+        intercept=float(res.x[2 * n - 2]),
         converged=converged,
         config_hash=config_hash(config),
         prior_teams=prior_teams,
