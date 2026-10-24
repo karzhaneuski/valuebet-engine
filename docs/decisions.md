@@ -311,3 +311,12 @@ refuses calls. Month length uses the real calendar month.
 2022–2024 moves to phase 11 together with the UCL model work; phase 2
 keeps no API-Football code (current season is blocked on the free plan,
 top-5 history comes from football-data + Understat).
+
+## 2026-10-24 — Phase 2 (final round, NIT): UCL /scores harvesting window
+
+**Decision** (phase-7 requirement): UCL results must be fetched via
+`/scores?daysFrom=3` no later than 72 hours after each match's kickoff.
+The endpoint keeps a short backward window (`daysFrom=3` was verified to
+return the previous matchday; older results are not visible), so a missed
+window loses the result until another source covers it. The phase-7
+scheduler should poll after each UCL matchday and at least twice per week.

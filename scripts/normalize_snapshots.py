@@ -17,11 +17,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import select
 
-from core.config import load_config  # noqa: E402
-from core.db import session_scope  # noqa: E402
-from core.orm import OddsSnapshot  # noqa: E402
+from core.config import load_config
+from core.db import session_scope
+from core.orm import OddsSnapshot
 
 # display names seen in The Odds API responses -> bookmaker keys
 DISPLAY_TO_KEY = {

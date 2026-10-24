@@ -288,3 +288,24 @@ def test_alias_fk_enforced(db_url) -> None:
         session.flush()
     session.rollback()
     session.close()
+
+
+def test_utcdatetime_binds_non_utc_aware_to_utc(db_url) -> None:
+    """NIT: an aware value in a non-UTC offset is stored as UTC."""
+    import datetime as dt_
+    from zoneinfo import ZoneInfo
+
+    kyiv = dt_.datetime(2026, 10, 24, 22, 30, tzinfo=ZoneInfo("Europe/Kyiv"))
+    with session_scope(db_url) as s:
+        t1, t2 = Team(name="N1"), Team(name="N2")
+        s.add_all([t1, t2])
+        s.flush()
+        s.add(Match(league="premier_league", season=2026,
+                    date_utc=kyiv.date(), commence_time_utc=kyiv,
+                    kickoff_source="toa", status="scheduled",
+                    home_team_id=t1.id, away_team_id=t2.id))
+    with session_scope(db_url) as s:
+        m = s.scalars(select(Match)).one()
+        assert m.commence_time_utc.utcoffset() == dt_.UTC.utcoffset(None)
+        assert m.commence_time_utc.hour == 19  # 22:30+03 == 19:30Z? no: 22:30+3=19:30Z
+        assert m.commence_time_utc.minute == 30
