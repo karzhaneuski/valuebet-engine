@@ -33,8 +33,10 @@ The 1-5-match bin was the failure mode from the review (free
 attack/defence after 1-5 matches, lambda ~ 0 at w=1): the prior removes
 the blow-up (w=1: -9.839 -> -3.067, in line with the other bins) and
 improves the thin-history bin at w=0.5 (-3.240 -> -3.039) without
-hurting established teams (all other bins slightly BETTER, the ridge
-toward 0 is mild).
+hurting established teams: the 0-match bin (-2.917 -> -2.844 at w=0.5,
+-2.927 -> -2.825 at w=1), the 6-15 bin (-2.881 -> -2.849, -2.945 ->
+-2.863) and the >15 bin (-2.930 -> -2.921, -2.964 -> -2.939) are all
+slightly BETTER after the change - the ridge toward 0 is mild.
 
 ## Model-vs-market slope (upcoming matches with totals 2.5 snapshots)
 

@@ -367,12 +367,16 @@ unchanged" test.
 - rates: `lam_home = exp(attack_home + defence_away + gamma)`,
   `lam_away = exp(attack_away + defence_home)` — gamma enters the HOME
   rate only (Dixon & Coles 1997);
-- identifiability: the likelihood is invariant under (attack+c,
-  defence+c) and (defence+c, gamma−c) shifts; BOTH `sum(attack) = 0` and
-  `sum(defence) = 0` are enforced via n-1 free parameters each. Without
-  the second constraint gamma drifts along an exactly flat direction
-  (found empirically: two fits with gamma = −0.55 and +0.17 at identical
-  likelihood);
+- identifiability *(corrected 2026-10-25, review S2 — the shifts as
+  first written belonged to the draft rate structure with gamma on both
+  sides)*: with the correct rates (gamma home-only, plus the mu0
+  intercept added later) the likelihood is invariant under
+  `(attack+c, defence−c)` and `(defence+c, mu0−c)` shifts; BOTH
+  `sum(attack) = 0` and `sum(defence) = 0` are enforced via n-1 free
+  parameters each, and mu0 carries the scoring level. The flat-direction
+  symptom was real: with gamma on both rates, two fits with gamma −0.55
+  and +0.17 had identical likelihood; and without mu0 the double
+  constraint pinned the away-side level to 1 (see the intercept entry);
 - tau applies to the OBSERVED integer score (0-0/1-0/0-1/1-1); the
   quasi-Poisson part acts on the mixed target `y = w*goals + (1-w)*xG`
   with `lgamma(y+1)` replacing the factorial (non-integer targets are
@@ -452,3 +456,51 @@ regression-tested (`test_one_match_does_not_run_away_from_the_prior`,
 `test_three_matches_stay_within_one_sigma_of_the_prior`,
 `test_promoted_team_error_falls_with_matches_played`,
 `test_result_lag_excludes_matches_still_in_play_window`).
+
+## 2026-10-25 — Phase 3 review S2: why the quasi-likelihood is sound
+
+**Decision** (rationale recorded per review S2):
+
+- The estimating equations `sum_k w_k (y_k - lam_k) x_k = 0` are unbiased
+  whenever `E[y] = lam`, so the quasi-MLE is CONSISTENT for the rate that
+  matches the mean of the target — for integer y it coincides with the
+  ordinary Poisson MLE, and `lgamma(y+1)` is exactly the Poisson pmf
+  normaliser extended off the integers. The model therefore estimates
+  `lam = w*E[goals] + (1-w)*E[xG]`, not "goals" or "xG" alone.
+- Verified on the DB copy (2024-2026, `scripts/model_smoke`-style SQL):
+  Understat `sum(xG)/sum(goals)` = **1.078 / 1.101 / 1.092** per season,
+  so mixing xG in lifts the fitted scoring level by ~
+  `(1-w)*(ratio-1)` = +3.9..5.0% at w=0.5 — the main reason the smoke
+  "model vs actual goals" deltas were positive (xG converts slightly
+  above goals), compounded by recency weighting.
+- rho is practically insensitive to w: refitting all five leagues at
+  w=0.5 vs w=1.0 moves rho by at most 0.014
+  (`scripts/model_rho_check.py`).
+- What the quasi-likelihood does NOT model: dispersion (the variance
+  stays the Poisson one, no phi parameter). Calibration of the resulting
+  probabilities is a phase-4 deliverable (reliability/Brier).
+- Phase-4 options recorded: (a) rescale xG by `sum(goals)/sum(xG)`
+  computed strictly up to as_of before mixing; (b) fit the level
+  parameters (mu0, gamma) on goals only while keeping team attack/
+  defence on the mixture.
+
+**Reason**: review S2; all numbers from real runs on a DB copy.
+
+## 2026-10-25 — Phase 3 review S3: rho/gamma are weakly identified per league
+
+**Decision** (recorded measurement + phase-4 plan):
+
+- Observed-information SEs at the optimum (2x2 (gamma, rho) block of the
+  inverted numeric Hessian of the penalized objective, xi=0.005,
+  `scripts/model_rho_check.py`): se(rho) = **0.090..0.104**, se(gamma) =
+  **0.056..0.064** across the five leagues. So per-league rho estimates
+  (−0.087..+0.023) are within ~1 SE of each other and of a common value.
+- Serie A's positive rho (+0.023) is noise: at xi=0 the same league fits
+  rho = −0.039 (and Bundesliga moves −0.029 → −0.110) — well inside
+  2*SE. No league shows a rho reliably away from the pack.
+- Phase-4 plan: try (a) a COMMON rho across leagues (one parameter, much
+  tighter SE) and/or (b) a separate, slower time decay for the
+  league-level parameters (rho, gamma) than for team strengths; pick by
+  walk-forward log loss.
+
+**Reason**: review S3; measured, not assumed.

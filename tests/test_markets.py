@@ -9,6 +9,7 @@ loop and must be circularly consistent.
 from __future__ import annotations
 
 import datetime as dt
+import math
 
 import numpy as np
 import pytest
@@ -147,6 +148,37 @@ def test_proxy_matrix_is_normalized_and_poisson_marginal() -> None:
 def test_proxy_matrix_rejects_bad_arguments(lam: float, share: float) -> None:
     with pytest.raises(ValueError):
         proxy_score_matrix(lam, share)
+
+
+def test_proxy_with_rho_matches_model_btts_and_cells() -> None:
+    """Review S5: at equal rates and rho the proxy matrix coincides with
+    the fitted model's matrix (tau included), so BTTS (and any market)
+    agrees between prefilter proxy and model."""
+    lam, mu, rho = 1.9, 1.2, -0.06
+    model = FittedModel(
+        league="s", as_of=AS_OF, xi=0.0, w=0.5, n_matches=0,
+        attacks={"H": 0.0, "A": 0.0}, defences={"H": 0.0, "A": 0.0},
+        home_advantage=math.log(lam / mu), rho=rho,
+        intercept=0.5 * (math.log(lam) + math.log(mu)) - 0.5 * math.log(lam / mu),
+        converged=True, config_hash="s",
+    )
+    assert model._rates("H", "A") == pytest.approx((lam, mu), rel=1e-12)
+    m_model = model.score_matrix("H", "A")
+    m_proxy = proxy_score_matrix(lam + mu, lam / (lam + mu), rho=rho)
+    assert btts(m_model, yes=True) == pytest.approx(btts(m_proxy, yes=True),
+                                                    abs=1e-12)
+    assert btts(m_model, yes=False) == pytest.approx(btts(m_proxy, yes=False),
+                                                     abs=1e-12)
+    # rho actually moves the proxy's low-score cells (guard against a
+    # silently ignored argument)
+    m_rho0 = proxy_score_matrix(lam + mu, lam / (lam + mu), rho=0.0)
+    assert m_proxy[1, 1] != pytest.approx(m_rho0[1, 1])
+
+
+def test_proxy_rejects_rho_out_of_admissible_range() -> None:
+    with pytest.raises(ValueError, match="admissible"):
+        # lam=mu=2.85 -> lam*mu ~ 8.1 -> tau(0,0) = 1 - 8.1*0.15 < 0
+        proxy_score_matrix(5.7, 0.5, rho=0.15)
 
 
 @pytest.mark.parametrize("line", HALF_LINES)

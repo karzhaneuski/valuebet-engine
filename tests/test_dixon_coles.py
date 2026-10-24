@@ -57,7 +57,7 @@ def generate_matches(
     rounds: int = 60, seed: int = 42, with_xg: bool = True,
     drop_xg_every: int = 0, intercept: float = 0.0,
     gamma: float = TRUE_GAMMA, rho: float = TRUE_RHO,
-    season: int = 2021,
+    season: int = 2021, xg_gamma_k: float = 0.0,
 ) -> list[TrainingMatch]:
     """Sample matches from the true DC model; xG ~ Poisson at the rates.
 
@@ -79,8 +79,14 @@ def generate_matches(
                     mid += 1
                     xg_h = xg_a = None
                     if with_xg and not (drop_xg_every and mid % drop_xg_every == 0):
-                        xg_h = float(rng.poisson(lam))
-                        xg_a = float(rng.poisson(mu))
+                        if xg_gamma_k > 0.0:
+                            xg_h = lam * float(
+                                rng.gamma(xg_gamma_k, 1.0 / xg_gamma_k))
+                            xg_a = mu * float(
+                                rng.gamma(xg_gamma_k, 1.0 / xg_gamma_k))
+                        else:
+                            xg_h = float(rng.poisson(lam))
+                            xg_a = float(rng.poisson(mu))
                     matches.append(TrainingMatch(
                         match_id=mid,
                         kickoff=AS_OF - dt.timedelta(days=float(rng.uniform(5, 400))),
@@ -190,6 +196,41 @@ def test_high_mean_league_recovers_scoring_level() -> None:
         for h, a in pairs
     ])
     assert away_level > 1.3   # away level e^0.40 ~ 1.49, was pinned to 1 before
+
+
+RHO_SEEDS = (42, 1, 2, 3, 4)
+
+
+def _fit_rho_mean(rounds: int, xi: float) -> float:
+    """Mean fitted rho over RHO_SEEDS; truth -0.10, Gamma-shaped xG."""
+    rhos = []
+    for seed in RHO_SEEDS:
+        matches = generate_matches(rounds=rounds, seed=seed,
+                                   rho=-0.10, xg_gamma_k=10.0)
+        fitted = fit_dixon_coles(
+            matches, league="synthetic", as_of=AS_OF,
+            team_universe=set(TEAMS),
+            config=ModelConfig(xi=xi, weight_xg=0.5),
+        )
+        assert fitted.converged
+        rhos.append(fitted.rho)
+    return float(np.mean(rhos))
+
+
+def test_recovers_rho_minus_0_10_with_noninteger_xg() -> None:
+    """Review S4: 200 rounds (11 200 matches), Gamma-shaped non-integer
+    xG, mean over 5 seeds - |error| < 0.03 with the correct sign."""
+    mean_rho = _fit_rho_mean(rounds=200, xi=0.0)
+    assert mean_rho < 0.0, mean_rho
+    assert abs(mean_rho - (-0.10)) < 0.03, mean_rho
+
+
+def test_recovers_rho_with_time_decay_active() -> None:
+    """Same recovery with xi=0.005 (kickoffs spread over ~400 days): the
+    weighted quasi-likelihood stays consistent for rho."""
+    mean_rho = _fit_rho_mean(rounds=200, xi=0.005)
+    assert mean_rho < 0.0, mean_rho
+    assert abs(mean_rho - (-0.10)) < 0.04, mean_rho   # slightly noisier
 
 
 def test_recovery_with_goals_only_matches_mixed_in() -> None:

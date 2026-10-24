@@ -113,13 +113,17 @@ def btts(m: npt.NDArray[np.float64], yes: bool = True) -> float:
 
 
 def proxy_score_matrix(
-    lambda_total: float, home_share: float, max_score: int = _PROXY_MAX_SCORE
+    lambda_total: float, home_share: float, max_score: int = _PROXY_MAX_SCORE,
+    rho: float = 0.0,
 ) -> npt.NDArray[np.float64]:
-    """Book-free proxy distribution: two independent Poissons.
+    """Book-free proxy distribution: two Poissons + the DC tau.
 
     ``lambda_total`` is split into home/away rates by ``home_share``
-    (the model's expected-goals share of the home side). Same shape as
-    the model's matrices, so every market function applies to it.
+    (the model's expected-goals share of the home side); ``rho`` applies
+    the same Dixon-Coles low-score correction the model uses, so at
+    equal rates and rho the proxy coincides with the model's matrix
+    cell-for-cell. Same shape as the model's matrices, so every market
+    function applies to it.
     """
     if lambda_total <= 0.0:
         raise ValueError(f"lambda_total must be > 0, got {lambda_total}")
@@ -133,6 +137,19 @@ def proxy_score_matrix(
     ph = np.exp(-lam_h + k * math.log(lam_h)) / fact
     pa = np.exp(-lam_a + k * math.log(lam_a)) / fact
     m = np.outer(ph, pa)
+    factors = {
+        (0, 0): 1.0 - lam_h * lam_a * rho,
+        (0, 1): 1.0 + lam_h * rho,
+        (1, 0): 1.0 + lam_a * rho,
+        (1, 1): 1.0 - rho,
+    }
+    for (h, a), f in factors.items():
+        if f <= 0.0:
+            raise ValueError(
+                f"tau({h},{a}) = {f} <= 0 (lam={lam_h:.3f}, mu={lam_a:.3f}, "
+                f"rho={rho:.3f}); parameters out of the admissible range"
+            )
+        m[h, a] *= f
     m /= m.sum()  # folded tail, same as the model's matrix
     return m
 
