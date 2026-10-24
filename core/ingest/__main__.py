@@ -18,7 +18,7 @@ from core.ingest.football_data import FootballDataLoader
 from core.ingest.odds_api import OddsApiClient
 from core.ingest.understat import UnderstatLoader
 from core.logging import configure, get_logger
-from core.orm import Match
+from core.orm import Match, MatchLineup
 
 logger = get_logger("ingest.cli")
 
@@ -82,25 +82,75 @@ def cmd_backfill(args: argparse.Namespace) -> None:
     print(f"report saved: {out}")
 
 
-def backfill_lineups(db: str, config, since: str) -> dict:
-    us = UnderstatLoader(db, config)
+def backfill_lineups(db: str, config, since: str,
+                     loader: UnderstatLoader | None = None) -> dict:
+    """S6: lineups backfill.
+
+    - only matches WITHOUT lineups are taken (NOT EXISTS, checked before
+      any download), so a re-run resumes where the last one stopped;
+    - each match is retried on 429/5xx with a pause; after the attempts
+      are exhausted the match goes to the report as failed and the run
+      continues;
+    - the report is refreshed after every match.
+    """
+    us = loader or UnderstatLoader(db, config)
     since_d = dt.date.fromisoformat(since)
-    total = 0
     with session_scope(db) as s:
-        matches = s.scalars(select(Match).where(
-                Match.date_utc >= since_d,
-                Match.status == "finished",
-                Match.understat_id.isnot(None)).order_by(Match.date_utc)
-        ).all()
-        pending = [m for m in matches]
-    print(f"lineups: {len(pending)} finished matches since {since}")
-    for m in pending:
-        assert m.understat_id is not None  # filtered in the query
-        rows = us.lineup_rows(m.understat_id)
-        written = us.upsert_lineups(m, rows)
-        total += written
+        has_lineups = select(MatchLineup.match_id).where(
+            MatchLineup.match_id == Match.id).exists()
+        pending = s.scalars(select(Match).where(
+            Match.date_utc >= since_d,
+            Match.status == "finished",
+            Match.understat_id.isnot(None),
+            ~has_lineups).order_by(Match.date_utc)).all()
+        todo = [(m.id, int(m.understat_id)) for m in pending]
+    print(f"lineups: {len(todo)} matches without lineups since {since}")
+    written_total = 0
+    failed: list[dict] = []
+    for i, (match_id, understat_id) in enumerate(todo, 1):
+        attempts = config.ingest.retry_attempts
+        written = None
+        for attempt in range(1, attempts + 1):
+            try:
+                rows = us.lineup_rows(understat_id)
+                break
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}"
+                if attempt == attempts:
+                    logger.warning("lineups.match.failed",
+                                   match_id=match_id,
+                                   understat_id=understat_id,
+                                   error=last_error)
+                    failed.append({"match_id": match_id,
+                                   "understat_id": understat_id,
+                                   "error": last_error})
+                    written = None
+                    break
+                time.sleep(config.ingest.retry_backoff_s * attempt)
+        if written is None and failed and failed[-1]["match_id"] == match_id:
+            continue  # exhausted retries: report and move on
+        db_match = s_get_match(db, match_id)
+        if db_match is None or rows is None:
+            continue
+        try:
+            written = us.upsert_lineups(db_match, rows)
+        except Exception as exc:
+            logger.warning("lineups.match.failed", match_id=match_id,
+                           error=type(exc).__name__)
+            failed.append({"match_id": match_id, "understat_id":
+                           understat_id, "error": type(exc).__name__})
+            continue
+        written_total += written
+        if i % 10 == 0 or i == len(todo):
+            print(f"lineups progress: {i}/{len(todo)}, rows {written_total}")
         time.sleep(1.0)  # Understat is informal: throttle hard
-    return {"since": since, "matches": len(pending), "rows_written": total}
+    return {"since": since, "matches": len(todo),
+            "rows_written": written_total, "failed_matches": failed}
+
+
+def s_get_match(db: str, match_id: int):
+    with session_scope(db) as s:
+        return s.get(Match, match_id)
 
 
 def cmd_refresh(args: argparse.Namespace) -> None:
