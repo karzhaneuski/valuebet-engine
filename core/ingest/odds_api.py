@@ -177,22 +177,40 @@ class OddsApiClient:
                     match.toa_event_id = eid
                     if not was_linked:
                         self._relink_snapshots(s, eid, match.id)
-                # S10: a stable event clears a stale suspicion
                 stored = _as_utc(match.commence_time_utc)
-                if match.status == "postponed_suspected" and stored and \
-                        abs((commence - stored).total_seconds()) / 60 <= \
-                        cfg.shift_min:
-                    match.status = "scheduled"
-                    report.un_suspected += 1
-                # postponement: only a previously TOA-authoritative kickoff
-                # shifting by more than cfg minutes (S10/B6)
                 if stored is not None and match.kickoff_source == "toa":
-                    shift = abs((commence - stored).total_seconds()) / 60
-                    if shift > cfg.shift_min and \
+                    shift = (commence - stored).total_seconds() / 60
+                    if abs(shift) > cfg.shift_min and \
                             match.status in ("scheduled",
                                              "postponed_suspected"):
+                        # S12: remember the ORIGINAL kickoff and when the
+                        # shift was seen, so the postponement survives any
+                        # number of later polls
+                        if match.original_kickoff_utc is None:
+                            match.original_kickoff_utc = stored
+                        match.rescheduled_at_utc = now
                         match.status = "postponed_suspected"
                         report.postponed_suspected += 1
+                elif match.status == "postponed_suspected" and \
+                        match.original_kickoff_utc is None and \
+                        stored is not None:
+                    # flagged by the vanished-event rule and now back with
+                    # no kickoff change: keep the flag only if the event
+                    # shifted it; a same-time return is NOT proof, so the
+                    # status stays until /scores settles it (phase 7)
+                    pass
+                # S12 explicit un-suspect rule: the event is present with
+                # a kickoff equal to the ORIGINAL one AND the shift was
+                # never confirmed — only then clear the flag
+                original = _as_utc(match.original_kickoff_utc)
+                if match.status == "postponed_suspected" and \
+                        original is not None and \
+                        match.rescheduled_at_utc is None and \
+                        abs((commence - original).total_seconds()) / 60 \
+                        <= cfg.shift_min:
+                    match.status = "scheduled"
+                    match.original_kickoff_utc = None
+                    report.un_suspected += 1
                 if match.commence_time_utc != commence:
                     match.commence_time_utc = commence
                     match.date_utc = commence.date()

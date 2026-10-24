@@ -308,13 +308,17 @@ def test_s10_toa_to_toa_shift_is_postponement(tmp_path) -> None:
         assert s.scalars(select(Match)).one().status == "postponed_suspected"
     assert report.postponed_suspected == 1
 
-    # ...and a stable repeat run clears the flag (S10)
+    # S12: a repeat poll with the SAME (shifted) time must NOT clear the
+    # flag — the postponement is remembered (original kickoff + when seen)
     stable = client.apply_events(
         "soccer_epl", [_event("e-92", "Home FC", "Away FC", shifted)],
         "premier_league", 2026, now=NOW)
     with session_scope(url) as s:
-        assert s.scalars(select(Match)).one().status == "scheduled"
-    assert stable.un_suspected == 1
+        m = s.scalars(select(Match)).one()
+        assert m.status == "postponed_suspected"  # survives the loop
+        assert m.original_kickoff_utc is not None
+        assert m.rescheduled_at_utc is not None
+    assert stable.un_suspected == 0
 
 
 # --- S3: UCL pair search before create -----------------------------------------

@@ -143,6 +143,12 @@ class Match(Base):
 
     # UCL stage (league_phase, r16, ...) — NULL for league matches
     stage: Mapped[str | None] = mapped_column(String(30))
+    # S12: postponement must never vanish through a polling loop — the
+    # pre-shift kickoff and the moment the shift was detected are kept
+    original_kickoff_utc: Mapped[dt.datetime | None] = mapped_column(
+        UTCDateTime)
+    rescheduled_at_utc: Mapped[dt.datetime | None] = mapped_column(
+        UTCDateTime)
     # external ids: understat game id; TOA event id (unique). football-data
     # rows are identified by (date, home/away aliases) — no stable id.
     understat_id: Mapped[int | None] = mapped_column(Integer, unique=True)
