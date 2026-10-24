@@ -130,12 +130,16 @@ def check_stale_scheduled(db_url: str,
     FAIL (phase 7 settles it), but the list must be visible."""
     now = now or dt.datetime.now(dt.UTC)
     with session_scope(db_url) as s:
-        stale = s.scalars(select(Match).where(
-            Match.status == "scheduled",
-            Match.commence_time_utc < now - dt.timedelta(hours=48))
+        # names must be resolved INSIDE the session (detached lazy loads)
+        stale = s.execute(
+            select(Match.id, Match.home_team_id, Match.away_team_id,
+                   Match.commence_time_utc).where(
+                Match.status == "scheduled",
+                Match.commence_time_utc < now - dt.timedelta(hours=48))
             .order_by(Match.commence_time_utc)).all()
-    names = [f"match#{m.id} {m.home_team.name} v {m.away_team.name} "
-             f"{m.commence_time_utc:%Y-%m-%d}" for m in stale]
+        names_map = {t.id: t.name for t in s.scalars(select(Team)).all()}
+    names = [f"match#{mid} {names_map.get(h)} v {names_map.get(a)} "
+             f"{k:%Y-%m-%d}" for mid, h, a, k in stale]
     return True, f"stale scheduled matches ({len(stale)}): " + (
         "; ".join(names) if names else "none")
 
