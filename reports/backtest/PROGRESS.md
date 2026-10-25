@@ -79,3 +79,13 @@ metrics forbidden until FROZEN_CONFIG.json exists.
   complexity is an explicit field computed from overrides (re-run:
   chosen unchanged opt_base_xi0.002_w0.5); bootstraps cluster on
   calendar weeks (kickoff ISO week in honesty, as_of week elsewhere).
+
+## Part B (phase-4b-hybrid)
+- B1 (f42c8dc): prematch_odds table + loader; copy load 21,017 rows.
+- B2: hybrid (prematch Avg de-vig lambda, model share+rho) validation
+  LL 2.9067 vs model 2.9112, delta -0.0045 CI [-0.0088,-0.0001];
+  closing source delta -0.0103 CI [-0.0153,-0.0052] - reviewer
+  reproduced exactly.
+- B3: flat diagonal kappa breaks 0:0; chosen high-draw-only kappa=0.20
+  (all cells |z|<=2, LL 2.9054, delta -0.0058); all fix variants
+  LL-TIED pairwise (bootstrap) - choice by cell calibration, 1 param.

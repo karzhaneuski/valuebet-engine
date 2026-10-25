@@ -612,3 +612,30 @@ updates 0. The main DB is NOT touched - owner command in SUMMARY_4b.
 
 **Reason**: phase-4b task B1 (hybrid needs a pre-match lambda source
 that matches the bot's 1-3-days-ahead betting scenario).
+
+## 2026-10-26 — Phase 4b B2/B3: hybrid matrix beats the pure model; draw fix
+
+**Decision** (all numbers on VALIDATION only, prematch Avg as the live
+scenario):
+- B2 hybrid = proxy_score_matrix(lambda_total from the de-vigged
+  PRE-MATCH Avg over/under 2.5, home share from the model's expected
+  goals, rho from the model). Exact-score log loss 2.9067 vs model
+  2.9112: delta -0.0045, paired calendar-week bootstrap CI95
+  [-0.0088, -0.0001] (reviewer's numbers reproduced: -0.0045 and
+  -0.0103 with closing AvgC, CI [-0.0153, -0.0052]). The market total
+  level carries real information the model lacks.
+- B3 draw correction: the model and the hybrid UNDERprice 2:2 (model
+  cell z +3.2, hybrid +3.4; p 0.049 vs observed 0.062) and slightly
+  OVERprice 0:0 (hybrid z -1.9). A FLAT diagonal inflation cures 2:2
+  but breaks 0:0 (kappa 0.10 -> 0:0 z -2.9); a separate hybrid rho
+  (-0.05) improves LL marginally and leaves 2:2 untouched. Chosen:
+  option (c) - inflate ONLY the high draws (2:2, 3:3, ...) by
+  (1+kappa), kappa=0.20, renormalised: every 0:0..3:3 cell then has
+  |z| <= 2, LL 2.9054 (delta vs model -0.0058, CI [-0.0106, -0.0010]).
+  Paired comparisons show all fix variants are LL-TIED with each other
+  (kappa0.20 vs pure hybrid: -0.0013 [-0.0030, +0.0002]) - the choice
+  follows the cell-calibration criterion (the task's requirement) at
+  the price of ONE extra parameter; the rho+combo variants are TIED and
+  more complex, so rejected.
+
+**Reason**: phase-4b B2/B3; artefacts reports/backtest/4b_hybrid_*.json.
