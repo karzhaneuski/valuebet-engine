@@ -35,27 +35,58 @@ LINEUP_SLEEP_S = 1.0
 
 
 def is_network_error(exc: BaseException) -> bool:
-    """True if exc represents a transient network/connection/timeout issue."""
-    if isinstance(exc, (TimeoutError, ConnectionError, OSError)):
+    """True if exc represents a transient network/connection/timeout issue or 5xx/429.
+
+    Explicitly excludes filesystem errors (FileNotFoundError, etc.) and arbitrary
+    exceptions that merely contain 'http' in their name without being network failures.
+    """
+    # 1. Never treat filesystem, permission, directory, or lookup errors as network errors
+    if isinstance(exc, (FileNotFoundError, PermissionError, IsADirectoryError,
+                        NotADirectoryError, FileExistsError)):
+        return False
+
+    # 2. Connection and timeout errors from standard library / socket
+    if isinstance(exc, (TimeoutError, ConnectionError)):
         return True
+
+    # 3. HTTP status codes if present on exception or response attribute
+    status_code = getattr(exc, "status_code", None)
+    if status_code is None:
+        resp = getattr(exc, "response", None)
+        if resp is not None:
+            status_code = getattr(resp, "status_code", None)
+    if isinstance(status_code, int):
+        if status_code in (429, 500, 502, 503, 504):
+            return True
+        if 400 <= status_code < 500:
+            return False
+
+    # 4. Explicit network/socket error signatures in error message
     msg = str(exc).lower()
     net_keywords = (
         "dial tcp",
         "i/o timeout",
-        "timeout",
-        "timed out",
         "connection refused",
         "connection reset",
-        "temporary failure",
+        "connection aborted",
+        "temporary failure in name resolution",
         "network is unreachable",
         "remote end closed",
-        "tls",
-        "handshake",
+        "tls handshake",
+        "timed out",
+        "timeout",
+        "429 too many requests",
+        "502 bad gateway",
+        "503 service unavailable",
+        "504 gateway timeout",
     )
     if any(k in msg for k in net_keywords):
         return True
+
+    # 5. Type name checks strictly for timeout/connection/network types (not generic 'http')
     exc_type = type(exc).__name__.lower()
-    return any(k in exc_type for k in ("timeout", "connection", "network", "http", "tls"))
+    net_types = ("timeout", "connectionerror", "connecterror", "networkerror")
+    return any(k in exc_type for k in net_types)
 
 
 @dataclass

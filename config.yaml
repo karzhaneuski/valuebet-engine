@@ -46,7 +46,6 @@ leagues:
     api_football_id: 2
     ucl: true
     experimental: true           # market exact-score/multiscore matrix (SPEC §1, phase 11)
-    totals_edge_threshold: 0.06
     totals_lines_available: [2.5, 2.75, 3.0, 3.25, 3.5, 4.0, 4.5]
 
 database:
@@ -57,7 +56,6 @@ model:                           # frozen by phase-4 backtest (FROZEN_CONFIG.jso
   weight_xg: 0.5                 # w=1.0 uniformly worst on validation
 
 thresholds:
-  totals_edge: 0.04
   multiscore_edge: 0.08
   exact_score_edge: 0.12
   exact_score_min_p: 0.04

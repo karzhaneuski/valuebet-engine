@@ -26,6 +26,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime as dt
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from scipy.optimize import brentq, least_squares, minimize_scalar
@@ -196,9 +197,33 @@ def fit_all_market(p_over: float, ph: float, pd: float,
     return float(res.x[0]), float(res.x[1]), float(res.x[2])
 
 
+def load_json_artifact(path_str: str) -> dict[str, Any]:
+    """Load JSON from path, supporting .gz transparently."""
+    p = Path(path_str)
+    if not p.exists() and p.with_suffix(p.suffix + ".gz").exists():
+        p = p.with_suffix(p.suffix + ".gz")
+    if p.suffix == ".gz":
+        import gzip
+        with gzip.open(p, "rt", encoding="utf-8") as f:
+            return json.load(f)  # type: ignore[no-any-return]
+    return json.loads(p.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+
+
+def save_json_artifact(path_str: str, data: dict[str, Any], indent: int = 1) -> None:
+    """Save JSON to path, compressing with gzip if path ends with .gz."""
+    p = Path(path_str)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if p.suffix == ".gz":
+        import gzip
+        with gzip.open(p, "wt", encoding="utf-8") as f:
+            json.dump(data, f, indent=indent)
+    else:
+        p.write_text(json.dumps(data, indent=indent), encoding="utf-8")
+
+
 def run_compare(path_a: str, path_b: str, out_path: str) -> None:
-    data_a = json.loads(Path(path_a).read_text())
-    data_b = json.loads(Path(path_b).read_text())
+    data_a = load_json_artifact(path_a)
+    data_b = load_json_artifact(path_b)
     matches_a = {m["match_id"]: m for m in data_a.get("per_match", [])}
     matches_b = {m["match_id"]: m for m in data_b.get("per_match", [])}
     common_ids = sorted(set(matches_a.keys()) & set(matches_b.keys()))
@@ -252,7 +277,7 @@ def run_compare(path_a: str, path_b: str, out_path: str) -> None:
         "by_season": by_season,
         "per_match": per_match,
     }
-    Path(out_path).write_text(json.dumps(out, indent=1))
+    save_json_artifact(out_path, out, indent=1)
     print(f"[compare] {path_a} vs {path_b}: n={len(common_ids)} "
           f"delta={mean_delta:+.4f} CI95 [{ci_lo:+.4f}, {ci_hi:+.4f}]")
 
@@ -583,7 +608,7 @@ def main() -> None:
         cf_res["kappa_by_direction"] = kappa_cv
         out["cross_fit"] = cf_res
 
-    Path(args.out).write_text(json.dumps(out, indent=1))
+    save_json_artifact(args.out, out, indent=1)
     print(f"[{args.period}/{args.source}/{args.share}] n={used} LL model {ll_m:.4f} "
           f"hybrid {ll_h:.4f} delta {delta:+.4f} CI95 [{lo:+.4f}, {hi:+.4f}]")
     big = [(c["cell"], round(float(c["z"]), 1)) for c in out["hybrid_cells"]

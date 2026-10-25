@@ -28,7 +28,7 @@ def test_ucl_experimental(config: AppConfig) -> None:
     ucl = next(lg for lg in config.leagues if lg.slug == "ucl")
     assert ucl.ucl and ucl.experimental
     assert ucl.fd_code is None and ucl.understat_league is None
-    assert ucl.totals_edge_threshold == 0.06
+    assert ucl.totals_edge_threshold is None
 
 
 def test_odds_policy_defaults(config: AppConfig) -> None:

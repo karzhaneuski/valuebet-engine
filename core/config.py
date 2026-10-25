@@ -30,7 +30,7 @@ class LeagueConfig(BaseModel):
     # measured in phase 0 (odds_api.json); effective lines are the
     # intersection with `totals_lines.requested` — phase 5 logic
     totals_lines_available: list[float] = Field(default_factory=list)
-    totals_edge_threshold: float = 0.04   # UCL starts higher (SPEC §1)
+    totals_edge_threshold: float | None = None  # reference-only (totals have no reco)
 
 
 class DatabaseConfig(BaseModel):
@@ -76,7 +76,7 @@ class ModelConfig(BaseModel):
 
 
 class ThresholdsConfig(BaseModel):
-    totals_edge: float = 0.04
+    totals_edge: float | None = None  # reference-only (totals have no reco)
     multiscore_edge: float = 0.08
     exact_score_edge: float = 0.12
     exact_score_min_p: float = 0.04
@@ -119,10 +119,6 @@ DegradationStep = Literal[
     "cap_correct_score_5_week",
     "disable_t3_h2h",
     "t3_slot_to_day",
-    # Legacy / alias compatibility
-    "cap_additional_markets_top5_week",
-    "disable_t48",
-    "disable_t24",
 ]
 
 

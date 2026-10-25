@@ -600,3 +600,42 @@ def test_c2_understat_schedule_non_network_error_not_retried(tmp_path) -> None:
     assert "corrupt schema" in str(exc_info.value)
     # Crucial: non-network error must fail immediately on attempt 1 without retry
     assert attempts["count"] == 1
+
+
+def test_is_network_error_excludes_filesystem_and_client_http() -> None:
+    from core.ingest.understat import is_network_error
+
+    # Filesystem errors are OSError subclasses but must NOT be treated as network errors
+    assert not is_network_error(FileNotFoundError("data/raw/test.csv not found"))
+    assert not is_network_error(PermissionError("Permission denied"))
+    assert not is_network_error(IsADirectoryError("Expected file got dir"))
+
+    # Generic exceptions containing 'http' or 4xx HTTP client errors
+    assert not is_network_error(ValueError("Failed to parse http header"))
+
+    class Http404Error(Exception):
+        status_code = 404
+
+    class Http400Error(Exception):
+        status_code = 400
+
+    assert not is_network_error(Http404Error("Not found"))
+    assert not is_network_error(Http400Error("Bad request"))
+
+
+def test_is_network_error_matches_transient_failures() -> None:
+    from core.ingest.understat import is_network_error
+
+    assert is_network_error(TimeoutError("Operation timed out"))
+    assert is_network_error(ConnectionResetError("Connection reset by peer"))
+    assert is_network_error(RuntimeError("dial tcp 1.2.3.4:443: i/o timeout"))
+    assert is_network_error(RuntimeError("temporary failure in name resolution"))
+
+    class Http503Error(Exception):
+        status_code = 503
+
+    class Http429Error(Exception):
+        status_code = 429
+
+    assert is_network_error(Http503Error("Service Unavailable"))
+    assert is_network_error(Http429Error("Too Many Requests"))
