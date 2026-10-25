@@ -38,7 +38,18 @@ Continuation point: this file + `git log phase-5-fair-pricing`. Rules: DB copy o
   - Evaluated matrix comparison against FairMatrix with William Hill totals and consensus 1X2: max cell diff < 0.15, TVD < 0.35, RMSE < 0.05, JSD < 0.05, high draws diff well-controlled (< 0.05).
 - Added unit tests in `tests/test_pinnacle_benchmark.py` (5 tests). All strict mypy checks green across 11 files.
 
+## Step 3: Manual Fortuna Odds Parser (core/value/fortuna_input.py)
+- Created `core/value/fortuna_input.py`:
+  - `FortunaPrice` dataclass with normalized `selection_key`.
+  - Free text parser supporting exact scores (`2:1 9.50`, `2-1 @ 9,50`, `2:1 - 9.5`), 'other' scores (`inny wynik`, `pozostałe`, `other`, `любой другой`), multiscore sets (`1:0, 2:0, 2:1 @ 3.40`), goals ranges (`2-4 gole @ 1.80`, `2–4 bramki 1,80`, `2-4 гола`), reference totals (`over 2.5 1.95`), and reference 1X2 (`1 @ 2.10`, `X @ 3.40`, `remis`).
+  - Strict line-numbered error reporting via `FortunaParseError` with zero silent drops.
+  - Conflict detection: duplicate entries with different odds raise explicit errors; identical entries are deduplicated.
+  - `calculate_fortuna_overround`: calculates bookmaker overround (margin) on exact score grids (e.g. 15.4%).
+- Added unit tests in `tests/test_fortuna_input.py` (11 tests): exact scores, other score phrases, multiscore, goals ranges, totals, 1X2, multi-line batches, conflicting odds, syntax errors, and overround calculation.
+- All checks green, strict mypy passing across 12 source files.
+
 ---
-## Next: Step 3 (core/value/fortuna_input.py - Manual Fortuna odds parser)
+## Next: Step 4 (core/value/engine.py - Value Engine)
+
 
 
