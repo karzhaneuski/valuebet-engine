@@ -100,3 +100,4 @@ metrics forbidden until FROZEN_CONFIG.json exists.
 
 ## Part C (Ingest CLI & Robustness)
 - C1: CLI backfill added `--lineups-only` (requires `--lineups-since`), skipping Understat schedule discovery and football-data downloads/parsing entirely; unit tests verify validation error when `--lineups-since` is missing and ensure schedule/fd loaders are not called.
+- C2: Understat schedule fetching in UnderstatLoader.schedule_rows now uses retry loop with exponential backoff on transient errors (e.g. TLS client timeouts) and provides clear human-readable error messages; cmd_backfill catches league-season schedule errors, records them in report['understat_errors'], and continues backfill for subsequent leagues; unit tests cover transient retry, exhausted retry, and backfill error recording without network calls.

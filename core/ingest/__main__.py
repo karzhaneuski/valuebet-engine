@@ -44,19 +44,31 @@ def cmd_backfill(args: argparse.Namespace) -> None:
             for season in SEASONS:
                 if args.seasons and season not in args.seasons:
                     continue
-                if season < 2022:
-                    us.backfill_archive(slug, season)  # one-time download
-                us_rows = us.schedule_rows(slug, season)
-                us_r = us.upsert_schedule(us_rows)
-                report["understat"].append(
-                    {"league": slug, "season": season,
-                     "created": us_r.matches_created,
-                     "existing": us_r.matches_existing,
-                     "stats": us_r.stats_written,
-                     "unmatched": sorted(set(us_r.unmatched))})
-                print(f"understat {slug} {season}: +{us_r.matches_created} "
-                      f"(~{us_r.matches_existing} existing), "
-                      f"stats {us_r.stats_written}")
+                try:
+                    if season < 2022:
+                        us.backfill_archive(slug, season)  # one-time download
+                    us_rows = us.schedule_rows(slug, season)
+                    us_r = us.upsert_schedule(us_rows)
+                    report["understat"].append(
+                        {"league": slug, "season": season,
+                         "created": us_r.matches_created,
+                         "existing": us_r.matches_existing,
+                         "stats": us_r.stats_written,
+                         "unmatched": sorted(set(us_r.unmatched))})
+                    print(f"understat {slug} {season}: +{us_r.matches_created} "
+                          f"(~{us_r.matches_existing} existing), "
+                          f"stats {us_r.stats_written}")
+                except Exception as exc:
+                    err_msg = f"{type(exc).__name__}: {exc}"
+                    logger.error("understat.schedule.failed", league=slug,
+                                 season=season, error=err_msg)
+                    if "understat_errors" not in report:
+                        report["understat_errors"] = []
+                    report["understat_errors"].append({
+                        "league": slug, "season": season, "error": err_msg,
+                    })
+                    print(f"understat {slug} {season} FAILED: {err_msg}")
+                    continue
         # 2. football-data results + closing odds
         fd = FootballDataLoader(db, config)
         for slug in TOP5:

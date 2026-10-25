@@ -454,3 +454,122 @@ def test_s6_backfill_query_skips_loaded_matches(tmp_path) -> None:
             Match.understat_id.isnot(None),
             ~has_lineups)).all()
         assert pending == []  # the loaded match is filtered out early
+
+
+# --- C2: Understat network retries and error reporting in backfill -------------
+
+def test_c2_understat_schedule_retries_transient_error(tmp_path) -> None:
+    import pandas as pd
+
+    url = make_db(tmp_path)
+    config = load_config().model_copy(deep=True)
+    config.ingest.retry_attempts = 3
+    config.ingest.retry_backoff_s = 0.0
+
+    attempts = {"count": 0}
+
+    class FlakyReader:
+        def read_schedule(self):
+            attempts["count"] += 1
+            if attempts["count"] < 2:
+                raise RuntimeError("dial tcp 104.21.68.10:443: i/o timeout")
+            return pd.DataFrame([{
+                "game_id": 9999,
+                "home_team": "Home FC",
+                "away_team": "Away FC",
+                "date": pd.Timestamp("2026-10-25 15:00:00"),
+                "is_result": False,
+                "home_goals": None,
+                "away_goals": None,
+                "home_xg": None,
+                "away_xg": None,
+            }])
+
+    loader = UnderstatLoader(url, config, reader_factory=lambda lg, se: FlakyReader())
+    rows = loader.schedule_rows("premier_league", 2026)
+
+    assert len(rows) == 1
+    assert rows[0].understat_id == "9999"
+    assert attempts["count"] == 2
+
+
+def test_c2_understat_schedule_exhausted_raises(tmp_path) -> None:
+    import pytest
+
+    url = make_db(tmp_path)
+    config = load_config().model_copy(deep=True)
+    config.ingest.retry_attempts = 2
+    config.ingest.retry_backoff_s = 0.0
+
+    class FailingReader:
+        def read_schedule(self):
+            raise RuntimeError("dial tcp 104.21.68.10:443: i/o timeout")
+
+    loader = UnderstatLoader(url, config, reader_factory=lambda lg, se: FailingReader())
+    with pytest.raises(RuntimeError) as exc_info:
+        loader.schedule_rows("premier_league", 2026)
+    msg = str(exc_info.value)
+    assert "Understat schedule download failed for premier_league 2026 after 2 attempts" in msg
+    assert "dial tcp" in msg
+
+
+def test_c2_backfill_catches_understat_error_and_records_report(monkeypatch, tmp_path) -> None:
+    import argparse
+    import json
+
+    from core.ingest import __main__ as ingest_main
+
+    url = make_db(tmp_path)
+    monkeypatch.setattr(ingest_main, "_db_url", lambda: url)
+
+    class FailingUnderstat:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def backfill_archive(self, *args, **kwargs):
+            pass
+
+        def schedule_rows(self, slug, season):
+            if slug == "premier_league":
+                raise RuntimeError("dial tcp 104.21.68.10:443: i/o timeout")
+            return []
+
+        def upsert_schedule(self, rows):
+            from core.ingest.understat import UnderstatReport
+            return UnderstatReport()
+
+    class StubFD:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def download(self, *args, **kwargs):
+            pass
+
+        def parse(self, *args, **kwargs):
+            return []
+
+        def upsert(self, rows):
+            from core.ingest.football_data import FdReport
+            return FdReport()
+
+    monkeypatch.setattr(ingest_main, "UnderstatLoader", FailingUnderstat)
+    monkeypatch.setattr(ingest_main, "FootballDataLoader", StubFD)
+
+    report_path = tmp_path / "backfill_report.json"
+
+    def fake_path(p):
+        return report_path if "backfill_report.json" in str(p) else tmp_path / p
+
+    monkeypatch.setattr("core.ingest.__main__.Path", fake_path)
+
+    args = argparse.Namespace(seasons=[2026], lineups_since=None, lineups_only=False)
+    ingest_main.cmd_backfill(args)
+
+    assert report_path.exists()
+    report = json.loads(report_path.read_text())
+    assert "understat_errors" in report
+    assert any(
+        err["league"] == "premier_league" and "dial tcp" in err["error"]
+        for err in report["understat_errors"]
+    )
+    assert len(report["understat"]) == 4

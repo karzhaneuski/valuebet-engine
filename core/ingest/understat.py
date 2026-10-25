@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -98,30 +99,55 @@ class UnderstatLoader:
             return [self._row_from_archive(a, league_slug, season)
                     for a in archive_rows(self._archive_dir,
                                           league.understat_league, season)]
-        import soccerdata
+        attempts = self._config.ingest.retry_attempts
+        last_error = ""
+        for attempt in range(1, attempts + 1):
+            try:
+                if self._reader_factory is not None:
+                    reader = self._reader_factory(league.understat_league, season)
+                else:
+                    import soccerdata
 
-        reader = soccerdata.Understat(
-            leagues=[league.understat_league], seasons=[season],
-            data_dir=self._cache_dir)
-        sched = reader.read_schedule().reset_index()
-        rows: list[UnderstatRow] = []
-        for _, r in sched.iterrows():
-            rows.append(UnderstatRow(
-                league_slug=league_slug, season=season,
-                understat_id=str(int(r["game_id"])),
-                home=str(r["home_team"]), away=str(r["away_team"]),
-                naive_start=r["date"].to_pydatetime(),
-                is_result=bool(r["is_result"]),
-                home_goals=int(r["home_goals"])
-                if r["is_result"] and r["home_goals"] is not None else None,
-                away_goals=int(r["away_goals"])
-                if r["is_result"] and r["away_goals"] is not None else None,
-                home_xg=float(r["home_xg"])
-                if r["is_result"] and r["home_xg"] is not None else None,
-                away_xg=float(r["away_xg"])
-                if r["is_result"] and r["away_xg"] is not None else None,
-            ))
-        return rows
+                    reader = soccerdata.Understat(
+                        leagues=[league.understat_league], seasons=[season],
+                        data_dir=self._cache_dir)
+                sched = reader.read_schedule().reset_index()
+                rows: list[UnderstatRow] = []
+                for _, r in sched.iterrows():
+                    rows.append(UnderstatRow(
+                        league_slug=league_slug, season=season,
+                        understat_id=str(int(r["game_id"])),
+                        home=str(r["home_team"]), away=str(r["away_team"]),
+                        naive_start=r["date"].to_pydatetime(),
+                        is_result=bool(r["is_result"]),
+                        home_goals=int(r["home_goals"])
+                        if r["is_result"] and r["home_goals"] is not None else None,
+                        away_goals=int(r["away_goals"])
+                        if r["is_result"] and r["away_goals"] is not None else None,
+                        home_xg=float(r["home_xg"])
+                        if r["is_result"] and r["home_xg"] is not None else None,
+                        away_xg=float(r["away_xg"])
+                        if r["is_result"] and r["away_xg"] is not None else None,
+                    ))
+                return rows
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}: {exc}"[:300]
+                if attempt == attempts:
+                    logger.error("understat.schedule.exhausted",
+                                 league=league_slug, season=season,
+                                 attempts=attempts, error=last_error)
+                    raise RuntimeError(
+                        f"Understat schedule download failed for {league_slug} "
+                        f"{season} after {attempts} attempts: {last_error}"
+                    ) from exc
+                logger.warning("understat.schedule.retry",
+                               league=league_slug, season=season,
+                               attempt=attempt, attempts=attempts,
+                               error=last_error)
+                time.sleep(self._config.ingest.retry_backoff_s * attempt)
+        raise RuntimeError(
+            f"Understat schedule download failed for {league_slug} {season}: {last_error}"
+        )
 
     @staticmethod
     def _row_from_archive(a: ArchiveRow, league_slug: str,
