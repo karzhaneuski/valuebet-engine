@@ -39,6 +39,17 @@ def upgrade() -> None:
         )
         batch_op.alter_column('p_model', existing_type=sa.Numeric(precision=6, scale=4), nullable=True)
         batch_op.drop_constraint('uq_recommendations_idempotency', type_='unique')
+
+    op.execute(
+        "UPDATE recommendations "
+        "SET selection_key = CASE "
+        "  WHEN line IS NOT NULL THEN market || ':' || outcome || ':' || CAST(line AS TEXT) "
+        "  ELSE market || ':' || outcome "
+        "END "
+        "WHERE selection_key = '' OR selection_key IS NULL"
+    )
+
+    with op.batch_alter_table('recommendations', schema=None) as batch_op:
         batch_op.create_index('ix_recommendations_selection_key', ['selection_key'], unique=False)
         batch_op.create_index(
             'uq_recommendations_active',

@@ -9,7 +9,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from core.orm import Base, Match, PrematchOdds, Recommendation, Team
+from core.orm import Base, Match, PrefilterDecision, PrematchOdds, Recommendation, Team
 from core.value.__main__ import main
 from core.value.engine import (
     EvaluatedOutcome,
@@ -406,3 +406,332 @@ def test_cli_evaluate_and_candidates(tmp_path: Path, monkeypatch) -> None:
         "--from-date", str((now - dt.timedelta(days=1)).date()),
     ])
     assert code_cand == 0
+
+
+def test_cli_evaluate_save_transitions_to_withdrawn_on_dropped_price(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Run 1: price passes edge -> active. Run 2: dropped price -> withdrawn.
+
+    Original created_at & initial odds must be kept.
+    """
+    db_file = tmp_path / "lifecycle_cli.db"
+    db_url = f"sqlite:///{db_file}"
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    engine = create_engine(db_url)
+    Base.metadata.create_all(engine)
+
+    now = dt.datetime.now(dt.UTC)
+    future_time = now + dt.timedelta(days=2)
+
+    with Session(engine) as session:
+        t1 = Team(id=1, name="Arsenal", league="premier_league")
+        t2 = Team(id=2, name="Chelsea", league="premier_league")
+        session.add_all([t1, t2])
+        session.flush()
+
+        m = Match(
+            id=201,
+            league="premier_league",
+            season=2026,
+            date_utc=future_time.date(),
+            commence_time_utc=future_time,
+            kickoff_source="toa",
+            status="scheduled",
+            home_team_id=1,
+            away_team_id=2,
+        )
+        session.add(m)
+        session.flush()
+
+        p_odds = PrematchOdds(
+            id=1,
+            match_id=201,
+            bookmaker="P",
+            over_price=Decimal("1.85"),
+            under_price=Decimal("2.05"),
+            home_price=Decimal("1.50"),
+            draw_price=Decimal("4.50"),
+            away_price=Decimal("6.50"),
+        )
+        session.add(p_odds)
+        session.commit()
+
+    # Run 1: High odds (1:0 @ 10.00 passes edge threshold of 12%)
+    input_file_pass = tmp_path / "input_pass.txt"
+    input_file_pass.write_text("1:0 @ 10.00\n", encoding="utf-8")
+
+    code1 = main([
+        "evaluate",
+        "--match-id", "201",
+        "--input", str(input_file_pass),
+        "--save",
+    ])
+    assert code1 == 0
+
+    with Session(engine) as session:
+        q = select(Recommendation).where(Recommendation.match_id == 201)
+        rows1 = list(session.scalars(q).all())
+        assert len(rows1) == 1
+        assert rows1[0].status == "active"
+        assert rows1[0].odds == Decimal("10.000")
+        first_created_at = rows1[0].created_at_utc
+
+    # Run 2: Dropped odds (1:0 @ 2.00 fails edge threshold; 0 outcomes pass)
+    input_file_drop = tmp_path / "input_drop.txt"
+    input_file_drop.write_text("1:0 @ 2.00\n", encoding="utf-8")
+
+    code2 = main([
+        "evaluate",
+        "--match-id", "201",
+        "--input", str(input_file_drop),
+        "--save",
+    ])
+    assert code2 == 0
+
+    with Session(engine) as session:
+        q = select(Recommendation).where(Recommendation.match_id == 201)
+        rows2 = list(session.scalars(q).all())
+        assert len(rows2) == 1
+        # Recommendation was transitioned to 'withdrawn' even though 0 outcomes passed
+        assert rows2[0].status == "withdrawn"
+        # Initial odds and initial created_at_utc are strictly preserved!
+        assert rows2[0].odds == Decimal("10.000")
+        assert rows2[0].created_at_utc == first_created_at
+
+
+def test_cli_evaluate_save_past_match_null_commence_fallback_date(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """When commence_time_utc is NULL, fallback to date_utc prohibits saving for past matches."""
+    db_file = tmp_path / "past_null_commence.db"
+    db_url = f"sqlite:///{db_file}"
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    engine = create_engine(db_url)
+    Base.metadata.create_all(engine)
+
+    now = dt.datetime.now(dt.UTC)
+    past_date = (now - dt.timedelta(days=2)).date()
+
+    with Session(engine) as session:
+        t1 = Team(id=1, name="Arsenal", league="premier_league")
+        t2 = Team(id=2, name="Chelsea", league="premier_league")
+        session.add_all([t1, t2])
+        session.flush()
+
+        m = Match(
+            id=202,
+            league="premier_league",
+            season=2026,
+            date_utc=past_date,
+            commence_time_utc=None,  # NULL commence time!
+            kickoff_source="understat_placeholder",
+            status="finished",
+            home_team_id=1,
+            away_team_id=2,
+        )
+        session.add(m)
+        session.commit()
+
+    inp = tmp_path / "input.txt"
+    inp.write_text("1:0 @ 7.50\n", encoding="utf-8")
+
+    code = main([
+        "evaluate",
+        "--match-id", "202",
+        "--input", str(inp),
+        "--save",
+    ])
+    # Must exit with code 1 due to past date fallback
+    assert code == 1
+
+
+def test_cli_evaluate_all_three_real_fixtures_exit_code_zero(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Verify all 3 real Fortuna fixtures run through CLI evaluate --no-save with exit code 0."""
+    db_file = tmp_path / "fixtures_cli.db"
+    db_url = f"sqlite:///{db_file}"
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    engine = create_engine(db_url)
+    Base.metadata.create_all(engine)
+
+    now = dt.datetime.now(dt.UTC)
+    future_time = now + dt.timedelta(days=3)
+
+    fixtures_data = [
+        (301, "Barcelona", "Real Madrid", "la_liga", "fortuna_barcelona_real_2026-10-25.txt"),
+        (302, "Udinese", "AC Milan", "serie_a", "fortuna_udinese_milan_2026-10-25.txt"),
+        (303, "Nice", "Rennes", "ligue_1", "fortuna_nice_rennes_2026-10-25.txt"),
+    ]
+
+    with Session(engine) as session:
+        for mid, home, away, league, _fname in fixtures_data:
+            t1 = Team(id=mid * 2, name=home, league=league)
+            t2 = Team(id=mid * 2 + 1, name=away, league=league)
+            session.add_all([t1, t2])
+            session.flush()
+
+            m = Match(
+                id=mid,
+                league=league,
+                season=2026,
+                date_utc=future_time.date(),
+                commence_time_utc=future_time,
+                kickoff_source="toa",
+                status="scheduled",
+                home_team_id=t1.id,
+                away_team_id=t2.id,
+            )
+            session.add(m)
+            session.flush()
+
+            p_odds = PrematchOdds(
+                id=mid,
+                match_id=mid,
+                bookmaker="P",
+                over_price=Decimal("1.85"),
+                under_price=Decimal("2.05"),
+                home_price=Decimal("2.10"),
+                draw_price=Decimal("3.40"),
+                away_price=Decimal("3.50"),
+            )
+            session.add(p_odds)
+        session.commit()
+
+    for mid, _home, _away, _league, fname in fixtures_data:
+        fixture_path = f"tests/fixtures/{fname}"
+        code = main([
+            "evaluate",
+            "--match-id", str(mid),
+            "--input", fixture_path,
+        ])
+        assert code == 0
+
+
+def test_cli_candidates_idempotency_same_day_reruns(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Repeated runs of candidates --save on same day must NOT flip accepted from True to False."""
+    db_file = tmp_path / "candidates_idempotent.db"
+    db_url = f"sqlite:///{db_file}"
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    engine = create_engine(db_url)
+    Base.metadata.create_all(engine)
+
+    # Use fixed Wednesday
+    today = dt.date(2026, 10, 21)  # Wednesday of ISO week 43
+    kickoff_w1 = dt.datetime(2026, 10, 24, 15, 0, tzinfo=dt.UTC)  # Saturday of week 43
+    kickoff_w2 = dt.datetime(2026, 10, 31, 15, 0, tzinfo=dt.UTC)  # Saturday of week 44
+
+    with Session(engine) as session:
+        # Create teams
+        t1 = Team(id=1, name="Arsenal", league="premier_league")
+        t2 = Team(id=2, name="Everton", league="premier_league")
+        t3 = Team(id=3, name="Chelsea", league="premier_league")
+        t4 = Team(id=4, name="Spurs", league="premier_league")
+        session.add_all([t1, t2, t3, t4])
+        session.flush()
+
+        # Match in Week 1
+        m1 = Match(
+            id=10,
+            league="premier_league",
+            season=2026,
+            date_utc=kickoff_w1.date(),
+            commence_time_utc=kickoff_w1,
+            kickoff_source="toa",
+            status="scheduled",
+            home_team_id=1,
+            away_team_id=2,
+        )
+        # Match in Week 2
+        m2 = Match(
+            id=20,
+            league="premier_league",
+            season=2026,
+            date_utc=kickoff_w2.date(),
+            commence_time_utc=kickoff_w2,
+            kickoff_source="toa",
+            status="scheduled",
+            home_team_id=3,
+            away_team_id=4,
+        )
+        session.add_all([m1, m2])
+        session.flush()
+
+        # Add prematch odds for both matches so fair matrix builds
+        p1 = PrematchOdds(
+            id=1,
+            match_id=10,
+            bookmaker="P",
+            over_price=Decimal("1.85"),
+            under_price=Decimal("2.05"),
+            home_price=Decimal("2.10"),
+            draw_price=Decimal("3.40"),
+            away_price=Decimal("3.50"),
+        )
+        p2 = PrematchOdds(
+            id=2,
+            match_id=20,
+            bookmaker="P",
+            over_price=Decimal("1.85"),
+            under_price=Decimal("2.05"),
+            home_price=Decimal("2.10"),
+            draw_price=Decimal("3.40"),
+            away_price=Decimal("3.50"),
+        )
+        session.add_all([p1, p2])
+        session.commit()
+
+    # Run 1: candidates on today
+    code1 = main([
+        "candidates",
+        "--days", "14",
+        "--from-date", str(today),
+        "--save",
+    ])
+    assert code1 == 0
+
+    with Session(engine) as session:
+        decisions1 = {
+            d.match_id: d.accepted
+            for d in session.scalars(select(PrefilterDecision)).all()
+        }
+        assert decisions1[10] is True
+        assert decisions1[20] is True
+
+    # Run 2: repeat on the SAME day!
+    code2 = main([
+        "candidates",
+        "--days", "14",
+        "--from-date", str(today),
+        "--save",
+    ])
+    assert code2 == 0
+
+    with Session(engine) as session:
+        decisions2 = {
+            d.match_id: d.accepted
+            for d in session.scalars(select(PrefilterDecision)).all()
+        }
+        # Decisions must remain accepted=True! (Must not flip to False)
+        assert decisions2[10] is True
+        assert decisions2[20] is True
+
+    # Run 3: third rerun on same day
+    code3 = main([
+        "candidates",
+        "--days", "14",
+        "--from-date", str(today),
+        "--save",
+    ])
+    assert code3 == 0
+
+    with Session(engine) as session:
+        decisions3 = {
+            d.match_id: d.accepted
+            for d in session.scalars(select(PrefilterDecision)).all()
+        }
+        assert decisions3[10] is True
+        assert decisions3[20] is True

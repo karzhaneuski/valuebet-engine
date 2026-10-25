@@ -30,14 +30,19 @@ from core.value.persistence import (
 )
 from core.value.prefilter import (
     CandidateMatch,
+    PrefilterReport,
     filter_candidates,
     log_prefilter_decisions_to_db,
 )
-from core.value.standby_model import get_model_home_share_and_model
+from core.value.standby_model import (
+    get_key_players_for_team,
+    get_model_home_share_and_model,
+)
 
 
 def _cmd_evaluate(args: argparse.Namespace, session: Session) -> int:
     """Evaluate Fortuna odds for a single match."""
+    cfg = load_config()
     # 1. Match lookup
     match: Match | None = None
     if args.match_id:
@@ -129,9 +134,54 @@ def _cmd_evaluate(args: argparse.Namespace, session: Session) -> int:
         away_team=a_team,
     )
 
-    # 5. Process risk flags
-    abs_h = [x.strip() for x in args.key_absences_home.split(",")] if args.key_absences_home else []
-    abs_a = [x.strip() for x in args.key_absences_away.split(",")] if args.key_absences_away else []
+    # 5. Process risk flags & validate key players
+    raw_abs_h = (
+        [x.strip() for x in args.key_absences_home.split(",")]
+        if args.key_absences_home
+        else []
+    )
+    raw_abs_a = (
+        [x.strip() for x in args.key_absences_away.split(",")]
+        if args.key_absences_away
+        else []
+    )
+
+    kp_h = get_key_players_for_team(
+        session=session,
+        team_id=match.home_team_id,
+        before_date=match.date_utc,
+        last_n=cfg.risk_flags.key_player_last_n,
+        min_starts_share=cfg.risk_flags.key_player_min_starts_share,
+    )
+    kp_a = get_key_players_for_team(
+        session=session,
+        team_id=match.away_team_id,
+        before_date=match.date_utc,
+        last_n=cfg.risk_flags.key_player_last_n,
+        min_starts_share=cfg.risk_flags.key_player_min_starts_share,
+    )
+
+    abs_h: list[str] = []
+    for p in raw_abs_h:
+        if not kp_h or any(p.lower() in k.lower() or k.lower() in p.lower() for k in kp_h):
+            abs_h.append(p)
+        else:
+            print(
+                f"[ИНФО] Игрок '{p}' не является ключевым для {h_team} "
+                f"(starts < {cfg.risk_flags.key_player_min_starts_share:.0%} в последних "
+                f"{cfg.risk_flags.key_player_last_n} матчах) -> исключён из множителя риска."
+            )
+
+    abs_a: list[str] = []
+    for p in raw_abs_a:
+        if not kp_a or any(p.lower() in k.lower() or k.lower() in p.lower() for k in kp_a):
+            abs_a.append(p)
+        else:
+            print(
+                f"[ИНФО] Игрок '{p}' не является ключевым для {a_team} "
+                f"(starts < {cfg.risk_flags.key_player_min_starts_share:.0%} в последних "
+                f"{cfg.risk_flags.key_player_last_n} матчах) -> исключён из множителя риска."
+            )
 
     # 6. Evaluate prices against fair matrix
     res = evaluate_fortuna_prices(
@@ -142,30 +192,43 @@ def _cmd_evaluate(args: argparse.Namespace, session: Session) -> int:
         key_absences_home=abs_h,
         key_absences_away=abs_a,
         sources_conflict=args.sources_conflict,
+        home_team=h_team,
+        away_team=a_team,
     )
 
     # 7. Print Russian summary table
     print(res.format_table())
 
-    # 8. Save recommendations to DB if requested
+    # 8. Save recommendations to DB if requested (always executed when --save is on)
     if args.save:
         now_utc = dt.datetime.now(dt.UTC)
-        if match.commence_time_utc and now_utc >= match.commence_time_utc:
+        is_past = False
+        if match.commence_time_utc:
+            is_past = now_utc >= match.commence_time_utc
+            time_str = match.commence_time_utc.isoformat()
+        else:
+            is_past = now_utc.date() > match.date_utc
+            time_str = str(match.date_utc)
+
+        if is_past:
             sys.stderr.write(
-                f"\n[ОШИБКА] Нельзя сохранять рекомендации после начала матча "
-                f"(начало: {match.commence_time_utc.isoformat()}, сейчас: {now_utc.isoformat()}).\n"
+                f"\n[ОШИБКА] Нельзя сохранять рекомендации для прошедших матчей "
+                f"(начало/дата: {time_str}, сейчас: {now_utc.isoformat()}).\n"
             )
             return 1
 
-        if res.recommendations_count > 0:
-            saved = save_recommendations_to_db(session, match.id, res)
-            session.commit()
+        saved = save_recommendations_to_db(session, match.id, res)
+        session.commit()
+        if saved > 0:
             print(
-                f"\n[OK] Записано {saved} рекомендаций в таблицу 'recommendations' "
+                f"\n[OK] Записано {saved} активных рекомендаций в таблицу 'recommendations' "
                 f"(матч ID {match.id})."
             )
         else:
-            print("\n[ИНФО] Рекомендаций выше порогов нет. Запись в базу не требуется.")
+            print(
+                f"\n[ИНФО] 0 активных рекомендаций выше порогов "
+                f"(ранее активные переведены в 'withdrawn') (матч ID {match.id})."
+            )
 
     return 0
 
@@ -174,27 +237,6 @@ def _cmd_candidates(args: argparse.Namespace, session: Session) -> int:
     """Run candidate prefilter for upcoming matches."""
     today = dt.date.fromisoformat(args.from_date) if args.from_date else dt.date.today()
     end_date = today + dt.timedelta(days=args.days)
-
-    # Calculate weekly cap accounting for candidates already accepted in current ISO week
-    iso_year, iso_week, _ = today.isocalendar()
-    monday = today - dt.timedelta(days=today.weekday())
-    sunday = monday + dt.timedelta(days=6)
-
-    accepted_this_week = session.scalar(
-        select(func.count(func.distinct(PrefilterDecision.match_id)))
-        .where(
-            PrefilterDecision.decision_date >= monday,
-            PrefilterDecision.decision_date <= sunday,
-            PrefilterDecision.accepted.is_(True),
-        )
-    ) or 0
-
-    effective_weekly_cap = max(0, args.cap - accepted_this_week)
-    if accepted_this_week > 0:
-        print(
-            f"[ИНФО] В ISO-неделю {iso_year}-W{iso_week:02d} уже отобрано {accepted_this_week} "
-            f"кандидатов. Оставшийся лимит: {effective_weekly_cap} (из {args.cap}).\n"
-        )
 
     stmt = (
         select(Match)
@@ -225,31 +267,79 @@ def _cmd_candidates(args: argparse.Namespace, session: Session) -> int:
         print("[ИНФО] В базе данных нет запланированных матчей.")
         return 0
 
-    candidate_items: list[CandidateMatch] = []
+    # Group matches by ISO week of kickoff/match date
+    matches_by_week: dict[tuple[int, int], list[Match]] = {}
     for m in scheduled_matches:
-        h_name = m.home_team.name if m.home_team else f"Team_{m.home_team_id}"
-        a_name = m.away_team.name if m.away_team else f"Team_{m.away_team_id}"
-        m_name = f"{h_name} - {a_name}"
-        kickoff = m.commence_time_utc or dt.datetime.combine(m.date_utc, dt.time(15, 0))
+        m_date = m.commence_time_utc.date() if m.commence_time_utc else m.date_utc
+        iso_year, iso_week, _ = m_date.isocalendar()
+        matches_by_week.setdefault((iso_year, iso_week), []).append(m)
 
-        m_inputs = load_market_inputs_for_match(session, m.id)
-        fair_mat = build_fair_matrix(m_inputs)
+    combined_items = []
+    total_eval = 0
+    total_acc = 0
+    league_breakdown: dict[str, int] = {}
 
-        candidate_items.append(
-            CandidateMatch(
-                match_id=m.id,
-                match_name=m_name,
-                league=m.league,
-                kickoff=kickoff,
-                fair_matrix=fair_mat,
-                has_fortuna_grid=args.has_fortuna_grid,
+    for (iso_year, iso_week), week_matches in sorted(matches_by_week.items()):
+        week_monday = dt.date.fromisocalendar(iso_year, iso_week, 1)
+        week_sunday = week_monday + dt.timedelta(days=6)
+
+        # Count decisions for matches in this ISO week ALREADY accepted on prior dates (< today)
+        accepted_this_week = session.scalar(
+            select(func.count(func.distinct(PrefilterDecision.match_id)))
+            .join(Match, Match.id == PrefilterDecision.match_id)
+            .where(
+                Match.date_utc >= week_monday,
+                Match.date_utc <= week_sunday,
+                PrefilterDecision.decision_date < today,
+                PrefilterDecision.accepted.is_(True),
             )
-        )
+        ) or 0
 
-    report = filter_candidates(
-        candidate_items,
-        weekly_cap=effective_weekly_cap,
-        max_per_league=args.max_per_league,
+        effective_weekly_cap = max(0, args.cap - accepted_this_week)
+        if accepted_this_week > 0:
+            print(
+                f"[ИНФО] В ISO-неделю {iso_year}-W{iso_week:02d} уже отобрано {accepted_this_week} "
+                f"кандидатов на прошлых запусках. Оставшийся лимит: {effective_weekly_cap} "
+                f"(из {args.cap}).\n"
+            )
+
+        candidate_items: list[CandidateMatch] = []
+        for m in week_matches:
+            h_name = m.home_team.name if m.home_team else f"Team_{m.home_team_id}"
+            a_name = m.away_team.name if m.away_team else f"Team_{m.away_team_id}"
+            m_name = f"{h_name} - {a_name}"
+            kickoff = m.commence_time_utc or dt.datetime.combine(m.date_utc, dt.time(15, 0))
+
+            m_inputs = load_market_inputs_for_match(session, m.id)
+            fair_mat = build_fair_matrix(m_inputs)
+
+            candidate_items.append(
+                CandidateMatch(
+                    match_id=m.id,
+                    match_name=m_name,
+                    league=m.league,
+                    kickoff=kickoff,
+                    fair_matrix=fair_mat,
+                    has_fortuna_grid=args.has_fortuna_grid,
+                )
+            )
+
+        week_report = filter_candidates(
+            candidate_items,
+            weekly_cap=effective_weekly_cap,
+            max_per_league=args.max_per_league,
+        )
+        combined_items.extend(week_report.items)
+        total_eval += week_report.total_evaluated
+        total_acc += week_report.total_accepted
+        for lg, cnt in week_report.accepted_by_league.items():
+            league_breakdown[lg] = league_breakdown.get(lg, 0) + cnt
+
+    report = PrefilterReport(
+        total_evaluated=total_eval,
+        total_accepted=total_acc,
+        items=combined_items,
+        accepted_by_league=league_breakdown,
     )
 
     print(report.format_table())
