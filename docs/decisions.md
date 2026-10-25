@@ -756,3 +756,39 @@ FROZEN_CONFIG_4b; the window was already used by phases 3/4):
 
 **Reason**: phase-4b B5/B6; reports/backtest/4b_test_second_look.json,
 reports/backtest/4b_hybrid_market_1x2.json, reports/backtest/4b_hybrid_all_market.json.
+
+## 2026-10-25 — Phase 5: Fair Pricing Engine & Value Discovery
+
+1. **Fair Market Matrix (`core/value/fair_matrix.py`)**:
+   - The fair 11x11 score probability matrix is constructed entirely from devigged market O/U 2.5 and 1X2 prices (Pinnacle preferred, consensus fallback, offshore/exchanges excluded).
+   - Parameters: $\rho = 0.0$ (fixed per empirical bootstrap finding: $\Delta = -0.0013$ $[-0.0032; +0.0006]$, indistinguishable from zero); $\kappa_{\text{high}} = 0.20$ applied to the diagonal $\ge 2:2$ with renormalization. Matrix sum strictly equals $1.0$ within $10^{-9}$ tolerance.
+   - Half-line fallback: if line 2.5 is unavailable, falls back to the nearest half-line ($x.5$) with line recorded in metadata.
+   - Missing market: if neither 1X2 nor half-line totals exist, sets `status="no_market"`. If fallback model is enabled, sets `status="fallback"` with source `"model_fallback"`.
+2. **Pinnacle Benchmark (`core/value/pinnacle_benchmark.py`)**:
+   - Compares the constructed fair matrix against event-level Pinnacle `correct_score` snapshots devigged proportionally.
+   - 'Any other' score mass is distributed proportionally across unquoted tail scores of the reference market matrix.
+   - Metrics computed: cell differences (max, mean, TVD, RMSE, Jensen-Shannon divergence), high draws $\{2:2, 3:3, 4:4\}$, low scores, goals 2–4, 1X2, totals, and BTTS.
+3. **Fortuna Manual Odds Parser (`core/value/fortuna_input.py`)**:
+   - Free text parser supports exact scores (`2:1 9.50`), other score phrases (`inny wynik`, `pozostałe`, `other`, `любой другой`), multiscores (`1:0, 2:0, 2:1 @ 3.40`), goals ranges (`2-4 gole @ 1.80`), and reference totals/1X2 (`over 2.5 1.95`, `1 @ 2.05`).
+   - Line-numbered syntax error reporting with zero silent drops. Conflicting odds for the same outcome raise explicit errors; identical lines are deduplicated.
+   - Calculates bookmaker overround (margin) on exact score grids.
+4. **Value Engine & Thresholds (`core/value/engine.py`)**:
+   - Thresholds: exact score / other score requires $\text{edge} \ge 12\%$, $p_{\text{fair}} \ge 4\%$, $\text{odds} \le 21.0$. Multiscore / goals range requires $\text{edge} \ge 8\%$.
+   - Totals and 1X2: strictly reference-only (`recommended = False`, reason: "Справочный рынок").
+   - Lineup risk factors: 1 key player absent or sources conflict $\to$ edge threshold multiplied by $\times 1.5$ ($12\% \to 18\%$, $8\% \to 12\%$); $\ge 2$ key absences in a single team $\to$ match exclusion (`is_excluded = True`, all bets rejected).
+   - Dixon-Coles model role: standby reserve if market is missing; home share divergence $|s_{\text{market}} - s_{\text{model}}| > 0.15$ triggers warning flag `⚠️ Аномалия модели: проверь составы/данные`, but model weight is strictly $\alpha = 0$ (does not boost bet priority).
+   - Staking: 1/4 Kelly criterion `0.25 * edge / (odds - 1)` capped at 0.02 (2% of bankroll).
+5. **Candidate Prefilter (`core/value/prefilter.py`)**:
+   - Selection criteria: (a) Fortuna grid availability (`has_fortuna_grid != False`); (b) mass of high draws in the fair market matrix $\sum_{i \ge 2} M_{i,i}$ (zone of $\kappa_{\text{high}}$ structural mispricing); (c) league rotation: round-robin interleaving across active leagues with cap $\le 3$ per league; (d) weekly budget limit $\le 10$ matches/week (`config.odds_policy.pinnacle_correct_score_max_weekly`).
+   - Model anomaly flag does NOT participate in ranking or candidate selection.
+   - Every prefilter decision (accepted/rejected + reason) is logged to `prefilter_decisions` table with idempotency on `(match_id, decision_date)`.
+6. **Persistence & Idempotency (`core/value/persistence.py`, Migration `48fd4f90f079`)**:
+   - `recommendations` table extended with `matrix_source` (VARCHAR(40)) and `input_hash` (VARCHAR(64)).
+   - Unique constraint `uq_recommendations_idempotency` on `(match_id, market, outcome, variant, input_hash)`. Re-evaluating the same match with identical input state updates odds/edge without duplicating rows.
+   - 'other' outcome is persisted with `market="exact_score"` and `outcome="other"` to satisfy `reco_market` enum.
+   - CLV fields (`clv`, `clv_source`) left empty for Phase 7.
+7. **CLI (`core/value/__main__.py`)**:
+   - `evaluate`: loads market odds before kickoff from `prematch_odds` (Pinnacle/consensus) or `odds_snapshots` (TOA), builds fair matrix, evaluates Fortuna odds, displays Russian table, and persists recommendations.
+   - `candidates`: runs prefilter on upcoming scheduled matches, enforces budget and league caps, and logs decisions.
+
+**Reason**: Phase 5 requirements; SPEC §4, §5, §7; docs/decisions.md B6.1–B6.5.
