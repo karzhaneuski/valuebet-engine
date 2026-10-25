@@ -100,7 +100,74 @@ Continuation point: this file + `git log phase-5-fair-pricing`. Rules: DB copy o
 - All checks green (`ruff`, `mypy`, `mypy --strict core/model core/backtest core/value`, 256 tests passing).
 
 ---
-## Next: Step 7 (Documentation & Wrap-up: decisions.md, reports/phase5_report.md)
+## Step 7: Reviewer Round Fixes, Margin Studies & Final Architecture
+
+### 1. BLOCKING Issues Fixed
+- **BLOCKING 1: Fortuna 25-cell Grid & "inny" Reference Handling** (commit `3a21b36`):
+  - Added `fortuna.cs_grid_max_goals: 4` to `core/config.py` and `config.yaml`.
+  - $p_{\text{fair}}(\text{inny}) = 1 - \sum M[0..4, 0..4]$ computed purely from the fair matrix, completely independent of user input.
+  - Any score outcome outside 0..4 raises explicit `FortunaParseError` ("Счёт 5:0 вне сетки Fortuna 0..4; такие исходы входят в 'inny'").
+  - `inny` and grid margin are evaluated ONLY when all 25 scores are present in the batch; otherwise rejected with `"Неполная сетка Fortuna (N из 25): inny не оценивается"`.
+  - Recorded empirical bias $z = -2.25$ ($p_{\text{fair}} = 0.057$ vs actual frequency $0.046$, $p=0.024$ on validation set). `inny` is marked `recommended = False` with reason `"Только для справки: эмпирическое смещение z=-2.25"`.
+- **BLOCKING 2: Free-text Parser Hardening** (commit `3a21b36`):
+  - Goals ranges strictly require an explicit keyword (`gole/bramki/гола/голов`); bare dashes without keywords (e.g. `1-2`) are parsed as exact scores.
+  - Glued numbers from browser table copy-pastes handled cleanly (`Remis4.60` -> Remis 4.60; `0:4 0:5 0:61 00.00` -> 100.00).
+  - Multi-outcome lines (`mniej niż 1.5 11.00 więcej niż 1.5 1.06`, `- 0.5 8.40+ 0.5 1.04`) parsed without corruption.
+  - Section-aware `Remis` handling: in 1X2 context -> Draw 1X2; in exact score context -> Draw exact score (e.g. `Remis 4.60` -> 1X2 Draw).
+- **BLOCKING 3: Recommendation Lifecycle & Status** (commit `3a21b36`):
+  - Added `selection_key: str` (e.g. `score:2:1`, `range:2:4`, `multi:1:0,2:0`, `score:other`) and `status: sa.Enum('active', 'superseded', 'withdrawn', name='reco_status')` to `Recommendation` in `core/orm.py`.
+  - Partial unique index `uq_recommendations_active` on `(match_id, market, selection_key, variant) WHERE status = 'active'`.
+  - Created and applied Alembic migration `e5f1b2c3d4e5_recommendation_lifecycle_status_and_key.py`.
+  - `save_recommendations_to_db`: if odds/edge change and still passes -> old marked `superseded`, new inserted as `active`; if drops below edge or omitted -> old marked `withdrawn`. Initial `odds` and `created_at_utc` are never overwritten.
+  - CLI safeguard: recommendations cannot be persisted post-commence time.
+
+### 2. SHOULD FIX Improvements Completed
+- **S1: Pinnacle Benchmark "other" Parsing** (commit `7e665ba`):
+  - Updated `parse_score_outcome` in `core/value/pinnacle_benchmark.py` to require exact match for "other" (`outcome.strip().lower() in other_exact`), preventing team names like Rotherham from being falsely parsed as "other".
+  - Filtered snapshots to strictly before match commence time.
+- **S2: Standby Model & Key Players Detection** (commit `7e665ba`):
+  - Created `core/value/standby_model.py`: dynamically fits historical matches strictly prior to match kickoff with `result_lag_minutes`.
+  - Queries `match_lineups` for key players with $\ge 70\%$ starts in the last 8 matches.
+  - Integrated dynamic standby model and automatic model home share into CLI `_cmd_evaluate`.
+- **S3: Candidate Prefilter Safeguards** (commit `3a21b36`):
+  - Enforced league cap strictly across all rounds and the remaining pool (no bypass by pool).
+  - Queries previously accepted candidates in the current ISO week from `prefilter_decisions` to reduce available weekly budget.
+  - Added `--has-fortuna-grid / --no-fortuna-grid` flags.
+- **S4: Fixture Tests & Gitignore** (commit `eee64f9`):
+  - Copied real Fortuna copy-pastes to `tests/fixtures/`.
+  - Excluded `data/manual/` from git tracking in `.gitignore`.
+- **S5: Ruff Per-File Ignores** (commit `eee64f9`, `21d7b4d`):
+  - Scoped `RUF001`, `RUF002`, `RUF003` to `core/value/*`, `tests/test_fortuna_input.py`, and `scripts/*` in `pyproject.toml`.
+
+### 3. Empirical Studies (M0–M4)
+- **M0–M3: Fortuna Margin Study** (`scripts/fortuna_margin_study.py`, `reports/fortuna_margin_study.md`, commit `21d7b4d`):
+  - Analyzed real Fortuna copy-pastes: Exact score margin mean **32.7%** (30.7%–34.8%), Multiwynik margin mean **20.7%**, Totals 2.5 margin mean **5.9%** (down to 3.4%–3.9% on big matches), Team totals mean **8.8%**.
+  - Proved mathematically and empirically that at 32.7% margin, $\mathbb{E}[p_{\text{fair}} \times \text{odds}] \approx 0.753$ (average edge $-24.6\%$).
+  - Over 25 scores across all real matches, **0 out of 25 cells (0.0%) pass the 12% edge threshold**.
+  - Proved that breakeven margin for $\kappa_{\text{high}} = 0.20$ requires bookmaker margin **$M \le 7.14\%$**; at Fortuna's 32.7% margin, the $+20\%$ boost is completely absorbed ($1.20 / 1.327 - 1 = -9.6\%$).
+- **M4: Soft vs Sharp Totals Backtest** (`scripts/soft_vs_sharp_totals.py`, `reports/soft_vs_sharp_totals.md`, commit `5e9d4dd`):
+  - 3,464 validation matches across 5 leagues (2023–2025).
+  - Bet365 average margin on O/U 2.5: **4.96%** (5.07% in 2023/24, 4.86% in 2024/25).
+  - Pre-match static divergence: Bet365 closely tracks Pinnacle (only 0.8% of matches have edge $\ge 1\%$), but when divergence happens, closing CLV confirms the edge (+13.7% to +19.8%).
+  - Dynamic closing devig (latency exploitation): $25.3\% - 31.5\%$ of matches present edge $\ge 1\% - 2\%$, delivering **realized ROI +9.10% [95% Bootstrap CI: +2.58%; +15.73%]** and **mean CLV +7.95%**.
+
+### 4. M5 & Architectural Decisions
+- Updated `docs/decisions.md` (decisions 8–12 under Phase 5):
+  - Recorded `inny` empirical bias $z=-2.25$ and reference-only status.
+  - Recorded recommendation lifecycle and partial index `uq_recommendations_active`.
+  - Recorded Fortuna exact score margin ~32.7% and zero-value mathematical barrier.
+  - Recorded soft vs sharp totals backtest results and strategic product pivot for Phase 6.
+  - Recorded key players detection via `match_lineups` and dynamic standby model fitting.
+- Updated `reports/phase5_report.md`:
+  - Corrected Pinnacle benchmark figures: 1.266 overround (26.6% margin), 0.049 TVD.
+  - Added comprehensive "Выводы для продукта" section.
+  - Documented migrations `48fd4f90f079` and `e5f1b2c3d4e5`.
+
+---
+## Status: Phase 5 Fully Completed
+All 267 unit and integration tests passing (`uv run pytest`).
+All linting and type checks green (`uv run ruff check .`, `uv run mypy`, `uv run mypy --strict core/model core/backtest core/value`).
+All reviewer items (3 BLOCKING, 5 SHOULD FIX, M0–M5) verified and documented.
 
 
 

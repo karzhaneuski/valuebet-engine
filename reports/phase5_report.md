@@ -15,10 +15,11 @@ All 7 steps (Steps 0–6) are complete, fully tested, and committed on branch `p
 | **0. Подготовка** | Ветка от свежего `main`, копия базы `/tmp/p5.db` (10,687 матчей), устранение pytest warning в `periods.py`, подавление логгера `TLSLibrary` до `WARNING`. | `3cb6f64` | `tests/test_logging.py`, `tests/test_backtest_infra.py`, 214 тестов green |
 | **1. Справедливая матрица** | `core/value/fair_matrix.py`: построение 11x11 матрицы из рыночных O/U 2.5 и 1X2 (де-маржинализация, $\lambda_{\text{total}}$ из O/U, доля голов хозяев МНК из 1X2, $\rho=0$, $\kappa_{\text{high}}=0.20$, нормализация); fallback на ближайшую половинную линию; `status="no_market"`. | `82b8ca0` | `tests/test_fair_matrix.py` (8 тестов): совпадение с `backtest_hybrid.py` до $10^{-12}$ |
 | **2. Бенчмарк Pinnacle** | `core/value/pinnacle_benchmark.py`: парсер исходов TOA correct_score (`Team:1\|Team:0`, `H1\|A0`, `Other`), пропорциональная де-маржинализация, распределение остатка "Other" по хвосту, расчёт TVD, RMSE, Jensen-Shannon divergence. | `eba25c5` | `tests/test_pinnacle_benchmark.py` (5 тестов); снимок матча 1973 (32 исхода Pinnacle) |
-| **3. Парсер Fortuna** | `core/value/fortuna_input.py`: парсер точного счёта (`2:1 9.50`), другого счёта (`inny wynik`, `other`), мультисчёта (`1:0, 2:0, 2:1 @ 3.40`), диапазона голов (`2-4 gole @ 1.80`), справочных тоталов/1X2; детектор конфликтов; расчёт маржи. | `0295765` | `tests/test_fortuna_input.py` (11 тестов): синтаксический мусор, дубликаты, маржа |
-| **4. Value Engine** | `core/value/engine.py`: расчёт edge, пороги (точное $\ge 12\%$, мультисчёт $\ge 8\%$, odds $\le 21$, $p \ge 4\%$), ¼ Келли с потолком 2%, флаги риска (отсутствие ключевого игрока $\times 1.5$, исключение при $\ge 2$), детектор аномалии модели, вывод таблицы на русском. | `107ac62` | `tests/test_engine.py` (7 тестов): пороги, отказ по длинным odds / малой $p$, Келли, таблица |
-| **5. Префильтр кандидатов** | `core/value/prefilter.py`: отбор матчей для ручного ввода котировок по сетке Fortuna, массе высоких ничьих $\sum_{i \ge 2} M_{i,i}$, ротации лиг (round-robin с лимитом 3 на лигу) и недельному лимиту $\le 10$; запись в `prefilter_decisions`. Аномалия модели не повышает ранг. | `caef20d` | `tests/test_prefilter.py` (6 тестов); прогон на 79 матчах в `/tmp/p5.db` |
-| **6. Хранение и CLI** | Миграция `48fd4f90f079` (`matrix_source`, `input_hash`, уникальный ключ идемпотентности); `core/value/persistence.py`: загрузка котировок из базы, сохранение рекомендаций; CLI `core.value` (`evaluate`, `candidates`). | `0f2504d` | `tests/test_persistence_cli.py`, `tests/test_migrations.py`; демо на 3 матчах валидации |
+| **3. Парсер Fortuna** | `core/value/fortuna_input.py`: парсер точного счёта (`2:1 9.50`), другого счёта (`inny wynik`, `other`), мультисчёта (`1:0, 2:0, 2:1 @ 3.40`), диапазона голов (`2-4 gole @ 1.80`), справочных тоталов/1X2; детектор конфликтов; валидация 25 счетов сетки Fortuna (0..4), оценка `inny` только при полной сетке; расчёт маржи. | `0295765`, `3a21b36` | `tests/test_fortuna_input.py` (28 тестов): синтаксический мусор, дубликаты, маржа, сетка |
+| **4. Value Engine** | `core/value/engine.py`: расчёт edge, пороги (точное $\ge 12\%$, мультисчёт $\ge 8\%$, odds $\le 21$, $p \ge 4\%$), ¼ Келли с потолком 2%, флаги риска (отсутствие ключевого игрока $\times 1.5$, исключение при $\ge 2$), детектор аномалии модели, вывод таблицы на русском; `inny` строго справочный ($z=-2.25$). | `107ac62`, `3a21b36` | `tests/test_engine.py` (11 тестов): пороги, отказ по длинным odds / малой $p$, Келли, таблица |
+| **5. Префильтр кандидатов** | `core/value/prefilter.py`: отбор матчей для ручного ввода котировок по сетке Fortuna (`--has-fortuna-grid`), массе высоких ничьих $\sum_{i \ge 2} M_{i,i}$, ротации лиг (round-robin с лимитом 3 на лигу) и недельному лимиту $\le 10$ с учётом ранее отобранных; запись в `prefilter_decisions`. | `caef20d`, `3a21b36` | `tests/test_prefilter.py` (10 тестов); прогон на 79 матчах в `/tmp/p5.db` |
+| **6. Хранение и CLI** | Миграции `48fd4f90f079` и `e5f1b2c3d4e5` (`selection_key`, `status: active/superseded/withdrawn`); `core/value/persistence.py`: жизненный цикл рекомендаций; запрет сохранения после commence time; CLI `core.value` (`evaluate`, `candidates`). | `0f2504d`, `3a21b36` | `tests/test_persistence_cli.py`, `tests/test_migrations.py`; 267 тестов green |
+| **7. Исследования маржи** | `scripts/fortuna_margin_study.py` (M0–M3) и `scripts/soft_vs_sharp_totals.py` (M4): замер реальной маржи Fortuna (32.7% на точном счёте), доказательство барьера zero-value, бэктест запаздывания софта на тоталах (ROI +9.1%, CLV +8.0%). | `21d7b4d`, `5e9d4dd` | `reports/fortuna_margin_study.md`, `reports/soft_vs_sharp_totals.md` |
 
 ---
 
@@ -39,10 +40,10 @@ All 7 steps (Steps 0–6) are complete, fully tested, and committed on branch `p
 - **Implementation**: [`core/value/pinnacle_benchmark.py`](file:///Users/karzhaneuski/projects/valuebet-engine/core/value/pinnacle_benchmark.py)
 - **Actual DB Evaluation (Match 1973: Aston Villa vs Manchester City)**:
   - Loaded all 32 Pinnacle correct_score rows from `odds_snapshots`.
-  - Devigged overround: 1.109 (Pinnacle exact score margin ~10.9%).
-  - Comparison against FairMatrix constructed with William Hill totals and consensus 1X2:
-    - TVD: 0.312
-    - RMSE: 0.038
+  - Overround: 1.266 (Pinnacle exact score margin ~26.6%).
+  - Comparison against FairMatrix constructed with matching totals and 1X2:
+    - TVD: 0.049
+    - RMSE: 0.004
     - High draws difference ($\sum_{i \ge 2} M_{i,i}$): 0.034 (well-controlled under $\kappa_{\text{high}} = 0.20$).
   - **Honest Finding**: Live h2h was not polled in historic TOA snapshots (sport-level polling with `markets=totals,h2h` is scheduled for Phase 7).
 
@@ -186,12 +187,37 @@ Pinnacle market: O/U 2.5: 1.65 / 2.36; 1X2: 7.84 / 4.94 / 1.42.
 
 ---
 
+## Выводы для продукта (Product Conclusions & Pivot for Phase 6)
+
+По результатам раунда ревью и углублённых эмпирических исследований маржи (`reports/fortuna_margin_study.md` и `reports/soft_vs_sharp_totals.md`), архитектура продукта претерпевает фундаментальное переосмысление:
+
+### 1. Рынок точного счёта Fortuna (Exact Score, маржа ~32.7%)
+- **Математический барьер**: Среднее матожидание цен $\mathbb{E}[p_{\text{fair}} \times \text{odds}] = \frac{1}{1 + M} \approx 0.753$ (средний edge $-24.6\%$).
+- **Недостижимость порога**: Для преодоления порога `exact_score_edge: 0.12` требуется, чтобы коэффициент Fortuna был выше справедливого рынка более чем на **+48.7%**.
+- **Эмпирический факт**: На реальных данных ни одна клетка из 25 счетов сетки не проходит фильтры (`odds <= 21`, `p_fair >= 0.04`). Доля сигналов — **0.0%**.
+- **Инфляция ничьих $\kappa_{\text{high}}$**: Преимущество $+20\%$ на диагонали от 2:2 полностью съедается маржой ($1.20 / 1.327 - 1 = -9.6\%$). Точка безубыточности для $\kappa=0.20$ требует маржи букмекера **$M \le 7.14\%$**.
+- **Роль в продукте**: Рынок точного счёта Fortuna остаётся сугубо вспомогательным (поиск грубых опечаток букмекера либо справочный анализ).
+
+### 2. Рынок мультисчёта (Multiwynik, маржа ~20.7%)
+- Маржа на **12 процентных пунктов ниже**, чем на точном счёте.
+- При пороге `multiscore_edge: 0.08` группы исходов имеют существенно более высокие шансы на прохождение фильтра при локальных перекосах софта.
+
+### 3. Рынок тоталов (Totals O/U 2.5, маржа 4.9% – 5.9%)
+- **Исторический бэктест на валидации (n = 3,464 матча)** доказал:
+  1. *Статический пре-матч*: Bet365 плотно следует за Pinnacle (расхождения $\ge 1\%$ редки — 0.8% матчей), но при возникновении расхождений закрытие Pinnacle подтверждает перевес с огромным средним CLV **+13.7% ... +19.8%**.
+  2. *Динамический лаг (задержка обновления софта)*: При смещении линии Pinnacle запаздывание софт-букмекера создаёт окно возможностей в **25%–31% матчей** с реализованным **ROI +9.10% [95% Bootstrap CI: +2.58%; +15.73%]** (строго выше нуля) и CLV **+7.95%**.
+- **Стратегический приоритет Фазы 6**: Основной фокус автоматизации и мониторинга должен быть направлен на сканирование движений линии Pinnacle и эксплуатацию информационного лага софт-букмекеров на низкомаржинальных рынках тоталов.
+
+---
+
 ## Instructions for Project Owner (Main Database Migration)
 
-After merging branch `phase-5-fair-pricing` into `main`, apply the Alembic migration to `valuebet.db`:
+After merging branch `phase-5-fair-pricing` into `main`, apply the Alembic migrations to `valuebet.db`:
 
 ```bash
 uv run alembic upgrade head
 ```
 
-This applies migration `48fd4f90f079_recommendations_matrix_provenance.py` adding `matrix_source`, `input_hash`, and the unique idempotency constraint `uq_recommendations_idempotency` to the `recommendations` table in `valuebet.db`.
+This applies two migrations:
+1. `48fd4f90f079_recommendations_matrix_provenance.py`: adds `matrix_source`, `input_hash`, and idempotency unique constraint `uq_recommendations_idempotency`.
+2. `e5f1b2c3d4e5_recommendation_lifecycle_status_and_key.py`: adds `selection_key`, `status` (`active`, `superseded`, `withdrawn`), and partial unique index `uq_recommendations_active`.
