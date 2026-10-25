@@ -53,7 +53,7 @@ thresholds stay conservative.
 | goals_range_2_4 | 2111 | 0.6076 | 0.6144 | 0.2362 |
 
 All four markets are well calibrated with a slight conservative
-bias (predicted 0.5-2pp below observed) - good for the phase-5
+bias (predicted 0.5-2pp below observed); note for phase-5
 thresholds (fewer false 'value' signals). Full binning in
 reports/backtest/part3_score_calibration.json.
 
@@ -64,3 +64,52 @@ statistically tied with the simplest configuration (paired
 week-clustered bootstrap), so xi=0.002, w=0.5, prior_sigma=0.5,
 no model options. Written to config.yaml; see decisions.md entry
 2026-10-25 (phase 4).
+
+## 3.2a Model vs de-vigged AvgC on the same matches (review S1)
+
+On the 2096 test matches with an AvgC closing pair:
+
+| metric | model | de-vigged AvgC | difference [95% CI] |
+|---|---|---|---|
+| Brier O/U 2.5 | 0.2422 | 0.2376 | +0.0023 .. +0.0067 |
+| binary log loss | 0.6771 | 0.6676 | +0.0049 .. +0.0142 |
+
+The market's de-vigged closing probability is BETTER calibrated on
+O/U 2.5 than the model, by 0.0046 Brier and 0.0096 log loss, both
+CI excluding zero. (Against PRE-MATCH Avg the model is closer -
+computed in the phase-4b report once prematch odds are loaded.)
+
+## 3.2b Fair ROI, benchmarks and adverse selection
+
+Mean AvgC margin on these matches: 0.0653; fair ROI -m/(1+m) = **-0.0613**.
+
+| strategy | ROI |
+|---|---|
+| random side | -0.0570 |
+| always over | -0.0397 |
+| always under | -0.0921 |
+
+| threshold | bets | model ROI | fair ROI | model - fair | E[p_model] | E[p_market] | actual win |
+|---|---|---|---|---|---|---|---|
+| 0% | 1193 | -0.0881 | -0.0881 | -0.0268 | 0.518 | 0.451 | 0.441 |
+| 2% | 984 | -0.0938 | -0.0938 | -0.0325 | 0.518 | 0.444 | 0.432 |
+| 4% | 793 | -0.1111 | -0.1111 | -0.0498 | 0.517 | 0.437 | 0.416 |
+| 6% | 636 | -0.1061 | -0.1061 | -0.0448 | 0.516 | 0.430 | 0.410 |
+| 8% | 510 | -0.0889 | -0.0889 | -0.0276 | 0.515 | 0.422 | 0.412 |
+
+Adverse selection is visible: at every threshold the model expects
+~0.52 win probability on its bets, the de-vigged market says 0.42-
+0.44, and reality lands on 0.41-0.44 - the model's excess confidence selects precisely the matches it is wrong about. The
+model's ROI is 3.3-5.0 pp BELOW the fair (margin-only) ROI.
+
+### ROI split by side and league (2% threshold, AvgC)
+
+| slice | bets | ROI |
+|---|---|---|
+| over | 651 | -0.0576 |
+| under | 333 | -0.1647 |
+| premier_league | 211 | -0.0136 |
+| la_liga | 233 | -0.1334 |
+| serie_a | 229 | -0.0057 |
+| bundesliga | 145 | -0.1810 |
+| ligue_1 | 166 | -0.1857 |

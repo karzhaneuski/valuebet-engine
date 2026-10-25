@@ -17,7 +17,7 @@ Branches NOT merged: `phase-2-followup` (part 0), `phase-4-backtest`
 | 2.2 selection | paired week-clustered bootstrap; all variants TIED -> simplest chosen | 4575d5e | part2_selection.json |
 | 2.3 freeze | part2_tuning.md + FROZEN_CONFIG.json committed BEFORE any test scoring | fc789a8, c7e0e51 | git log order; lock test now uses its own absent path |
 | 3.1 test metrics | frozen LL 2.9157 vs baseline 2.9221 (n=2111) | 495d159 | part3_test.md, part3_frozen_metrics.md, part3_reliability.png |
-| 3.2 ROI/CLV | O/U 2.5 vs AvgC/MaxC closings, thresholds 2/4/6/8%, week bootstrap CIs | 495d159 | part3_roi.json + table in part3_test.md |
+| 3.2 ROI | O/U 2.5 vs AvgC/MaxC closings, thresholds 2/4/6/8%, week bootstrap CIs | 495d159 | part3_roi.json + table in part3_test.md |
 | 3.3 score calibration | top-1 exact, top-3 set, {1:0,2:0,2:1}, 2-4 goals | 495d159 | part3_score_calibration.json |
 | 3.4 config | config.yaml model: xi 0.002, w 0.5; decisions.md entry | 495d159 | uv run python -c "load_config()" -> 0.002 0.5 |
 

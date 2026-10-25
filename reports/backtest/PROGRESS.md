@@ -53,3 +53,18 @@ metrics forbidden until FROZEN_CONFIG.json exists.
 - 3.3 score calibration (part3_score_calibration.json): top1 0.118/0.126,
   top3 0.311/0.332, {1:0,2:0,2:1} 0.239/0.248, 2-4 goals 0.608/0.614.
 - 3.4 config.yaml -> xi 0.002, w 0.5; decisions.md entry added.
+
+## Part A (phase-4 review fixes, 2026-10-26)
+- merge main (phase-2-followup) -> 4ad68f7 (decisions.md conflict kept
+  both entries chronologically).
+- S2 (cc6e904): test contamination by phase 3 acknowledged in
+  decisions.md; DATE lock ensure_window_allowed (>=2025-07-01 needs
+  frozen config) in runner.predictions + model_walkforward; frozen_at =
+  real freeze-commit time.
+- S1: scripts/backtest_honesty.py on saved test records - market
+  de-vig AvgC BEATS model on O/U 2.5 (Brier 0.2422 vs 0.2376, diff CI
+  [+0.0023,+0.0067]; LL 0.6771 vs 0.6676); fair ROI -6.13%, random
+  -5.7%, always-over -4.0%, always-under -9.2%; model -3.3..-5.0pp below
+  fair (adverse selection: expected 0.518, market 0.444, actual 0.432).
+  part3_test.md sections 3.2a/3.2b; forbidden phrases removed; CLV
+  dropped from SUMMARY (zero by construction).
