@@ -385,6 +385,31 @@ class MatchLineup(Base):
     minutes: Mapped[int | None] = mapped_column(Integer)
 
 
+class PrematchOdds(Base):
+    """football-data PRE-MATCH O/U 2.5 prices (phase 4b).
+
+    Separate table (not a kind flag on closing_odds): the bookmaker sets
+    differ (Avg/P/Max without the C suffix), closing_odds carries a
+    bookmaker CHECK constraint tied to the closing families, and mixing
+    kinds in one table would silently leak prematch prices into CLV code
+    that filters by bookmaker only.
+    """
+
+    __tablename__ = "prematch_odds"
+    __table_args__ = (
+        UniqueConstraint("match_id", "bookmaker",
+                         name="uq_prematch_odds_match_book"),
+        CheckConstraint("bookmaker IN ('Avg', 'P', 'Max')",
+                        name="ck_prematch_odds_bookmaker"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
+    bookmaker: Mapped[str] = mapped_column(String(10))
+    over_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
+    under_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
+
+
 class ClosingOdds(Base):
     """football-data closing O/U 2.5 prices — the CLV reference (decisions)."""
 

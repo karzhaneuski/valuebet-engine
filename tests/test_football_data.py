@@ -215,3 +215,39 @@ def test_far_date_without_stats_is_quarantined_only(tmp_path) -> None:
     assert len(report.quarantined) == 1
     assert report.date_mismatches == []
     assert report.inverted_pairs == []
+
+
+# --- 4b B1: pre-match totals odds -----------------------------------------
+
+
+def test_prematch_odds_parsed_and_stored(tmp_path) -> None:
+    url = make_db(tmp_path)
+    loader = FootballDataLoader(url, load_config(),
+                                cache_dir=tmp_path / "fd")
+    rows = loader.parse("premier_league", 2025, raw=FIXTURE.read_bytes())
+    first = rows[0]
+    assert first.avg_over is not None and first.p_over is not None
+    m = seed_understat_side(url, first.home, first.away,
+                            canonical_home=first.home,
+                            canonical_away=first.away,
+                            understat_home=first.home,
+                            understat_away=first.away,
+                            commence=dt.datetime(2026, 1, 31, 15, 0,
+                                                 tzinfo=dt.UTC))
+    assert m is not None
+    from core.orm import MatchStat
+
+    with session_scope(url) as s:
+        s.add(MatchStat(match_id=m.id, source="understat",
+                        home_goals=first.fthg, away_goals=first.ftag))
+    report = loader.upsert([first])
+    assert report.prematch_written == 3   # Avg, P, Max
+    with session_scope(url) as s:
+        from core.orm import PrematchOdds
+
+        books = {b.bookmaker: (b.over_price, b.under_price)
+                 for b in s.scalars(select(PrematchOdds)).all()}
+    assert set(books) == {"Avg", "P", "Max"}
+    # idempotent rerun: no second write, no phantom update
+    report2 = loader.upsert([first])
+    assert report2.prematch_written == 0 and report2.prematch_updated == 0

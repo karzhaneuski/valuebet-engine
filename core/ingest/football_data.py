@@ -30,7 +30,14 @@ from core.db import session_scope
 from core.http import retry_call
 from core.ingest.aliases import AliasMatcher
 from core.logging import get_logger
-from core.orm import ClosingOdds, Match, MatchStat, Team, TeamAlias
+from core.orm import (
+    ClosingOdds,
+    Match,
+    MatchStat,
+    PrematchOdds,
+    Team,
+    TeamAlias,
+)
 
 logger = get_logger("ingest.football_data")
 
@@ -56,6 +63,13 @@ class FdRow:
     maxc_under: Decimal | None
     pc_over: Decimal | None
     pc_under: Decimal | None
+    # pre-match totals (phase 4b): Avg/P/Max columns without the C suffix
+    avg_over: Decimal | None = None
+    avg_under: Decimal | None = None
+    p_over: Decimal | None = None
+    p_under: Decimal | None = None
+    max_over: Decimal | None = None
+    max_under: Decimal | None = None
 
     @property
     def kickoff_utc(self) -> dt.datetime | None:
@@ -78,6 +92,8 @@ class FdReport:
     stats_updated: int = 0
     closing_written: int = 0
     closing_updated: int = 0
+    prematch_written: int = 0
+    prematch_updated: int = 0
     alias_report: dict[str, dict] = field(default_factory=dict)  # fuzzy etc.
 
 
@@ -187,6 +203,9 @@ class FootballDataLoader:
                 avgc_over=dec(row, "AvgC>2.5"), avgc_under=dec(row, "AvgC<2.5"),
                 maxc_over=dec(row, "MaxC>2.5"), maxc_under=dec(row, "MaxC<2.5"),
                 pc_over=dec(row, "PC>2.5"), pc_under=dec(row, "PC<2.5"),
+                avg_over=dec(row, "Avg>2.5"), avg_under=dec(row, "Avg<2.5"),
+                p_over=dec(row, "P>2.5"), p_under=dec(row, "P<2.5"),
+                max_over=dec(row, "Max>2.5"), max_under=dec(row, "Max<2.5"),
             ))
         return out
 
@@ -353,6 +372,23 @@ class FootballDataLoader:
                         closing.over_price = over
                         closing.under_price = under
                         report.closing_updated += 1
+                for book, over, under in (
+                        ("Avg", row.avg_over, row.avg_under),
+                        ("P", row.p_over, row.p_under),
+                        ("Max", row.max_over, row.max_under)):
+                    if over is None and under is None:
+                        continue
+                    pre = s.scalars(select(PrematchOdds).where(
+                        PrematchOdds.match_id == match.id,
+                        PrematchOdds.bookmaker == book)).first()
+                    if pre is None:
+                        s.add(PrematchOdds(match_id=match.id, bookmaker=book,
+                                           over_price=over, under_price=under))
+                        report.prematch_written += 1
+                    elif (pre.over_price, pre.under_price) != (over, under):
+                        pre.over_price = over
+                        pre.under_price = under
+                        report.prematch_updated += 1
         return report
 
     def _league(self, slug: str):

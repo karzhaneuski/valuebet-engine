@@ -595,3 +595,20 @@ behavioural.
    fair ROI -m/(1+m).
 
 **Reason**: review S4/S5; numbers from the DB copy runs above.
+
+## 2026-10-26 — Phase 4b B1: pre-match totals stored in their own table
+
+**Decision**: football-data pre-match O/U 2.5 columns (Avg>2.5/Avg<2.5,
+P>2.5/P<2.5, Max>2.5/Max<2.5 - the no-C families) are loaded into a NEW
+`prematch_odds` table (migration a86d9da4539e) instead of a kind flag on
+closing_odds. Reasons: the bookmaker sets differ (Avg/P/Max vs
+AvgC/MaxC/PC), closing_odds carries a CHECK constraint bound to the
+closing families, and CLV code that filters by bookmaker alone would
+silently mix prematch rows into closing references. The fd loader now
+upserts prematch rows idempotently next to the closing ones
+(prematch_written/prematch_updated in FdReport). Load verified on a DB
+copy: 21,017 rows written (Avg 7,427 / Max 7,427 / P 6,163), rerun
+updates 0. The main DB is NOT touched - owner command in SUMMARY_4b.
+
+**Reason**: phase-4b task B1 (hybrid needs a pre-match lambda source
+that matches the bot's 1-3-days-ahead betting scenario).
