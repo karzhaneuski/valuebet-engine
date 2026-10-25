@@ -113,3 +113,21 @@ model's ROI is 3.3-5.0 pp BELOW the fair (margin-only) ROI.
 | serie_a | 229 | -0.0057 |
 | bundesliga | 145 | -0.1810 |
 | ligue_1 | 166 | -0.1857 |
+
+## 3.5 Thresholds and execution limits (review S4/S5)
+
+**No O/U 2.5 threshold makes money.** At 2/4/6/8% edges the AvgC ROI
+is -9.4/-11.1/-10.6/-8.9% and even against MaxC every CI95 straddles
+or stays below zero (best CI upper bound +0.036 at 8%). Decision for
+phase 5: the raw model issues NO O/U 2.5 signals; totals probabilities
+are reference output only (revisited in phase 4b via a market mixture).
+
+**MaxC is not an executable price.** On the validation seasons 1104 of
+3504 matches (31.5%) show a guaranteed-profit fork 1/MaxO + 1/MaxU < 1
+- the MaxC book is a best-of composite no single bookmaker offers, so
+any ROI against MaxC is an unreachable upper bound, not a scenario.
+
+**Margins differ across periods** (part3_margin.json): mean AvgC margin
+0.0479 on validation vs 0.0653 on test - ROI
+numbers are NOT comparable between periods; the fair-ROI baseline
+(-m/(1+m)) moves with the margin itself.

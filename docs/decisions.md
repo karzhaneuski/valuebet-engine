@@ -578,3 +578,20 @@ fc789a8). Part B adds a "second look" label to its single test run.
 
 **Reason**: review S2; leakage hygiene must be structural, not
 behavioural.
+
+
+## 2026-10-26 — Phase 4 review S4/S5: thresholds, MaxC limit, margins
+
+**Decision**:
+1. No O/U 2.5 threshold (2/4/6/8%) produces a positive ROI on the test
+   period at ANY executable price; the raw model therefore emits NO
+   O/U signals in phase 5 - totals probabilities are reference output
+   only (the phase-4b market mixture revisits this formally).
+2. MaxC is documented as an unreachable UPPER bound: on validation
+   1104/3504 matches (31.5%) show a riskless fork 1/MaxO+1/MaxU < 1;
+   never quote MaxC ROI as a scenario (reports/backtest/part3_margin.json).
+3. AvgC margin differs by period (4.79% validation vs 6.53% test);
+   cross-period ROI comparisons are invalid - always normalise by the
+   fair ROI -m/(1+m).
+
+**Reason**: review S4/S5; numbers from the DB copy runs above.

@@ -31,8 +31,12 @@ Branches NOT merged: `phase-2-followup` (part 0), `phase-4-backtest`
 - Calibration (test): top-1 exact score p 0.118 vs observed 0.126;
   top-3 set 0.311/0.332; O/U 2.5 Brier 0.2419; BTTS 0.2455.
 - ROI O/U 2.5 (test): AvgC -9.4%..-11.1% (CI excludes 0 at every
-  threshold); MaxC -4.3%..-5.7% (CI spans 0). NO edge over the closing
-  market - expected, recorded honestly.
+  threshold); MaxC -4.3%..-5.7% (CI spans 0) - but MaxC is an
+  unreachable upper bound (31.5% of validation matches show a riskless
+  fork against it) and the AvgC margin differs by period
+  (4.79% validation vs 6.53% test), so ROI is
+  not comparable across periods. NO O/U edge at any threshold; phase 5
+  must not emit raw-model O/U signals.
 
 ## Not done / caveats
 
