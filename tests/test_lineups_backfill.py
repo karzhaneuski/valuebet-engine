@@ -224,3 +224,61 @@ def test_failed_matches_carry_error_text(tmp_path) -> None:
     assert len(report["failed_matches"]) == 1
     error = report["failed_matches"][0]["error"]
     assert "ValueError" in error and "boom boom" in error
+
+
+def test_backfill_lineups_only_requires_since() -> None:
+    import pytest
+
+    from core.ingest.__main__ import build_parser, cmd_backfill
+
+    parser = build_parser()
+    args = parser.parse_args(["backfill", "--lineups-only"])
+    with pytest.raises(SystemExit) as exc_info:
+        cmd_backfill(args)
+    assert "--lineups-only requires --lineups-since" in str(exc_info.value)
+
+
+def test_backfill_lineups_only_skips_schedules_and_fd(monkeypatch, tmp_path) -> None:
+    import argparse
+
+    from core.ingest import __main__ as ingest_main
+
+    calls: dict[str, int] = {"lineups": 0, "understat": 0, "fd": 0}
+
+    def fake_lineups(db, config, since, loader=None):
+        calls["lineups"] += 1
+        return {"since": since, "matches": 0, "rows_written": 0, "failed_matches": []}
+
+    class ExplodingUnderstat:
+        def __init__(self, *args, **kwargs):
+            calls["understat"] += 1
+            raise AssertionError("UnderstatLoader should not be called in --lineups-only mode")
+
+    class ExplodingFD:
+        def __init__(self, *args, **kwargs):
+            calls["fd"] += 1
+            raise AssertionError("FootballDataLoader should not be called in --lineups-only mode")
+
+    monkeypatch.setattr(ingest_main, "backfill_lineups", fake_lineups)
+    monkeypatch.setattr(ingest_main, "UnderstatLoader", ExplodingUnderstat)
+    monkeypatch.setattr(ingest_main, "FootballDataLoader", ExplodingFD)
+
+    dummy_report_path = tmp_path / "report.json"
+
+    def fake_path(p):
+        return dummy_report_path if "backfill_report.json" in str(p) else tmp_path / p
+
+    monkeypatch.setattr("core.ingest.__main__.Path", fake_path)
+
+    args = argparse.Namespace(
+        seasons=None,
+        lineups_since="2026-10-01",
+        lineups_only=True,
+    )
+    ingest_main.cmd_backfill(args)
+
+    assert calls["lineups"] == 1
+    assert calls["understat"] == 0
+    assert calls["fd"] == 0
+    assert dummy_report_path.exists()
+

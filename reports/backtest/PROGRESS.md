@@ -97,3 +97,6 @@ metrics forbidden until FROZEN_CONFIG.json exists.
 - B2/B3 + B1c: hybrid & market matrix in scripts/backtest_hybrid.py: --share {model, market_1x2} and --all-market. Validation: 1X2 share vs model share -0.0157 [-0.0205, -0.0113]; all-market -0.0163 [-0.0213, -0.0118]; alpha cross-fit = 0.0000; rho model vs rho=0 -0.0006 [-0.0026, +0.0014]; Pinnacle -0.0159. S3 kappa cross-fit by season (2023->2024: 0.337, 2024->2023: 0.179).
 - S2 lock: backtest_hybrid.py and backtest_mixture.py require FROZEN_CONFIG_4b.json under --period test; absent path raises TestPeriodLockedError.
 - B5/B6 decisions: decisions.md B3/B4/B5/B6 updated: market exact-score matrix (O/U 2.5 + 1X2 + kappa_high) as base; model is fallback and anomaly detector; value against Fortuna; candidate prefilter on divergence; credit budget with h2h ~188/30d; 1X2 input-only; CLV arbiter for phase 7.
+
+## Part C (Ingest CLI & Robustness)
+- C1: CLI backfill added `--lineups-only` (requires `--lineups-since`), skipping Understat schedule discovery and football-data downloads/parsing entirely; unit tests verify validation error when `--lineups-since` is missing and ensure schedule/fd loaders are not called.

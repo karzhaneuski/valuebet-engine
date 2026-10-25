@@ -32,49 +32,52 @@ def _db_url() -> str:
 
 
 def cmd_backfill(args: argparse.Namespace) -> None:
+    if getattr(args, "lineups_only", False) and not args.lineups_since:
+        sys.exit("--lineups-only requires --lineups-since YYYY-MM-DD")
     config = load_config()
     db = _db_url()
     report: dict = {"football_data": [], "understat": []}
-    us = UnderstatLoader(db, config)
-    # 1. Understat schedule first (matches are the join base)
-    for slug in TOP5:
-        for season in SEASONS:
-            if args.seasons and season not in args.seasons:
-                continue
-            if season < 2022:
-                us.backfill_archive(slug, season)  # one-time download
-            us_rows = us.schedule_rows(slug, season)
-            us_r = us.upsert_schedule(us_rows)
-            report["understat"].append(
-                {"league": slug, "season": season,
-                 "created": us_r.matches_created,
-                 "existing": us_r.matches_existing,
-                 "stats": us_r.stats_written,
-                 "unmatched": sorted(set(us_r.unmatched))})
-            print(f"understat {slug} {season}: +{us_r.matches_created} "
-                  f"(~{us_r.matches_existing} existing), "
-                  f"stats {us_r.stats_written}")
-    # 2. football-data results + closing odds
-    fd = FootballDataLoader(db, config)
-    for slug in TOP5:
-        for season in SEASONS:
-            if args.seasons and season not in args.seasons:
-                continue
-            fd.download(slug, season)
-            fd_rows = fd.parse(slug, season)
-            fd_r = fd.upsert(fd_rows)
-            report["football_data"].append(
-                {"league": slug, "season": season, "rows": fd_r.rows,
-                 "matched": fd_r.matched,
-                 "missing_match": fd_r.missing_match,
-                 "unmatched_teams": sorted(set(fd_r.unmatched_teams)),
-                 "date_mismatches": fd_r.date_mismatches,
-                 "quarantined": fd_r.quarantined,
-                 "inverted_pairs": fd_r.inverted_pairs,
-                 "closing_written": fd_r.closing_written})
-            print(f"fd {slug} {season}: {fd_r.matched}/{fd_r.rows} matched, "
-                  f"closing {fd_r.closing_written}, "
-                  f"unmatched {sorted(set(fd_r.unmatched_teams))}")
+    if not getattr(args, "lineups_only", False):
+        us = UnderstatLoader(db, config)
+        # 1. Understat schedule first (matches are the join base)
+        for slug in TOP5:
+            for season in SEASONS:
+                if args.seasons and season not in args.seasons:
+                    continue
+                if season < 2022:
+                    us.backfill_archive(slug, season)  # one-time download
+                us_rows = us.schedule_rows(slug, season)
+                us_r = us.upsert_schedule(us_rows)
+                report["understat"].append(
+                    {"league": slug, "season": season,
+                     "created": us_r.matches_created,
+                     "existing": us_r.matches_existing,
+                     "stats": us_r.stats_written,
+                     "unmatched": sorted(set(us_r.unmatched))})
+                print(f"understat {slug} {season}: +{us_r.matches_created} "
+                      f"(~{us_r.matches_existing} existing), "
+                      f"stats {us_r.stats_written}")
+        # 2. football-data results + closing odds
+        fd = FootballDataLoader(db, config)
+        for slug in TOP5:
+            for season in SEASONS:
+                if args.seasons and season not in args.seasons:
+                    continue
+                fd.download(slug, season)
+                fd_rows = fd.parse(slug, season)
+                fd_r = fd.upsert(fd_rows)
+                report["football_data"].append(
+                    {"league": slug, "season": season, "rows": fd_r.rows,
+                     "matched": fd_r.matched,
+                     "missing_match": fd_r.missing_match,
+                     "unmatched_teams": sorted(set(fd_r.unmatched_teams)),
+                     "date_mismatches": fd_r.date_mismatches,
+                     "quarantined": fd_r.quarantined,
+                     "inverted_pairs": fd_r.inverted_pairs,
+                     "closing_written": fd_r.closing_written})
+                print(f"fd {slug} {season}: {fd_r.matched}/{fd_r.rows} matched, "
+                      f"closing {fd_r.closing_written}, "
+                      f"unmatched {sorted(set(fd_r.unmatched_teams))}")
     # 3. optional lineups backfill from a date
     if args.lineups_since:
         lineups = backfill_lineups(db, config, args.lineups_since)
@@ -257,6 +260,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seasons", type=int, nargs="*", default=None)
     p.add_argument("--lineups-since", type=str, default=None,
                    help="YYYY-MM-DD: load lineups for finished matches since")
+    p.add_argument("--lineups-only", action="store_true", default=False,
+                   help="only backfill lineups (requires --lineups-since)")
     p.set_defaults(func=cmd_backfill)
 
     p = sub.add_parser("refresh", help="re-pull current season files")
