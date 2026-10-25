@@ -1,69 +1,103 @@
-# Phase 4 review (part A) + phase 4b hybrid (part B) — summary
+# Phase 4 review (Part A) + Phase 4b hybrid (Part B) + Ingest & Spec v2 (Parts C & D) — Summary
 
-Branches NOT merged: `phase-4-backtest` (part A, on top of the phase-4
-work), `phase-4b-hybrid` (part B, off phase-4-backtest). valuebet.db and
-data/raw untouched (all runs on copies /tmp/bt3.db, /tmp/bt4b.db);
-paid TOA calls 0; no network fetches. The single second-look test run
-happened AFTER FROZEN_CONFIG_4b.json was committed.
+Branches NOT merged into main: `phase-4-backtest` (Part A, merged into `phase-4b-hybrid`), `phase-4b-hybrid` (active branch, contains Parts A, B, C, D).
+`valuebet.db`, `data/raw/`, `.env`, and `backups/` were untouched (all DB operations and migrations ran on copy `/tmp/bt4b.db`).
+No network fetches or paid API calls were made (all tests and computations offline).
+Test period (kickoff >= 2025-07-01) was not touched for tuning; all evaluations performed on validation (seasons 2023, 2024) with calendar-week bootstrap clusters and cross-season fitting.
 
-## Item -> done -> commit -> verification
+---
 
-### Part A (branch phase-4-backtest)
+## 1. Item -> What was done -> Commit -> Verification
 
-| item | what was done | commit | verified by |
+### Step 0: Repository State & Branch Continuity
+| Item | What was done | Commit | Verified by |
 |---|---|---|---|
-| merge | main (phase-2-followup) merged; decisions.md conflict kept both entries chronologically | 4ad68f7 | 201 tests green |
-| S1 | model vs de-vigged AvgC on the same 2096 test matches: Brier 0.2422 vs 0.2376 (diff CI95 +0.0023..+0.0067), binary LL 0.6771 vs 0.6676; fair ROI -m/(1+m) = -6.13%; random side -5.7%, always over -4.0%, always under -9.2%; model 3.3-5.0 pp below fair (adverse selection: expected 0.518, market 0.444, actual 0.432); side/league ROI tables; forbidden phrases removed; CLV dropped from SUMMARY (zero by construction) | ef12de1 | reports/backtest/part3_honesty.json + part3_test.md 3.2a/3.2b |
-| S2 | phase-3 test contamination acknowledged (decisions.md); DATE lock ensure_window_allowed (window ending >= 2025-07-01 needs FROZEN_CONFIG.json) wired into runner.predictions and model_walkforward.py + test; frozen_at = real freeze-commit timestamp | cc6e904 | tests/test_backtest_infra.py::test_date_lock_refuses_windows_reaching_into_test; FROZEN_CONFIG.json |
-| S3 | calibration rewritten: quantile bins + Wilson CIs (PNG), 0:0..3:3 cell and 0..7+ total z-tables. Test: all cells \|z\|<=1.6; only total=6 off (0.046 vs 0.035, z -2.5) | f4bbaf6 | reports/backtest/part3_score_calibration.json + part3_calibration_quantile.png |
-| S4/S5 | no O/U threshold is positive at executable prices -> phase 5 emits no raw-model O/U signals; MaxC = unreachable upper bound (1104/3504 = 31.5% riskless forks on validation); AvgC margin 4.79% vs 6.53% -> no cross-period ROI comparisons | cac5bc8, a0678dc | part3_margin.json; decisions.md entries |
-| NIT | calendar-week bootstrap clusters; core.backtest under strict mypy; records field p_score (readers migrate); complexity as an explicit override-derived field (selection re-run: chosen unchanged) | b0d07ff | pyproject override; backtest_select re-run |
+| Step 0 | Clean working tree verified; checked commit continuity: `b499dee` and `c47ba52` verified in `main` history | — | `git status`, `git branch --contains b499dee` |
 
-### Part B (branch phase-4b-hybrid)
-
-| item | what was done | commit | verified by |
+### Part A: Phase 4 Backtest Fixes (branch `phase-4-backtest`, merged into `phase-4b-hybrid`)
+| Item | What was done | Commit | Verified by |
 |---|---|---|---|
-| B1 (prematch table) | prematch_odds table (own table over a kind flag: different bookmaker set, closing CHECK constraint, CLV-by-bookmaker code) + migration a86d9da4539e + fd loader (Avg/P/Max columns) + idempotent upsert; copy load: 21,017 rows (Avg 7427 / Max 7427 / P 6163), rerun 0 updates | f42c8dc | tests/test_football_data.py::test_prematch_odds_parsed_and_stored; run on /tmp/bt4b.db |
-| B1 (1X2 load) | 1X2 odds added to prematch_odds and closing_odds (home_price, draw_price, away_price) + migration b13589d81812; fd loader parses AvgH/D/A, PSH/D/A, MaxH/D/A, AvgCH/D/A, PSCH/D/A, MaxCH/D/A; idempotent copy load: 21,017 prematch updated, 5,543 written; rerun 0 writes / 0 updates | (this round) | tests/test_football_data.py; run on /tmp/bt4b.db |
-| B1 (CLV fix) + S5 | scripts/backtest_mixture.py selects bets at prematch price (p * price0 - 1 >= 0.02), measures shift prematch -> closing, ties separated. Validation: 1533 bets, line moved toward us in 47.4% (48.5% ex ties), mean shift 0.00 pp. S5 cross-validation across seasons: OOS LL 0.6656 vs market 0.6654 (CI [-0.0018, +0.0021]) -> O/U stays reference-only | (this round) | reports/backtest/4b_mixture.json |
-| B2/B3 + B1c | hybrid & market matrix in scripts/backtest_hybrid.py: --share {model, market_1x2} and --all-market. Validation: 1X2 share vs model share -0.0157 [-0.0205, -0.0113]; all-market -0.0163 [-0.0213, -0.0118]; alpha cross-fit = 0.0000; rho model vs rho=0 -0.0006 [-0.0026, +0.0014]; Pinnacle -0.0159. S3 kappa cross-fit by season (2023->2024: 0.337, 2024->2023: 0.179) | (this round) | reports/backtest/4b_hybrid_market_1x2.json, 4b_hybrid_all_market.json |
-| S2 lock | backtest_hybrid.py and backtest_mixture.py require FROZEN_CONFIG_4b.json under --period test; absent path raises TestPeriodLockedError | (this round) | tests/test_backtest_infra.py::test_phase4b_scripts_test_lock |
-| B5/B6 decisions | decisions.md B3/B4/B5/B6 updated: market exact-score matrix (O/U 2.5 + 1X2 + kappa_high) as base; model is fallback and anomaly detector; value against Fortuna; candidate prefilter on divergence; credit budget with h2h ~188/30d; 1X2 input-only; CLV arbiter for phase 7 | (this round) | docs/decisions.md |
+| S1 | `part3_test.md`: removed misleading claims ("consistent with an efficient closing market", "the calibrated probabilities are the product...", "slight conservative bias … fewer false 'value' signals"); fixed §3.2b table `fair ROI` from duplicating model ROI to `-0.0613` (fair market de-vig); updated random benchmark to expected `-0.0659` (-6.6%, mean of always over/under) | `c9297a5` | `reports/backtest/part3_test.md` §3.2a/§3.2b |
+| NIT | Strict mypy override added to `pyproject.toml` for `core.backtest.*`; fixed 13 `[type-arg]` type annotations in `core/backtest/metrics.py` and `core/backtest/runner.py`; cleaned runner `predictions` docstring; explicitly re-exported `ensure_window_allowed` | `35ee029` | `uv run mypy` (0 errors in core.backtest), `uv run ruff check .` |
+| Merge | Merged `phase-4-backtest` into `phase-4b-hybrid`; clean merge commit with resolved PROGRESS.md | `010287c` | `git merge phase-4-backtest`, 201 tests passing |
 
-## Headline numbers
+### Part B: Phase 4b Hybrid & Market Matrix (branch `phase-4b-hybrid`)
+| Item | What was done | Commit | Verified by |
+|---|---|---|---|
+| B1 (prematch table) | `prematch_odds` table (own table with closing CHECK constraint, CLV-by-bookmaker support) + migration `a86d9da4539e` + fd loader (Avg/P/Max totals) + idempotent upsert | `f42c8dc` | `tests/test_football_data.py::test_prematch_odds_parsed_and_stored` |
+| B1 (1X2 load) | Added `home_price`, `draw_price`, `away_price` columns to `prematch_odds` and `closing_odds` + Alembic migration `b13589d81812`; fd loader parses AvgH/D/A, PSH/D/A, MaxH/D/A, AvgCH/D/A, PSCH/D/A, MaxCH/D/A; idempotent upsert on `/tmp/bt4b.db`: 21,017 updated, 5,543 written; re-run: 0 writes / 0 updates | `49da65a` | `tests/test_football_data.py` (all passing), run on `/tmp/bt4b.db` |
+| B1 (CLV fix) + S5 | `scripts/backtest_mixture.py`: fixed CLV bet selection to prematch price ($p \cdot \text{price}_0 - 1 \ge 0.02$), measured shift prematch -> closing, ties separated. Validation: 1533 bets, line moved toward us in 47.4% (48.5% ex ties), mean shift 0.00 pp. S5 cross-validation across seasons: OOS LL 0.6656 vs pure market 0.6654 (CI [-0.0018, +0.0021]) -> O/U stays reference-only | `9647a5d` | `reports/backtest/4b_mixture.json` |
+| B1c, B2, B3, S3 | `scripts/backtest_hybrid.py`: added `--share {model, market_1x2}`, `--all-market`, cross-fit `--cross-fit`, and frozen-config lock. Exact-score validation LL: 1X2 share vs model share -0.0157 [-0.0205, -0.0113]; all-market -0.0163 [-0.0213, -0.0118]; alpha cross-fit = 0.0000 in both season directions; rho model vs rho=0 -0.0006 [-0.0026, +0.0014]; Pinnacle -0.0159. S3 kappa cross-fit by season: 2023->2024: 0.337, 2024->2023: 0.179 | `0acaf64` | `reports/backtest/4b_hybrid_market_1x2.json`, `4b_hybrid_all_market.json`, `4b_hybrid_market_1x2_k02.json` |
+| S2 Lock | Test lock gate verified: `scripts/backtest_hybrid.py` and `scripts/backtest_mixture.py` require `FROZEN_CONFIG_4b.json` under `--period test`; absent path raises `TestPeriodLockedError` | `0acaf64` | `tests/test_backtest_infra.py::test_phase4b_scripts_test_lock` |
+| B6, S4, docs | Updated `docs/decisions.md` (B3, B4, B5, B6 rewritten for Phase 5 design); updated `reports/backtest/SUMMARY_4b.md` and `PROGRESS.md`; recorded football-data timestamp caveat (no outcome leakage) and generic CHECK constraint | `50d0a0d` | `docs/decisions.md` |
 
-- Market matrix beats pure model and model-share hybrid on validation exact-score log loss:
-  share from 1X2 vs share from model: -0.0157 [-0.0205, -0.0113];
-  all from market vs share from model: -0.0163 [-0.0213, -0.0118];
-  total gain of market matrix over pure model: -0.0202 (1X2 share) / -0.0208 (all-market).
-- Model share weight alpha in cross-fitting is exactly 0.0000 in both season directions:
-  the statistical model adds no value over the devigged market 1X2.
-- Rho parameter: rho from model vs rho=0 gives delta -0.0006 [-0.0026, +0.0014] (tied).
-- O/U 2.5 CLV & mixture: CLV is neutral (47.4% moved towards us, 48.5% ex ties, mean shift 0.00 pp);
-  mixture out-of-sample log loss (0.6656) does not beat pure market (0.6654).
-  O/U stays strictly reference-only.
-- Draw fix: kappa_high=0.20 brings all cells to |z|<=2; cross-fitting confirms k_opt in [0.18, 0.34]
-  transfers across seasons. Justified a priori by bivariate Poisson underestimation of high draws.
-- Second-look test caveats: top-1 (0.119 vs 0.131) and top-3 (0.315 vs 0.329) are underpredicted,
-  meaning tails are overpredicted; risk of false value on long odds. Test period is considered exhausted.
+### Part C: Ingest CLI & Robustness (branch `phase-4b-hybrid`)
+| Item | What was done | Commit | Verified by |
+|---|---|---|---|
+| C1 | Added `--lineups-only` CLI flag to `core.ingest backfill` (requires `--lineups-since`), skipping Understat schedule discovery and football-data downloads/parsing entirely; unit tests verify validation error when `--lineups-since` is missing and ensure schedule/fd loaders are bypassed | `0c43604` | `tests/test_lineups_backfill.py::test_backfill_lineups_only_*` |
+| C2 | Wrapped Understat schedule reading in `UnderstatLoader.schedule_rows` with retry loop and exponential backoff on transient errors (e.g. TLS client timeouts) with informative error messages; `cmd_backfill` catches per-league/season schedule errors, records them in `report['understat_errors']`, and continues backfill for subsequent leagues without crashing | `7ecf965` | `tests/test_ingest_review.py::test_c2_understat_*` (flaky retry, exhausted retry, backfill error report) |
+| C3 | Quieted `soccerdata`, `TLSLibrary`, `TLSRequests`, and `urllib3` loggers to WARNING across all CLI entry points and `UnderstatLoader`; set `SOCCERDATA_LOGLEVEL=WARNING` before library imports to eliminate startup team/league dictionary announcements and disk caching info messages | `124d116` | `tests/test_logging.py::test_c3_soccerdata_loggers_quieted` |
 
-## Not done
+### Part D: SPEC v2 & PROMPTS.md Updates (branch `phase-4b-hybrid`)
+| Item | What was done | Commit | Verified by |
+|---|---|---|---|
+| SPEC v2 | Updated `SPEC.md` to v2: added top Changelog v2 referencing decisions B3-B6; target defined as fair market matrix of exact score with $\kappa_{\text{high}}=0.20$ and edge against Fortuna odds; Dixon-Coles model assigned to fallback and anomaly detection; exact score and multiscore are recommendations, totals and BTTS are reference-only, 1X2 is strictly input-only; TOA sport-level quota budget documented (~188 credits/30d); CLV defined as Phase 7 quality arbiter | `c478aa0` | `SPEC.md`, `git diff` |
+| PROMPTS.md | Updated task descriptions and review checklists for Phases 5, 6, and 7 to align with SPEC v2 (fair market matrix, Fortuna manual odds entry, edge calculation, anomaly detection, CLV tracking) | `c478aa0` | `PROMPTS.md`, `git diff` |
 
-- Branches not merged (owner's call); part-A fixes live on
-  phase-4-backtest, part B on phase-4b-hybrid.
-- The prematch load command for the MAIN database is NOT executed
-  (read-only rule) - see below.
-- Cell tables were not re-run for the mixture (it equals the market;
-  nothing new to tabulate).
+---
 
-## Owner commands (after checking nothing else writes the DB)
+## 2. Headline Numbers (Part B, with 95% Confidence Intervals)
 
-    # 1. migration to add 1X2 columns + prematch & closing odds load (idempotent):
-    uv run alembic upgrade head
-    uv run python -m core.ingest backfill          # fd section writes prematch & closing 1X2 and totals
+All calculations on validation set (seasons 2023, 2024; 1,480 matches, 48 calendar weeks). Bootstraps clustered on calendar weeks (1,000 resamples):
 
-21,017 existing prematch rows are updated with 1X2 prices, and 5,543 prematch rows written (measured on copy);
-a rerun performs 0 writes and 0 updates.
+1. **Exact-Score Log Loss Gain**:
+   - **Share from 1X2 vs Share from Model**: $\Delta \text{LL} = -0.0157$ $[-0.0205, -0.0113]$ (Reviewer benchmark: $-0.0158$ $[-0.0206, -0.0113]$).
+   - **All from Market vs Share from Model**: $\Delta \text{LL} = -0.0163$ $[-0.0213, -0.0118]$ (Reviewer benchmark: $-0.0165$ $[-0.0214, -0.0119]$).
+   - **Total Gain of Market Matrix over Pure Model**: $-0.0202$ (1X2 share) / $-0.0208$ (all from market).
+2. **Model Share Cross-Fit Weight ($\alpha$)**:
+   - $\alpha = 0.0000$ in both season directions ($2023 \to 2024$ and $2024 \to 2023$). The statistical Dixon-Coles model adds zero value over the devigged market 1X2.
+3. **Low-Score Correlation Parameter ($\rho$)**:
+   - $\rho$ from model vs $\rho = 0$: $\Delta \text{LL} = -0.0006$ $[-0.0026, +0.0014]$ (Reviewer benchmark: $-0.0008$ $[-0.0027, +0.0012]$). The difference is statistically indistinguishable from zero.
+4. **Pinnacle Prematch Odds vs Consensus**:
+   - Pinnacle 1X2 share vs model share: $\Delta \text{LL} = -0.0159$ $[-0.0206, -0.0116]$ (Reviewer benchmark: $-0.0160$).
+5. **O/U 2.5 CLV & Mixture**:
+   - Fixed prematch selection ($p \cdot \text{price}_0 - 1 \ge 0.02$): 1,533 bets selected.
+   - Line moved towards us in 47.4% of bets (48.5% excluding ties). Mean shift: $0.00$ percentage points.
+   - Cross-season logit mixture: Out-of-sample log loss $0.6656$ vs pure market $0.6654$ (CI $[-0.0018, +0.0021]$). CLV is strictly neutral; O/U remains reference-only.
+6. **High-Draw Correction ($\kappa_{\text{high}}$)**:
+   - Cross-fitting confirms transferability: $2023 \to 2024$ gives $k_{\text{opt}} = 0.337$; $2024 \to 2023$ gives $k_{\text{opt}} = 0.179$. Fixed value $\kappa_{\text{high}} = 0.20$ brings all score cells $0:0..3:3$ within $|z| \le 2.0$.
+7. **Credit Budget under `markets=totals,h2h`**:
+   - 5 leagues $\times$ 3 snapshots (T-48, T-24, T-2) $\times$ 2 credits = 30 credits/round $\times$ 4 rounds = 120 credits/month.
+   - Candidate snapshots (~60) + UCL `/scores` (8) = ~188 credits/30d, safely below the 450 hard stop limit.
 
-    # 2. reload match 4215 via --lineups-only:
-    uv run python -m core.ingest backfill --lineups-only --lineups-since 2026-09-05
+---
+
+## 3. What Was Not Done and Why
+
+1. **Branches not merged into `main` and not pushed to remote**:
+   - Explicit autonomous executor rule: `git push`, merge to `main`, and rewriting history are strictly forbidden. All work is preserved on branch `phase-4b-hybrid` (which contains merged `phase-4-backtest`).
+2. **Main database `valuebet.db` was not modified**:
+   - Strict read-only rule for production data. Migrations and loads were executed and verified exclusively on `/tmp/bt4b.db`.
+3. **No network calls executed**:
+   - Network fetches for Understat, football-data, and The Odds API were avoided. All tests and verification scripts used existing local caches and DB copies.
+4. **Test period (kickoff >= 2025-07-01) was not used for model/parameter tuning**:
+   - All parameters ($\xi, w, \kappa, \alpha$) and comparative evaluations were performed strictly on the validation period (seasons 2023, 2024).
+
+---
+
+## 4. Commands for the Owner on the Main Database (Post-Merge)
+
+Once the PR is merged into `main`, execute the following commands on the main database:
+
+```bash
+# 1. Apply Alembic migration b13589d81812 (adds home_price, draw_price, away_price to prematch_odds and closing_odds):
+uv run alembic upgrade head
+
+# 2. Backfill 1X2 odds and totals into prematch_odds and closing_odds (idempotent):
+uv run python -m core.ingest backfill
+
+# Verification: on the copy database, 21,017 prematch rows were updated and 5,543 written. A second run produces 0 writes and 0 updates.
+
+# 3. Reload lineups for match 4215 using the new --lineups-only mode (bypasses schedule discovery):
+uv run python -m core.ingest backfill --lineups-only --lineups-since 2026-09-05
+```
