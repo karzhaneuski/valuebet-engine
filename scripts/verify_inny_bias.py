@@ -101,11 +101,15 @@ def verify_inny_bias() -> dict[str, float]:
     mean_p = float(np.mean(p_inny_arr))
     mean_act = float(np.mean(act_arr))
     diff = mean_act - mean_p
-    se_binom = float(np.sqrt(mean_p * (1.0 - mean_p) / n_matches))
-    z_binom = diff / se_binom
+    # Exact standard error for Poisson binomial distribution with unequal probabilities p_i:
+    # Var(sum) = sum(p_i * (1 - p_i)) -> SE(mean) = sqrt(sum(p_i * (1 - p_i))) / N
+    se_poisson = float(np.sqrt(np.sum(p_inny_arr * (1.0 - p_inny_arr))) / n_matches)
+    z_score = diff / se_poisson
 
     se_sample = float(np.std(act_arr - p_inny_arr) / np.sqrt(n_matches))
     z_sample = diff / se_sample
+
+    overestimate_pct = -diff * 100.0
 
     print("=" * 70)
     print("Эмпирическая проверка смещения 'inny' (выборка валидации 2023–2025)")
@@ -115,12 +119,15 @@ def verify_inny_bias() -> dict[str, float]:
     print(f"Фактическая доля (Actual):          {mean_act:.4f} ({mean_act * 100:.2f}%)")
     print(f"Средняя прогнозная вероятность p_fair: {mean_p:.4f} ({mean_p * 100:.2f}%)")
     print(f"Разница (Actual - Predicted):        {diff:+.4f} ({diff * 100:+.2f}%)")
-    print(f"Биномиальная стандартная ошибка:     {se_binom:.5f}")
-    print(f"z-score (биномиальный):              {z_binom:.2f}")
+    print(f"Стандартная ошибка SE (Poisson binom): {se_poisson:.5f}")
+    print(f"z-score (SE = sqrt(sum p_i(1-p_i))/N): {z_score:.2f}")
     print(f"z-score (выборочный SE):             {z_sample:.2f}")
     print("=" * 70)
     print("Вывод: Рыночная пуассоновская матрица систематически переоценивает")
-    print("вероятность счетов >= 5 на +0.81 процентных пункта (4.74% vs 3.93%, z = -2.25).")
+    print(
+        f"вероятность счетов >= 5 на +{overestimate_pct:.2f} процентных пункта "
+        f"({mean_p * 100:.2f}% vs {mean_act * 100:.2f}%, z = {z_score:.2f})."
+    )
     print("Исход 'inny' строго справочный и не рекомендуется к ставкам.")
     print("=" * 70)
 
@@ -128,7 +135,7 @@ def verify_inny_bias() -> dict[str, float]:
         "n_matches": float(n_matches),
         "actual": mean_act,
         "predicted": mean_p,
-        "z_binom": z_binom,
+        "z_score": z_score,
         "z_sample": z_sample,
     }
 
