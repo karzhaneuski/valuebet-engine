@@ -71,7 +71,7 @@ ignore_missing_imports = true
 # the full --strict flag set, spelled out because `strict = true` in a
 # per-module section leaks globally (verified with mypy 1.19); the phase
 # gate is additionally `uv run mypy --strict core/model`
-module = ["core.model.*", "core.value.*"]
+module = ["core.model.*", "core.value.*", "core.backtest.*"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 disallow_untyped_calls = true

@@ -79,6 +79,16 @@ metrics forbidden until FROZEN_CONFIG.json exists.
   complexity is an explicit field computed from overrides (re-run:
   chosen unchanged opt_base_xi0.002_w0.5); bootstraps cluster on
   calendar weeks (kickoff ISO week in honesty, as_of week elsewhere).
+- S1 review update & NIT fixes:
+  - part3_test.md: removed misleading phrases ("consistent with an efficient
+    closing market", "the calibrated probabilities are the product...",
+    "slight conservative bias … fewer false 'value' signals"); fixed §3.2b
+    table where fair ROI column duplicated model ROI (now correctly -0.0613);
+    updated random side benchmark to expected value -6.6% (mean of always over/under)
+    alongside single realization.
+  - NIT: pyproject.toml strict override added for core.backtest.*; fixed 13
+    type-arg annotations in core/backtest/metrics.py and runner.py; cleaned docstring
+    in runner.predictions; re-exported ensure_window_allowed for strict import.
 
 ## Part B (phase-4b-hybrid)
 - B1 (f42c8dc): prematch_odds table + loader; copy load 21,017 rows.

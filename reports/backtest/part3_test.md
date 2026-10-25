@@ -38,10 +38,8 @@ execution the ROI is -9% to -11% with confidence intervals
 excluding zero at every threshold; at the optimistic MaxC prices it
 is -4% to -6% with intervals straddling zero. The model finds many
 'edges' >= 2% against the de-vigged AvgC pair (984 bets), but they
-do not survive the margin - consistent with an efficient closing
-market. This is not a phase failure (the task explicitly expects
-it); the calibrated probabilities are the product, the betting
-thresholds stay conservative.
+do not survive the margin; adverse selection leads to negative edge
+against the bookmaker margin (§3.2b).
 
 ## 3.3 Exact-score and multiscore calibration (test)
 
@@ -52,9 +50,9 @@ thresholds stay conservative.
 | fixed_set_1_0_2_0_2_1 | 2111 | 0.2393 | 0.2477 | 0.1809 |
 | goals_range_2_4 | 2111 | 0.6076 | 0.6144 | 0.2362 |
 
-All four markets are well calibrated with a slight conservative
-bias (predicted 0.5-2pp below observed); note for phase-5
-thresholds (fewer false 'value' signals). Full binning in
+All four markets show top scores underpredicted by 0.5-2pp (predicted below
+observed), meaning tail scores are overpredicted; this creates a risk of false
+value signals on long odds. Full binning in
 reports/backtest/part3_score_calibration.json.
 
 ## 3.4 Frozen parameters
@@ -85,17 +83,18 @@ Mean AvgC margin on these matches: 0.0653; fair ROI -m/(1+m) = **-0.0613**.
 
 | strategy | ROI |
 |---|---|
-| random side | -0.0570 |
+| random side (expected: mean(over, under)) | -0.0659 (-6.6%) |
+| random side (single seed realization) | -0.0570 |
 | always over | -0.0397 |
 | always under | -0.0921 |
 
 | threshold | bets | model ROI | fair ROI | model - fair | E[p_model] | E[p_market] | actual win |
 |---|---|---|---|---|---|---|---|
-| 0% | 1193 | -0.0881 | -0.0881 | -0.0268 | 0.518 | 0.451 | 0.441 |
-| 2% | 984 | -0.0938 | -0.0938 | -0.0325 | 0.518 | 0.444 | 0.432 |
-| 4% | 793 | -0.1111 | -0.1111 | -0.0498 | 0.517 | 0.437 | 0.416 |
-| 6% | 636 | -0.1061 | -0.1061 | -0.0448 | 0.516 | 0.430 | 0.410 |
-| 8% | 510 | -0.0889 | -0.0889 | -0.0276 | 0.515 | 0.422 | 0.412 |
+| 0% | 1193 | -0.0881 | -0.0613 | -0.0268 | 0.518 | 0.451 | 0.441 |
+| 2% | 984 | -0.0938 | -0.0613 | -0.0325 | 0.518 | 0.444 | 0.432 |
+| 4% | 793 | -0.1111 | -0.0613 | -0.0498 | 0.517 | 0.437 | 0.416 |
+| 6% | 636 | -0.1061 | -0.0613 | -0.0448 | 0.516 | 0.430 | 0.410 |
+| 8% | 510 | -0.0889 | -0.0613 | -0.0276 | 0.515 | 0.422 | 0.412 |
 
 Adverse selection is visible: at every threshold the model expects
 ~0.52 win probability on its bets, the de-vigged market says 0.42-

@@ -17,12 +17,13 @@ import hashlib
 import json
 from collections.abc import Iterator, Sequence
 from pathlib import Path
+from typing import Any
 
 import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import aliased, selectinload
 
-from core.backtest.periods import ensure_window_allowed
+from core.backtest.periods import ensure_window_allowed as ensure_window_allowed
 from core.config import ModelConfig
 from core.db import session_scope
 from core.model.dataset import load_quarantined_match_ids
@@ -166,7 +167,7 @@ def depth_bin(min_depth: int) -> str:
 
 
 def finished_week_matches(db_url: str, league: str, lo: dt.datetime,
-                          hi: dt.datetime) -> list[tuple]:
+                          hi: dt.datetime) -> list[tuple[Match, str, str, int, int]]:
     """Scored matches with kickoff in [lo, hi) - the prediction targets."""
     away = aliased(Team)
     with session_scope(db_url) as s:
@@ -184,7 +185,7 @@ def finished_week_matches(db_url: str, league: str, lo: dt.datetime,
                  s.scalars(select(MatchStat).where(
                      MatchStat.source == "understat",
                      MatchStat.match_id.in_(ids)))
-                 if st.home_goals is not None}
+                 if st.home_goals is not None and st.away_goals is not None}
     return [(m, h, a, stats[m.id][0], stats[m.id][1]) for m, h, a in rows
             if m.id in stats]
 
@@ -194,9 +195,8 @@ def predictions(db_url: str, config: ModelConfig,
                 leagues: Sequence[str] = TOP_LEAGUES,
                 cache_dir: Path | None = None,
                 excluded_match_ids: frozenset[int] = frozenset(),
-                ) -> list[dict]:
-    """Walk-forward predictions for matches whose kickoff falls in
-    [start + 1 week? no - see below].
+                ) -> list[dict[str, Any]]:
+    """Walk-forward predictions for matches whose kickoff falls in [start, end).
 
     Weeks start at ``start`` and step by 7 days; for each week the model
     is fitted at the week start (as_of) and predicts matches with
@@ -206,7 +206,7 @@ def predictions(db_url: str, config: ModelConfig,
     from core.model.markets import btts, total_over
 
     ensure_window_allowed(start, end)
-    records: list[dict] = []
+    records: list[dict[str, Any]] = []
     for as_of in week_starts(start, end):
         models = week_models(db_url, leagues, as_of, config, cache_dir,
                              excluded_match_ids)
