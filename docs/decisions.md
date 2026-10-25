@@ -505,6 +505,34 @@ regression-tested (`test_one_match_does_not_run_away_from_the_prior`,
 
 **Reason**: review S3; measured, not assumed.
 
+## 2026-10-25 — Phase 2 follow-up (0.1/0.2/0.3): understat roster glitch, fd report fields
+
+**Decision**:
+
+1. Understat served match 30804 (db match 4215, Villarreal - Deportivo,
+   2026-09-05) with every roster row duplicated (61 rows, 32 unique
+   players; copies differ only in surrogate row ids / roster_in refs).
+   `lineup_rows` now deduplicates to one row per player_id (max minutes);
+   `failed_matches` entries carry `ExceptionClass: message` instead of
+   the class alone.
+2. football-data reports always serialize `quarantined` and
+   `inverted_pairs` (empty lists when empty). A far-date fd row is
+   journalled into `date_mismatches` only AFTER the inverted/quarantine
+   resolution - a row already classified there no longer also dangles in
+   date_mismatches. The 10559 case ("fd Rennes v Paris SG 2026-08-23")
+   is an INVERTED-PAIR record of the played PSG-Rennes (match 10363,
+   same date), not a postponed Rennes home fixture: with the fixed
+   ordering it lands in inverted_pairs (verified on a DB copy).
+3. The lineups backfill is offline-replayable: one Understat reader per
+   league-season, its schedule frame pinned after a force_cache read
+   (soccerdata bypasses the disk cache for the current season and
+   re-reads the schedule inside every read_player_match_stats call);
+   soccerdata loggers quieted to WARNING.
+
+**Reason**: night-run part 0 (0.1/0.3 intertwined: the dedup regression
+test needs injectable readers); report-field and classification fixes
+from 0.2.
+
 
 ## 2026-10-25 — Phase 4: backtest, tuning, honest test result
 

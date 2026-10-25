@@ -69,6 +69,8 @@ def cmd_backfill(args: argparse.Namespace) -> None:
                  "missing_match": fd_r.missing_match,
                  "unmatched_teams": sorted(set(fd_r.unmatched_teams)),
                  "date_mismatches": fd_r.date_mismatches,
+                 "quarantined": fd_r.quarantined,
+                 "inverted_pairs": fd_r.inverted_pairs,
                  "closing_written": fd_r.closing_written})
             print(f"fd {slug} {season}: {fd_r.matched}/{fd_r.rows} matched, "
                   f"closing {fd_r.closing_written}, "
@@ -86,8 +88,8 @@ def cmd_backfill(args: argparse.Namespace) -> None:
 class LineupsLoader(Protocol):
     """Anything that can fetch lineup rows for an Understat game."""
 
-    def lineup_rows(self, understat_id: int) -> list[dict]: ...
-
+    def lineup_rows(self, understat_id: int, league_slug: str,
+                    season: int) -> list[dict]: ...
     def upsert_lineups(self, match, rows: list[dict]) -> int: ...
 
 
@@ -112,21 +114,21 @@ def backfill_lineups(db: str, config, since: str,
             Match.status == "finished",
             Match.understat_id.isnot(None),
             ~has_lineups).order_by(Match.date_utc)).all()
-        todo = [(m.id, m.understat_id) for m in pending
+        todo = [(m.id, m.understat_id, m.league, m.season) for m in pending
                 if m.understat_id is not None]
     print(f"lineups: {len(todo)} matches without lineups since {since}")
     written_total = 0
     failed: list[dict] = []
-    for i, (match_id, understat_id) in enumerate(todo, 1):
+    for i, (match_id, understat_id, league_slug, season) in enumerate(todo, 1):
         attempts = config.ingest.retry_attempts
         written: int | None = None
         rows: list[dict] | None = None
         for attempt in range(1, attempts + 1):
             try:
-                rows = us.lineup_rows(understat_id)
+                rows = us.lineup_rows(understat_id, league_slug, season)
                 break
             except Exception as exc:
-                last_error = f"{type(exc).__name__}"
+                last_error = f"{type(exc).__name__}: {exc}"[:300]
                 if attempt == attempts:
                     logger.warning("lineups.match.failed",
                                    match_id=match_id,
@@ -146,10 +148,11 @@ def backfill_lineups(db: str, config, since: str,
         try:
             written = us.upsert_lineups(db_match, rows)
         except Exception as exc:
+            error_text = f"{type(exc).__name__}: {exc}"[:300]
             logger.warning("lineups.match.failed", match_id=match_id,
-                           error=type(exc).__name__)
+                           error=error_text)
             failed.append({"match_id": match_id, "understat_id":
-                           understat_id, "error": type(exc).__name__})
+                           understat_id, "error": error_text})
             continue
         written_total += written
         if i % 10 == 0 or i == len(todo):

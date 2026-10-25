@@ -16,6 +16,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 
@@ -69,11 +70,22 @@ class UnderstatReport:
 class UnderstatLoader:
     def __init__(self, db_url: str, config: AppConfig,
                  cache_dir: Path = Path(".cache/understat"),
-                 archive_dir: Path = Path("data/raw/understat")) -> None:
+                 archive_dir: Path = Path("data/raw/understat"),
+                 reader_factory=None) -> None:
         self._db_url = db_url
         self._config = config
         self._cache_dir = cache_dir
         self._archive_dir = archive_dir
+        # injectable for tests; defaults to soccerdata.Understat
+        self._reader_factory = reader_factory
+        # one reader (and its in-memory schedule frame) per league-season
+        # (0.3): read_player_match_stats re-reads the schedule internally,
+        # so without this every match re-parses a ~0.5 MB league file
+        self._readers: dict[tuple[str, int], Any] = {}
+        # soccerdata logs config chatter at INFO on every reader build
+        import logging
+
+        logging.getLogger("soccerdata").setLevel(logging.WARNING)
 
     # --- data acquisition ---------------------------------------------------
 
@@ -128,16 +140,50 @@ class UnderstatLoader:
         store_archive(self._archive_dir, league.understat_league, season,
                       self._cache_dir)
 
-    def lineup_rows(self, understat_id: int) -> list[dict]:
-        """Per-player rows for one match (public soccerdata API, cached)."""
+    def _reader_for(self, understat_league: str, season: int) -> Any:
+        """One Understat reader per league-season; its schedule frame is
+        pinned after the first read so per-match calls do not re-parse
+        the league JSON from disk."""
+        key = (understat_league, season)
+        reader = self._readers.get(key)
+        if reader is None:
+            if self._reader_factory is not None:
+                reader = self._reader_factory(understat_league, season)
+            else:
+                import soccerdata
+
+                reader = soccerdata.Understat(
+                    leagues=[understat_league], seasons=[season],
+                    data_dir=self._cache_dir)
+            # soccerdata bypasses the disk cache for the CURRENT season
+            # (no_cache = not complete) and would hit the network; the
+            # lineups backfill must be offline-replayable, so the season
+            # frame is read once with force_cache and pinned for every
+            # per-match call (read_player_match_stats re-reads it too)
+            schedule = reader.read_schedule(force_cache=True)
+            reader.read_schedule = lambda **_: schedule
+            self._readers[key] = reader
+        return reader
+
+    def lineup_rows(self, understat_id: int, league_slug: str,
+                    season: int) -> list[dict]:
+        """Per-player rows for one match (public soccerdata API, cached).
+
+        Understat occasionally serves a match with roster rows
+        DUPLICATED per player (same player_id twice, differing only in
+        surrogate row ids / roster_in references - e.g. match 30804).
+        The unique keys on match_lineups would then reject the write, so
+        rows are deduplicated here: one row per player_id, keeping the
+        copy with the most minutes (first row breaks ties).
+        """
         import math
 
-        import soccerdata
-
-        reader = soccerdata.Understat(data_dir=self._cache_dir)
+        league = self._league(league_slug)
+        assert league.understat_league is not None
+        reader = self._reader_for(league.understat_league, season)
         players = reader.read_player_match_stats(match_id=understat_id)
         flat = players.reset_index()
-        out = []
+        out: list[dict[str, Any]] = []
         for _, p in flat.iterrows():
             minutes = p["minutes"]
             out.append({
@@ -149,7 +195,19 @@ class UnderstatLoader:
                 (isinstance(minutes, float) and math.isnan(minutes))
                 else int(minutes),
             })
-        return out
+        dedup: dict[int, dict[str, Any]] = {}
+        for r in out:
+            pid = int(r["understat_player_id"])
+            cur = dedup.get(pid)
+            r_min = int(r["minutes"] or -1)
+            if cur is None or r_min > int(cur["minutes"] or -1):
+                dedup[pid] = r
+        dropped = len(out) - len(dedup)
+        if dropped:
+            logger.warning("lineup.rows.duplicated", match=understat_id,
+                           rows=len(out), unique=len(dedup),
+                           dropped=dropped)
+        return list(dedup.values())
 
     # --- persistence ---------------------------------------------------------
 
