@@ -795,7 +795,7 @@ reports/backtest/4b_hybrid_market_1x2.json, reports/backtest/4b_hybrid_all_marke
    - $p_{\text{fair}}(\text{inny}) = 1 - \sum M[0..4, 0..4]$ is derived entirely from the fair matrix and does NOT depend on user input.
    - Any outcome outside $0..4$ (e.g. `5:0`) raises `FortunaParseError` ("Счёт 5:0 вне сетки Fortuna 0..4; такие исходы входят в 'inny'").
    - `inny` and grid margin are evaluated ONLY when all 25 scores are present in the batch. If incomplete ($N < 25$), rejected with `"Неполная сетка Fortuna (N из 25): inny не оценивается"`.
-   - On the validation set, `inny` exhibits empirical bias $z = -2.25$ ($p_{\text{fair}} = 0.057$ vs actual frequency $0.046$, $p=0.024$). `inny` is marked `recommended = False` with reason `"Только для справки: эмпирическое смещение z=-2.25"` and is strictly reference-only.
+   - On the validation set ($N = 3,462$, `scripts/verify_inny_bias.py`), `inny` exhibits empirical bias $z = -2.25$ (predicted $p_{\text{fair}} = 0.0474$ vs actual frequency $0.0393$, $\Delta = -0.0081$, binomial $\text{SE} = 0.00361$, $p = 0.024$). Earlier drafts reported 5.7% vs 4.6% from a smaller preliminary sample; 4.74% vs 3.93% is the canonical figure across the entire validation dataset. `inny` is marked `recommended = False` with reason `"Только для справки: эмпирическое смещение z=-2.25"` and is strictly reference-only.
 9. **Recommendation Lifecycle & Status (`core/orm.py`, Migration `e5f1b2c3d4e5`)**:
    - `Recommendation` carries `selection_key: str` (e.g. `score:2:1`, `range:2:4`, `multi:1:0,2:0`, `score:other`) and `status: sa.Enum('active', 'superseded', 'withdrawn', name='reco_status')`.
    - Partial unique index `uq_recommendations_active` on `(match_id, market, selection_key, variant) WHERE status = 'active'`.
@@ -809,11 +809,13 @@ reports/backtest/4b_hybrid_market_1x2.json, reports/backtest/4b_hybrid_all_marke
      - Team totals: mean $8.8\%$.
    - Mathematical zero-value on exact score: at $M = 32.7\%$, $\mathbb{E}[p_{\text{fair}} \times \text{odds}] = 1 / (1 + M) \approx 0.753$ (average edge $-24.6\%$). To pass the $12\%$ edge threshold requires $p_{\text{fair}} \times \text{odds} \ge 1.487$ relative to bookmaker fair price ($48.7\%$ mispricing). Across real validation fixtures, $0$ out of $25$ cells pass ($0.0\%$).
    - Breakeven margin for $\kappa_{\text{high}} = 0.20$ on diagonal scores (from 2:2): $M \le (1 + \kappa) / (1 + e) - 1 = 1.20 / 1.12 - 1 \approx 7.14\%$. At Fortuna's $32.7\%$ margin, $\kappa_{\text{high}}$ gives $1.20 / 1.327 - 1 = -9.6\%$ (still negative edge).
-11. **Soft vs Sharp Totals Findings & Product Pivot for Phase 6**:
-   - Backtest on 3,464 validation matches across 5 leagues (2023–2025):
-     - Static pre-match devig vs Bet365: Bet365 tracks Pinnacle closely (only $0.8\%$ matches with edge $\ge 1\%$), but when divergence happens, closing CLV is $+13.7\%$ to $+19.8\%$.
-     - Dynamic closing devig vs Bet365 (latency exploitation): $25.3\% - 31.5\%$ matches offer edge $\ge 1\% - 2\%$, delivering realized ROI $+9.10\%$ ($95\%$ bootstrap CI $[+2.58\%; +15.73\%]$) and CLV $+7.95\%$.
-   - Product conclusion: Manual exact score pricing on Fortuna has near-zero yield due to $32.7\%$ margin. Automated monitoring of soft totals lag behind Pinnacle (margin $\sim 5\%$) is the primary mathematical source of positive value for Phase 6.
+11. **Soft vs Sharp Totals Findings & Architectural Proposal for Phase 6**:
+   - Backtest on 3,464 validation matches across 5 leagues (2023–2025, `scripts/soft_vs_sharp_totals.py`):
+     - Feasible Scenario 1 (pre-match devig vs Bet365 pre-match): Bet365 tracks Pinnacle closely; discrepancies $\ge 1\%$ occur in only 0.75% of matches (N=26, statistically insignificant, 95% bootstrap CI [-57.2%; +64.6%]). At Fortuna's 6.0%–7.0% margin, signals drop to 18–21 matches (0.5%–0.6%).
+     - Feasible Scenario 3 (Pinnacle closing devig vs Bet365 closing): by closing time, soft bookmakers have fully adjusted; remaining discrepancies $\ge 1\%$ (N=65, 1.88%) yield negative ROI (-19.66%, 95% bootstrap CI [-56.33%; +20.20%]).
+     - Theoretical Scenario 2 (Pinnacle closing devig vs Bet365 pre-match) was identified as having look-ahead bias (closing lines unknown at pre-match bet placement time) and is strictly excluded from practical conclusions.
+     - Market-wide line shopping (`MaxC` across ~30 books) yields +4.36% ROI (N=1,079 at threshold 2%), but single-bookmaker passive betting does not.
+   - **Architectural Proposal (awaiting Project Owner decision)**: Given that Fortuna's exact score margin (32.7%) creates a mathematical barrier to value, and single-bookmaker totals offer limited static volume, any potential pivot into low-margin totals or automated line tracking is formulated as a PROPOSAL for future roadmap consideration. The SPEC v2 and recommended betting markets in Phase 5 remain strictly unchanged (exact score, multiscore sets, and goals ranges, with totals kept reference-only).
 12. **Key Players & Standby Model Implementation**:
    - Dynamic standby model fits historical matches prior to match kickoff with `result_lag_minutes`.
    - Key players are identified via `match_lineups` SQL query for players starting in $\ge 70\%$ of the last 8 team matches. Automated external news scraping is deferred to Phase 6.

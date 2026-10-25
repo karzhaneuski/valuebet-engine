@@ -108,7 +108,7 @@ Continuation point: this file + `git log phase-5-fair-pricing`. Rules: DB copy o
   - $p_{\text{fair}}(\text{inny}) = 1 - \sum M[0..4, 0..4]$ computed purely from the fair matrix, completely independent of user input.
   - Any score outcome outside 0..4 raises explicit `FortunaParseError` ("Счёт 5:0 вне сетки Fortuna 0..4; такие исходы входят в 'inny'").
   - `inny` and grid margin are evaluated ONLY when all 25 scores are present in the batch; otherwise rejected with `"Неполная сетка Fortuna (N из 25): inny не оценивается"`.
-  - Recorded empirical bias $z = -2.25$ ($p_{\text{fair}} = 0.057$ vs actual frequency $0.046$, $p=0.024$ on validation set). `inny` is marked `recommended = False` with reason `"Только для справки: эмпирическое смещение z=-2.25"`.
+  - Recorded empirical bias $z = -2.25$ (predicted $p_{\text{fair}} = 0.0474$ vs actual frequency $0.0393$, $p=0.024$, $N=3,462$ validation matches, verified by `scripts/verify_inny_bias.py`). Earlier drafts noted 5.7% vs 4.6% from a smaller preliminary sample; 4.74% vs 3.93% is the canonical full-dataset figure. `inny` is marked `recommended = False` with reason `"Только для справки: эмпирическое смещение z=-2.25"`.
 - **BLOCKING 2: Free-text Parser Hardening** (commit `3a21b36`):
   - Goals ranges strictly require an explicit keyword (`gole/bramki/гола/голов`); bare dashes without keywords (e.g. `1-2`) are parsed as exact scores.
   - Glued numbers from browser table copy-pastes handled cleanly (`Remis4.60` -> Remis 4.60; `0:4 0:5 0:61 00.00` -> 100.00).
@@ -145,22 +145,29 @@ Continuation point: this file + `git log phase-5-fair-pricing`. Rules: DB copy o
   - Proved mathematically and empirically that at 32.7% margin, $\mathbb{E}[p_{\text{fair}} \times \text{odds}] \approx 0.753$ (average edge $-24.6\%$).
   - Over 25 scores across all real matches, **0 out of 25 cells (0.0%) pass the 12% edge threshold**.
   - Proved that breakeven margin for $\kappa_{\text{high}} = 0.20$ requires bookmaker margin **$M \le 7.14\%$**; at Fortuna's 32.7% margin, the $+20\%$ boost is completely absorbed ($1.20 / 1.327 - 1 = -9.6\%$).
-- **M4: Soft vs Sharp Totals Backtest** (`scripts/soft_vs_sharp_totals.py`, `reports/soft_vs_sharp_totals.md`, commit `5e9d4dd`):
+- **M4: Soft vs Sharp Totals Backtest** (`scripts/soft_vs_sharp_totals.py`, `reports/soft_vs_sharp_totals.md`, commits `5e9d4dd`, `187d567`):
   - 3,464 validation matches across 5 leagues (2023–2025).
-  - Bet365 average margin on O/U 2.5: **4.96%** (5.07% in 2023/24, 4.86% in 2024/25).
-  - Pre-match static divergence: Bet365 closely tracks Pinnacle (only 0.8% of matches have edge $\ge 1\%$), but when divergence happens, closing CLV confirms the edge (+13.7% to +19.8%).
-  - Dynamic closing devig (latency exploitation): $25.3\% - 31.5\%$ of matches present edge $\ge 1\% - 2\%$, delivering **realized ROI +9.10% [95% Bootstrap CI: +2.58%; +15.73%]** and **mean CLV +7.95%**.
+  - Bet365 average margin on O/U 2.5: **4.96%** (pre-match), **4.92%** (closing).
+  - Feasible Scenario 1 (pre-match devig vs Bet365 pre-match): N=26 (0.75%), ROI -0.19%, 95% bootstrap CI [-57.2%; +64.6%] (statistically insignificant due to small sample size).
+  - Scenario 2 (closing devig vs pre-match): labeled as look-ahead bias (closing odds unknown at pre-match bet placement time) and removed from product conclusions.
+  - Feasible Scenario 3 (closing devig vs Bet365 closing `B365C`): N=65 (1.88%), ROI -19.66% (95% CI [-56.3%; +20.2%]), proving soft bookmakers eliminate lag by closing time.
+  - Market-wide line shopping (`MaxC` across ~30 books): ROI +4.36% at 2% threshold (N=1,079).
+  - Margin sensitivity analysis: at Fortuna's 6.0%–7.0% margin, Scenario 1 yields only 18–21 signals (0.5%–0.6%), and Scenario 3 yields 43–53 signals (1.2%–1.5%).
+- **Verification of "inny" bias** (`scripts/verify_inny_bias.py`):
+  - Verified canonical predicted $p_{\text{fair}}(\text{inny}) = 4.74\%$ vs actual frequency $3.93\%$ ($z = -2.25$, $p = 0.024$) across all $N = 3,462$ matches.
+  - Unified all documentation references to these exact reproducible figures.
 
 ### 4. M5 & Architectural Decisions
 - Updated `docs/decisions.md` (decisions 8–12 under Phase 5):
-  - Recorded `inny` empirical bias $z=-2.25$ and reference-only status.
+  - Recorded `inny` empirical bias $z=-2.25$ (4.74% vs 3.93%) and reference-only status.
   - Recorded recommendation lifecycle and partial index `uq_recommendations_active`.
   - Recorded Fortuna exact score margin ~32.7% and zero-value mathematical barrier.
-  - Recorded soft vs sharp totals backtest results and strategic product pivot for Phase 6.
+  - Recorded soft vs sharp totals backtest results (Scenarios 1 and 3, look-ahead status of Scenario 2).
+  - Formulated totals scanner as an architectural PROPOSAL awaiting owner decision, leaving SPEC v2 and recommended markets strictly unchanged.
   - Recorded key players detection via `match_lineups` and dynamic standby model fitting.
 - Updated `reports/phase5_report.md`:
   - Corrected Pinnacle benchmark figures: 1.266 overround (26.6% margin), 0.049 TVD.
-  - Added comprehensive "Выводы для продукта" section.
+  - Added comprehensive "Выводы для продукта и архитектурные предложения" section.
   - Documented migrations `48fd4f90f079` and `e5f1b2c3d4e5`.
 
 ---
