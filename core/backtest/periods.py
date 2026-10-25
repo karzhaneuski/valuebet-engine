@@ -36,9 +36,14 @@ TEST_START = dt.datetime(2025, 7, 1, tzinfo=dt.UTC)
 2025/26 season window. Anything ending after this needs a frozen config."""
 
 
-class TestPeriodLockedError(RuntimeError):
+class PeriodLockedError(RuntimeError):
     """Raised on any attempt to score the test period before the config
     is frozen."""
+
+
+# Backward compatibility alias; mark __test__ = False to avoid pytest collection warning
+TestPeriodLockedError = PeriodLockedError
+TestPeriodLockedError.__test__ = False  # type: ignore[attr-defined]
 
 
 def period_of_season(season: int) -> str | None:
@@ -52,7 +57,7 @@ def ensure_period_allowed(period: str,
                           frozen_config: Path = FROZEN_CONFIG_PATH) -> None:
     """Refuse test-period scoring unless FROZEN_CONFIG.json exists."""
     if period == "test" and not frozen_config.exists():
-        raise TestPeriodLockedError(
+        raise PeriodLockedError(
             "the test period is locked: reports/backtest/FROZEN_CONFIG.json "
             "does not exist; tune on the validation seasons only"
         )
@@ -65,7 +70,7 @@ def ensure_period_allowed_4b(period: str,
             frozen_config.name != "FROZEN_CONFIG_4b.json" or
             not frozen_config.is_file() or
             frozen_config.resolve() != FROZEN_CONFIG_4B_PATH.resolve()):
-        raise TestPeriodLockedError(
+        raise PeriodLockedError(
             f"the test period for phase 4b is locked: requires canonical "
             f"{FROZEN_CONFIG_4B_PATH}, got {frozen_config}"
         )
@@ -83,7 +88,7 @@ def ensure_window_allowed(start: dt.datetime, end: dt.datetime,
     the test dates is refused without a frozen config, regardless of the
     seasons of the matches inside it."""
     if end >= TEST_START and not frozen_config.exists():
-        raise TestPeriodLockedError(
+        raise PeriodLockedError(
             f"walk-forward window ends at {end.isoformat()}, inside the "
             "test period (>= 2025-07-01); refusing without "
             "reports/backtest/FROZEN_CONFIG.json"

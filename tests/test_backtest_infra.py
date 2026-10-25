@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from core.backtest.metrics import score_records
 from core.backtest.periods import (
+    PeriodLockedError,
     TestPeriodLockedError,
     ensure_period_allowed,
     period_of_season,
@@ -84,8 +85,9 @@ def test_period_of_season_mapping() -> None:
 
 
 def test_test_period_locked_without_frozen_config(tmp_path, db_url) -> None:
+    assert issubclass(TestPeriodLockedError, PeriodLockedError)
     frozen = tmp_path / "FROZEN_CONFIG.json"
-    with pytest.raises(TestPeriodLockedError):
+    with pytest.raises(PeriodLockedError):
         ensure_period_allowed("test", frozen_config=frozen)
     # validation/warmup are always allowed
     ensure_period_allowed("validation", frozen_config=frozen)
@@ -106,7 +108,7 @@ def test_score_records_gates_and_filters(tmp_path) -> None:
     # the lock applies even when no test records would be returned; use a
     # dedicated absent path so a repo-level FROZEN_CONFIG.json (created in
     # part 2.3) does not satisfy the lock for this test
-    with pytest.raises(TestPeriodLockedError):
+    with pytest.raises(PeriodLockedError):
         score_records([{"season": 2023}], "test",
                       frozen_config=tmp_path / "absent.json")
     frozen.write_text("{}")
@@ -202,13 +204,13 @@ def test_date_lock_refuses_windows_reaching_into_test(tmp_path, db_url) -> None:
 
     from core.backtest.periods import (
         TEST_START,
-        TestPeriodLockedError,
+        PeriodLockedError,
         ensure_window_allowed,
     )
     from core.backtest.runner import predictions
 
     frozen = tmp_path / "absent.json"
-    with pytest.raises(TestPeriodLockedError):
+    with pytest.raises(PeriodLockedError):
         ensure_window_allowed(
             dt.datetime(2025, 1, 1, tzinfo=UTC),
             dt.datetime(2025, 8, 1, tzinfo=UTC), frozen_config=frozen)
@@ -233,7 +235,7 @@ def test_date_lock_refuses_windows_reaching_into_test(tmp_path, db_url) -> None:
     monkeypatch_fn = strict
     runner_mod.ensure_window_allowed = monkeypatch_fn
     try:
-        with pytest.raises(TestPeriodLockedError):
+        with pytest.raises(PeriodLockedError):
             predictions(db_url, ModelConfig(xi=0.005),
                         dt.datetime(2025, 1, 1, tzinfo=UTC),
                         dt.datetime(2025, 9, 1, tzinfo=UTC),
@@ -249,21 +251,21 @@ def test_phase4b_scripts_test_lock(tmp_path) -> None:
 
     from core.backtest.periods import (
         FROZEN_CONFIG_4B_PATH,
-        TestPeriodLockedError,
+        PeriodLockedError,
         ensure_period_allowed,
         ensure_period_allowed_4b,
     )
 
     absent = tmp_path / "nonexistent.json"
-    with pytest.raises(TestPeriodLockedError):
+    with pytest.raises(PeriodLockedError):
         ensure_period_allowed("test", frozen_config=absent)
 
-    with pytest.raises(TestPeriodLockedError):
+    with pytest.raises(PeriodLockedError):
         ensure_period_allowed_4b("test", frozen_config=absent)
 
     arbitrary = tmp_path / "arbitrary.json"
     arbitrary.write_text("{}")
-    with pytest.raises(TestPeriodLockedError):
+    with pytest.raises(PeriodLockedError):
         ensure_period_allowed_4b("test", frozen_config=arbitrary)
 
     # Valid with existing 4b frozen config
@@ -287,6 +289,6 @@ def test_phase4b_scripts_test_lock(tmp_path) -> None:
                 text=True,
             )
             assert res.returncode != 0
-            assert "TestPeriodLockedError" in res.stderr
+            assert "PeriodLockedError" in res.stderr
 
 

@@ -27,6 +27,11 @@ from core.orm import Match, MatchLineup
 os.environ.setdefault("SOCCERDATA_LOGLEVEL", "WARNING")
 for _noisy in ("soccerdata", "TLSLibrary", "TLSRequests", "urllib3"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
+try:
+    import tls_requests.models.libraries as _lib
+    _lib.logger.setLevel(logging.WARNING)
+except (ImportError, AttributeError):
+    pass
 
 logger = get_logger("ingest.cli")
 

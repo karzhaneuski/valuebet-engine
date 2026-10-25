@@ -143,6 +143,11 @@ class UnderstatLoader:
 
         for noisy in ("soccerdata", "TLSLibrary", "TLSRequests", "urllib3"):
             logging.getLogger(noisy).setLevel(logging.WARNING)
+        try:
+            import tls_requests.models.libraries as lib
+            lib.logger.setLevel(logging.WARNING)
+        except (ImportError, AttributeError):
+            pass
 
     # --- data acquisition ---------------------------------------------------
 

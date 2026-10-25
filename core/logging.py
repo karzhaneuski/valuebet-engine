@@ -23,6 +23,11 @@ def configure(dev_mode: bool = False) -> None:
     # httpx logs full request URLs at INFO; quiet third-party library chatter
     for noisy in ("httpx", "httpcore", "soccerdata", "TLSLibrary", "TLSRequests", "urllib3"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    try:
+        import tls_requests.models.libraries as lib
+        lib.logger.setLevel(logging.WARNING)
+    except (ImportError, AttributeError):
+        pass
     for handler in logging.getLogger().handlers:
         handler.addFilter(RedactingFilter())
     renderer = (
