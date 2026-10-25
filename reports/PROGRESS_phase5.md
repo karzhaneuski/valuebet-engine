@@ -25,6 +25,20 @@ Continuation point: this file + `git log phase-5-fair-pricing`. Rules: DB copy o
 - Added unit tests in `tests/test_fair_matrix.py` (8 tests): verified numerical agreement with `scripts/backtest_hybrid.py` down to $10^{-12}$, matrix properties, bookmaker selection, half-line fallback, missing market, fallback model, and input hash.
 - Strict mypy passed across all 10 source files (`core/model`, `core/backtest`, `core/value`).
 
+## Step 2: Pinnacle correct_score Benchmark (core/value/pinnacle_benchmark.py)
+- Created `core/value/pinnacle_benchmark.py`:
+  - `parse_score_outcome`: parses TOA outcome strings (`Aston Villa:1|Manchester City:0`, `H1|A0`, `1:0`, `Other`).
+  - `build_pinnacle_benchmark_matrix`: proportional devigging across quoted exact score outcomes, documented rule for 'Any other' score (mass distributed proportionally to the reference market matrix tail, or uniform if none provided), strictly normalized 11x11 matrix.
+  - `compare_matrices`: calculates cell-level differences (max cell diff, mean cell diff, TVD, RMSE, Jensen-Shannon divergence), top-1 / top-3 sets, high draws `{2:2, 3:3, 4:4}`, low scores, goals 2-4, 1X2, totals, and BTTS.
+  - `load_pinnacle_correct_score_from_db`: loads Pinnacle correct_score snapshots for a match from `odds_snapshots`.
+- Evaluated on actual DB snapshot for match 1973 (Aston Villa vs Man City):
+  - Loaded all 32 Pinnacle correct_score rows.
+  - Verified benchmark matrix shape and properties.
+  - Observed that h2h was not polled in TOA snapshots (honestly recorded; live h2h TOA polling arrives in Phase 7).
+  - Evaluated matrix comparison against FairMatrix with William Hill totals and consensus 1X2: max cell diff < 0.15, TVD < 0.35, RMSE < 0.05, JSD < 0.05, high draws diff well-controlled (< 0.05).
+- Added unit tests in `tests/test_pinnacle_benchmark.py` (5 tests). All strict mypy checks green across 11 files.
+
 ---
-## Next: Step 2 (core/value/pinnacle_benchmark.py - Pinnacle correct_score benchmark)
+## Next: Step 3 (core/value/fortuna_input.py - Manual Fortuna odds parser)
+
 
