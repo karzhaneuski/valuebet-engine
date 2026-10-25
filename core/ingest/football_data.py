@@ -70,6 +70,26 @@ class FdRow:
     p_under: Decimal | None = None
     max_over: Decimal | None = None
     max_under: Decimal | None = None
+    # closing 1X2
+    avgc_home: Decimal | None = None
+    avgc_draw: Decimal | None = None
+    avgc_away: Decimal | None = None
+    maxc_home: Decimal | None = None
+    maxc_draw: Decimal | None = None
+    maxc_away: Decimal | None = None
+    pc_home: Decimal | None = None
+    pc_draw: Decimal | None = None
+    pc_away: Decimal | None = None
+    # prematch 1X2
+    avg_home: Decimal | None = None
+    avg_draw: Decimal | None = None
+    avg_away: Decimal | None = None
+    p_home: Decimal | None = None
+    p_draw: Decimal | None = None
+    p_away: Decimal | None = None
+    max_home: Decimal | None = None
+    max_draw: Decimal | None = None
+    max_away: Decimal | None = None
 
     @property
     def kickoff_utc(self) -> dt.datetime | None:
@@ -206,6 +226,20 @@ class FootballDataLoader:
                 avg_over=dec(row, "Avg>2.5"), avg_under=dec(row, "Avg<2.5"),
                 p_over=dec(row, "P>2.5"), p_under=dec(row, "P<2.5"),
                 max_over=dec(row, "Max>2.5"), max_under=dec(row, "Max<2.5"),
+                avgc_home=dec(row, "AvgCH"), avgc_draw=dec(row, "AvgCD"),
+                avgc_away=dec(row, "AvgCA"),
+                maxc_home=dec(row, "MaxCH"), maxc_draw=dec(row, "MaxCD"),
+                maxc_away=dec(row, "MaxCA"),
+                pc_home=dec(row, "PSCH") or dec(row, "PCH"),
+                pc_draw=dec(row, "PSCD") or dec(row, "PCD"),
+                pc_away=dec(row, "PSCA") or dec(row, "PCA"),
+                avg_home=dec(row, "AvgH"), avg_draw=dec(row, "AvgD"),
+                avg_away=dec(row, "AvgA"),
+                p_home=dec(row, "PSH") or dec(row, "PH"),
+                p_draw=dec(row, "PSD") or dec(row, "PD"),
+                p_away=dec(row, "PSA") or dec(row, "PA"),
+                max_home=dec(row, "MaxH"), max_draw=dec(row, "MaxD"),
+                max_away=dec(row, "MaxA"),
             ))
         return out
 
@@ -352,11 +386,14 @@ class FootballDataLoader:
                     stat.home_goals = row.fthg
                     stat.away_goals = row.ftag
                     report.stats_updated += 1
-                for book, over, under in (
-                        ("AvgC", row.avgc_over, row.avgc_under),
-                        ("MaxC", row.maxc_over, row.maxc_under),
-                        ("PC", row.pc_over, row.pc_under)):
-                    if over is None and under is None:
+                for book, over, under, hp, dp, ap in (
+                        ("AvgC", row.avgc_over, row.avgc_under,
+                         row.avgc_home, row.avgc_draw, row.avgc_away),
+                        ("MaxC", row.maxc_over, row.maxc_under,
+                         row.maxc_home, row.maxc_draw, row.maxc_away),
+                        ("PC", row.pc_over, row.pc_under,
+                         row.pc_home, row.pc_draw, row.pc_away)):
+                    if all(v is None for v in (over, under, hp, dp, ap)):
                         continue
                     closing = s.scalars(select(ClosingOdds).where(
                         ClosingOdds.match_id == match.id,
@@ -365,29 +402,46 @@ class FootballDataLoader:
                         s.add(ClosingOdds(match_id=match.id,
                                           bookmaker=book,
                                           over_price=over,
-                                          under_price=under))
+                                          under_price=under,
+                                          home_price=hp,
+                                          draw_price=dp,
+                                          away_price=ap))
                         report.closing_written += 1
-                    elif (closing.over_price, closing.under_price) != \
-                            (over, under):
+                    elif (closing.over_price, closing.under_price,
+                          closing.home_price, closing.draw_price,
+                          closing.away_price) != (over, under, hp, dp, ap):
                         closing.over_price = over
                         closing.under_price = under
+                        closing.home_price = hp
+                        closing.draw_price = dp
+                        closing.away_price = ap
                         report.closing_updated += 1
-                for book, over, under in (
-                        ("Avg", row.avg_over, row.avg_under),
-                        ("P", row.p_over, row.p_under),
-                        ("Max", row.max_over, row.max_under)):
-                    if over is None and under is None:
+                for book, over, under, hp, dp, ap in (
+                        ("Avg", row.avg_over, row.avg_under,
+                         row.avg_home, row.avg_draw, row.avg_away),
+                        ("P", row.p_over, row.p_under,
+                         row.p_home, row.p_draw, row.p_away),
+                        ("Max", row.max_over, row.max_under,
+                         row.max_home, row.max_draw, row.max_away)):
+                    if all(v is None for v in (over, under, hp, dp, ap)):
                         continue
                     pre = s.scalars(select(PrematchOdds).where(
                         PrematchOdds.match_id == match.id,
                         PrematchOdds.bookmaker == book)).first()
                     if pre is None:
                         s.add(PrematchOdds(match_id=match.id, bookmaker=book,
-                                           over_price=over, under_price=under))
+                                           over_price=over, under_price=under,
+                                           home_price=hp, draw_price=dp,
+                                           away_price=ap))
                         report.prematch_written += 1
-                    elif (pre.over_price, pre.under_price) != (over, under):
+                    elif (pre.over_price, pre.under_price,
+                          pre.home_price, pre.draw_price,
+                          pre.away_price) != (over, under, hp, dp, ap):
                         pre.over_price = over
                         pre.under_price = under
+                        pre.home_price = hp
+                        pre.draw_price = dp
+                        pre.away_price = ap
                         report.prematch_updated += 1
         return report
 

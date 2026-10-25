@@ -386,7 +386,7 @@ class MatchLineup(Base):
 
 
 class PrematchOdds(Base):
-    """football-data PRE-MATCH O/U 2.5 prices (phase 4b).
+    """football-data PRE-MATCH odds: O/U 2.5 and 1X2 (phase 4b).
 
     Separate table (not a kind flag on closing_odds): the bookmaker sets
     differ (Avg/P/Max without the C suffix), closing_odds carries a
@@ -408,10 +408,13 @@ class PrematchOdds(Base):
     bookmaker: Mapped[str] = mapped_column(String(10))
     over_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
     under_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
+    home_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
+    draw_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
+    away_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
 
 
 class ClosingOdds(Base):
-    """football-data closing O/U 2.5 prices — the CLV reference (decisions)."""
+    """football-data closing odds: O/U 2.5 and 1X2 — the CLV reference (decisions)."""
 
     __tablename__ = "closing_odds"
     __table_args__ = (
@@ -426,3 +429,6 @@ class ClosingOdds(Base):
     bookmaker: Mapped[str] = mapped_column(String(10))
     over_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
     under_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
+    home_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
+    draw_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
+    away_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))

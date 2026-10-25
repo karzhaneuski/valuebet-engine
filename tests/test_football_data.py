@@ -227,6 +227,8 @@ def test_prematch_odds_parsed_and_stored(tmp_path) -> None:
     rows = loader.parse("premier_league", 2025, raw=FIXTURE.read_bytes())
     first = rows[0]
     assert first.avg_over is not None and first.p_over is not None
+    assert first.avg_home is not None and first.p_home is not None
+    assert first.avgc_home is not None and first.pc_home is not None
     m = seed_understat_side(url, first.home, first.away,
                             canonical_home=first.home,
                             canonical_away=first.away,
@@ -242,12 +244,31 @@ def test_prematch_odds_parsed_and_stored(tmp_path) -> None:
                         home_goals=first.fthg, away_goals=first.ftag))
     report = loader.upsert([first])
     assert report.prematch_written == 3   # Avg, P, Max
+    assert report.closing_written == 3    # AvgC, MaxC, PC
     with session_scope(url) as s:
-        from core.orm import PrematchOdds
+        from core.orm import ClosingOdds, PrematchOdds
 
-        books = {b.bookmaker: (b.over_price, b.under_price)
-                 for b in s.scalars(select(PrematchOdds)).all()}
-    assert set(books) == {"Avg", "P", "Max"}
+        books = {
+            b.bookmaker: (
+                b.over_price, b.under_price, b.home_price, b.draw_price, b.away_price
+            )
+            for b in s.scalars(select(PrematchOdds)).all()
+        }
+        assert set(books) == {"Avg", "P", "Max"}
+        assert books["Avg"][2] is not None
+        assert books["Avg"][3] is not None
+        assert books["Avg"][4] is not None
+
+        c_books = {
+            b.bookmaker: (
+                b.over_price, b.under_price, b.home_price, b.draw_price, b.away_price
+            )
+            for b in s.scalars(select(ClosingOdds)).all()
+        }
+        assert set(c_books) == {"AvgC", "MaxC", "PC"}
+        assert c_books["AvgC"][2] is not None
+
     # idempotent rerun: no second write, no phantom update
     report2 = loader.upsert([first])
     assert report2.prematch_written == 0 and report2.prematch_updated == 0
+    assert report2.closing_written == 0 and report2.closing_updated == 0
