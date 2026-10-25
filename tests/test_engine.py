@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+import numpy as np
 import pytest
 
 from core.value.engine import (
@@ -292,10 +293,19 @@ def test_integer_and_quarter_totals_lines(sample_fair_matrix: FairMatrix) -> Non
     assert len(res.outcomes) == 4
 
     out_u3, out_o3 = res.outcomes[0], res.outcomes[1]
-    # Under 3 + Over 3 effective fair probabilities must sum to 1.0!
-    assert out_u3.p_fair + out_o3.p_fair == pytest.approx(1.0, abs=1e-9)
+    n = sample_fair_matrix.matrix.shape[0]
+    totals_grid = np.add.outer(np.arange(n), np.arange(n))
+    p_push_3 = float(sample_fair_matrix.matrix[totals_grid == 3].sum())
+
+    # P(under 3) + P(push 3) + P(over 3) must sum to 1.0!
+    assert out_u3.p_fair + out_o3.p_fair + p_push_3 == pytest.approx(1.0, abs=1e-9)
     assert out_u3.recommended is False
     assert out_u3.rejection_reason == "Справочный рынок"
+
+    # Edge must be EV = P(win) * odds + P(push) * 1 - 1
+    ev_u3 = out_u3.p_fair * item_u3.odds + p_push_3 * 1.0 - 1.0
+    assert out_u3.edge == pytest.approx(ev_u3, abs=1e-9)
+    assert out_u3.fair_odds == pytest.approx((1.0 - p_push_3) / out_u3.p_fair, abs=1e-9)
 
     # Quarter lines
     out_q1, out_q2 = res.outcomes[2], res.outcomes[3]
@@ -305,6 +315,58 @@ def test_integer_and_quarter_totals_lines(sample_fair_matrix: FairMatrix) -> Non
     assert out_q2.recommended is False
     assert out_q2.p_fair == 0.0
     assert "Четвертная линия тотала не поддерживается" in out_q2.rejection_reason
+
+
+def test_integer_totals_expected_value_and_fair_odds() -> None:
+    """User requirement: W=0.40, Q=0.25, odds=1.80 -> EV = -0.03.
+
+    EV = P(win) * odds + P(push) * 1 - 1
+    fair_odds = (1 - P(push)) / P(win)
+    """
+    p_win = 0.40
+    p_push = 0.25
+    odds = 1.80
+    ev = p_win * odds + p_push * 1.0 - 1.0
+    assert ev == pytest.approx(-0.03, abs=1e-9)
+    fair_odds = (1.0 - p_push) / p_win
+    assert fair_odds == pytest.approx(1.875, abs=1e-9)
+
+    mat = np.zeros((11, 11), dtype=np.float64)
+    # under 3: sum = 0.40
+    mat[0, 0] = 0.10
+    mat[1, 0] = 0.15
+    mat[0, 2] = 0.15
+    # push 3: sum = 0.25
+    mat[1, 2] = 0.25
+    # over 3: sum = 0.35
+    mat[2, 2] = 0.35
+
+    fm = FairMatrix(
+        matrix=mat,
+        lambda_home=1.5,
+        lambda_away=1.5,
+        lambda_total=3.0,
+        home_share=0.5,
+        line_used=2.5,
+        source="synthetic",
+        status="ok",
+        books_used=["test"],
+        snapshot_time=None,
+        input_hash="test",
+        p_over_devig=0.5,
+        p_home_devig=0.4,
+        p_draw_devig=0.3,
+        p_away_devig=0.3,
+        rho=0.0,
+        kappa_high=0.0,
+    )
+
+    item = FortunaPrice("totals", ("under", 3.0), 1.80, "mniej niż 3 1.80", 1)
+    res = evaluate_fortuna_prices(fm, [item])
+    out = res.outcomes[0]
+    assert out.p_fair == pytest.approx(0.40, abs=1e-9)
+    assert out.edge == pytest.approx(-0.03, abs=1e-9)
+    assert out.fair_odds == pytest.approx(1.875, abs=1e-9)
 
 
 def test_team_totals_side_matching(sample_fair_matrix: FairMatrix) -> None:

@@ -383,6 +383,7 @@ def evaluate_fortuna_prices(
 
     for item in fortuna_prices:
         p_fair = 0.0
+        p_push = 0.0
         item_reason_override: str | None = None
 
         # Compute p_fair
@@ -466,15 +467,14 @@ def evaluate_fortuna_prices(
                 int_line = round(t_line)
                 p_push = (
                     float(fair_matrix.matrix[totals_grid == int_line].sum())
-                    if is_integer
+                    if is_integer and 0 <= int_line < totals_grid.max() + 1
                     else 0.0
                 )
+
                 if t_kind == "over":
-                    p_over = float(fair_matrix.matrix[totals_grid > t_line].sum())
-                    p_fair = p_over / (1.0 - p_push) if p_push < 1.0 else 0.0
+                    p_fair = float(fair_matrix.matrix[totals_grid > t_line].sum())
                 else:
-                    p_under = float(fair_matrix.matrix[totals_grid < t_line].sum())
-                    p_fair = p_under / (1.0 - p_push) if p_push < 1.0 else 0.0
+                    p_fair = float(fair_matrix.matrix[totals_grid < t_line].sum())
         elif (
             item.market == "team_totals"
             and isinstance(item.selection, tuple)
@@ -500,13 +500,16 @@ def evaluate_fortuna_prices(
                 )
                 is_integer = abs(t_line - round(t_line)) < 1e-6
                 int_line = round(t_line)
-                p_push = float(marg[int_line]) if is_integer and 0 <= int_line < len(marg) else 0.0
+                p_push = (
+                    float(marg[int_line])
+                    if is_integer and 0 <= int_line < len(marg)
+                    else 0.0
+                )
+
                 if t_kind == "over":
-                    p_over = float(sum(marg[g] for g in range(len(marg)) if g > t_line))
-                    p_fair = p_over / (1.0 - p_push) if p_push < 1.0 else 0.0
+                    p_fair = float(sum(marg[g] for g in range(len(marg)) if g > t_line))
                 else:
-                    p_under = float(sum(marg[g] for g in range(len(marg)) if g < t_line))
-                    p_fair = p_under / (1.0 - p_push) if p_push < 1.0 else 0.0
+                    p_fair = float(sum(marg[g] for g in range(len(marg)) if g < t_line))
         elif item.market == "h2h":
             if item.selection == "1":
                 p_fair = fair_matrix.p_home_devig
@@ -515,8 +518,8 @@ def evaluate_fortuna_prices(
             elif item.selection == "2":
                 p_fair = fair_matrix.p_away_devig
 
-        edge = item.odds * p_fair - 1.0
-        fair_odds = 1.0 / p_fair if p_fair > 1e-9 else 9999.0
+        edge = p_fair * item.odds + p_push * 1.0 - 1.0
+        fair_odds = (1.0 - p_push) / p_fair if p_fair > 1e-9 else 9999.0
         kelly = calculate_kelly_quarter_capped(p_fair, item.odds)
 
         # Decision logic
