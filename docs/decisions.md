@@ -504,3 +504,30 @@ regression-tested (`test_one_match_does_not_run_away_from_the_prior`,
   walk-forward log loss.
 
 **Reason**: review S3; measured, not assumed.
+
+
+## 2026-10-25 — Phase 4: backtest, tuning, honest test result
+
+**Decision**: walk-forward infrastructure (weekly refits, on-disk model
+cache keyed by config hash, warmup 2021-22 / validation 2023-24 / test
+2025-26 split, test period file-locked until FROZEN_CONFIG.json).
+Tuning on validation only: xi*w grid (16), prior_sigma (9), model
+options from the phase-3 review (xG goals-scaling, goals-only level,
+common rho, slower league decay - all implemented as ModelConfig flags,
+off by default). Every variant was statistically tied with the simplest
+config (paired week-clustered bootstrap of the log-loss difference,
+CI95 spanning 0), so the frozen config is xi=0.002, w=0.5,
+prior_sigma=0.5, no options (validation LL 2.9112 vs 2.9148 baseline).
+Test (ONE run, after the freeze): frozen LL 2.9157 vs baseline 2.9221 -
+tuning transferred out of sample; bins 0/1-5/6-15/>15 =
+2.722/3.129/2.858/2.908. Calibration on test: top-1 exact score
+p=0.118 vs observed 0.126, top-3 set 0.311/0.332, {1:0,2:0,2:1}
+0.239/0.248, 2-4 goals 0.608/0.614 - slight conservative bias.
+ROI on O/U 2.5 vs football-data closings (de-vigged AvgC market,
+thresholds 2/4/6/8%): AvgC execution -9..-11% (CI excludes 0), MaxC
+-4..-6% (CI spans 0) - NO edge over the closing market; expected and
+accepted (the phase question was asked honestly). config.yaml updated
+with the frozen values.
+
+**Reason**: phase-4 task; all numbers from real runs on DB copies
+(reports/backtest/*, records under .cache/bt_records).

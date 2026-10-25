@@ -52,7 +52,9 @@ leagues:
 database:
   url: sqlite:///./valuebet.db
 
-model: {}                        # defaults in core.config.ModelConfig; tuned in phase 4
+model:                           # frozen by phase-4 backtest (FROZEN_CONFIG.json)
+  xi: 0.002                      # validated 2023/24-2024/25, LL 2.9112 (baseline 0.005: 2.9148)
+  weight_xg: 0.5                 # w=1.0 uniformly worst on validation
 
 thresholds:
   totals_edge: 0.04

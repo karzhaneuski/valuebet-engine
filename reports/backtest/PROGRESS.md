@@ -42,3 +42,14 @@ metrics forbidden until FROZEN_CONFIG.json exists.
   prior_sigma=0.5, NO options (LL 2.9112, bin1-5 3.0133).
 - 2.3: part2_tuning.md + FROZEN_CONFIG.json committed (config_hash
   5090b95a..., commit at freeze recorded). TEST PERIOD UNLOCKED.
+
+## Part 3 (TEST, one run, after freeze commit fc789a8)
+- 3.1 test run /tmp/bt3.db: frozen LL 2.9157 vs baseline 2.9221 (n=2111)
+  - tuning transferred (-0.0064); bins frozen 0/1-5/6-15/>15 =
+  2.722/3.129/2.858/2.908 (baseline 1-5: 3.177). Brier O/U2.5 0.2419,
+  BTTS 0.2455. part3_frozen_metrics.md + part3_reliability.png.
+- 3.2 ROI vs AvgC/MaxC closings (part3_roi.json): AvgC -9..-11% CI<0;
+  MaxC -4..-6% CI spans 0 -> NO edge, honestly negative.
+- 3.3 score calibration (part3_score_calibration.json): top1 0.118/0.126,
+  top3 0.311/0.332, {1:0,2:0,2:1} 0.239/0.248, 2-4 goals 0.608/0.614.
+- 3.4 config.yaml -> xi 0.002, w 0.5; decisions.md entry added.
