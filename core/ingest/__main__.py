@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -20,6 +22,11 @@ from core.ingest.odds_api import OddsApiClient
 from core.ingest.understat import UnderstatLoader
 from core.logging import configure, get_logger
 from core.orm import Match, MatchLineup
+
+# C3: silence soccerdata config & cache chatter before any soccerdata import
+os.environ.setdefault("SOCCERDATA_LOGLEVEL", "WARNING")
+for _noisy in ("soccerdata", "TLSLibrary", "TLSRequests", "urllib3"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 logger = get_logger("ingest.cli")
 

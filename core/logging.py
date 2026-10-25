@@ -16,9 +16,12 @@ from core.http import RedactingFilter, redact_processor
 
 def configure(dev_mode: bool = False) -> None:
     """Set up structlog once per process; idempotent."""
+    import os
+
+    os.environ.setdefault("SOCCERDATA_LOGLEVEL", "WARNING")
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.INFO)
-    # httpx logs full request URLs (including apiKey query params) at INFO
-    for noisy in ("httpx", "httpcore"):
+    # httpx logs full request URLs at INFO; quiet third-party library chatter
+    for noisy in ("httpx", "httpcore", "soccerdata", "TLSLibrary", "TLSRequests", "urllib3"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     for handler in logging.getLogger().handlers:
         handler.addFilter(RedactingFilter())

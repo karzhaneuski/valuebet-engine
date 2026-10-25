@@ -86,7 +86,8 @@ class UnderstatLoader:
         # soccerdata logs config chatter at INFO on every reader build
         import logging
 
-        logging.getLogger("soccerdata").setLevel(logging.WARNING)
+        for noisy in ("soccerdata", "TLSLibrary", "TLSRequests", "urllib3"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
 
     # --- data acquisition ---------------------------------------------------
 

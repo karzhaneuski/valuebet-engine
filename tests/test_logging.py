@@ -11,3 +11,14 @@ def test_configure_and_log() -> None:
     assert callable(logger.info)
     # must not raise
     logger.info("log.line.test", extra_field=1)
+
+
+def test_c3_soccerdata_loggers_quieted() -> None:
+    import logging
+    import os
+
+    configure(dev_mode=True)
+    assert os.environ.get("SOCCERDATA_LOGLEVEL") == "WARNING"
+    for noisy in ("soccerdata", "TLSLibrary", "TLSRequests", "urllib3"):
+        assert logging.getLogger(noisy).level == logging.WARNING
+
