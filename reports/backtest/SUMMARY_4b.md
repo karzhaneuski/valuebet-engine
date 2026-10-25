@@ -23,28 +23,29 @@ happened AFTER FROZEN_CONFIG_4b.json was committed.
 
 | item | what was done | commit | verified by |
 |---|---|---|---|
-| B1 | prematch_odds table (own table over a kind flag: different bookmaker set, closing CHECK constraint, CLV-by-bookmaker code) + migration a86d9da4539e + fd loader (Avg/P/Max columns) + idempotent upsert; copy load: 21,017 rows (Avg 7427 / Max 7427 / P 6163), rerun 0 updates | f42c8dc | tests/test_football_data.py::test_prematch_odds_parsed_and_stored; run on /tmp/bt4b.db |
-| B2 | hybrid matrix (prematch-Avg de-vig lambda_total, model home share, model rho): validation LL 2.9067 vs model 2.9112, delta -0.0045 CI [-0.0088,-0.0001]; closing source -0.0103 [-0.0153,-0.0052] - reviewer numbers reproduced exactly | c0ceba5 | reports/backtest/4b_hybrid_prematch.json / _closing.json |
-| B3 | draw correction: flat kappa breaks 0:0 (kappa .10 -> 0:0 z -2.9), separate rho leaves 2:2; chosen high-draw-only inflation (2:2/3:3/.. x1.20, renormalised): all cells \|z\|<=2, LL 2.9054 (delta -0.0058); all fix variants LL-TIED pairwise - choice by cell calibration at one parameter | c0ceba5 | 4b_hybrid_prematch_k02.json; pairwise bootstrap in decisions.md |
-| B4 | logit mixture: w_model 0.18 / w_market 1.01; LL 0.6647 TIED with pure market (CI [-0.0021,+0.0006]); CLV of model bets: line moves toward us in 21.3% of 1842 (mean -1.7pp) -> O/U reference-only | 97a785b | 4b_mixture.json |
-| B5 | FROZEN_CONFIG_4b.json committed BEFORE the test; single second-look run: hybrid LL 2.9043 vs model 2.9158, delta -0.0115 [-0.0163,-0.0068]; every cell \|z\|<=2 (diagonal -0.5/+0.2/-0.3); multiscore top-1 0.119/0.131, top-3 0.315/0.329, {1:0,2:0,2:1} 0.242/0.248, 2-4 goals 0.610/0.614 | ec6db49, 60aa2cc | 4b_test_second_look.json |
-| B6 | phase-5 consequences: exact/multiscore from the HYBRID matrix; live lambda from TOA T-24 totals (Pinnacle else allowed-consensus de-vig); S2 prefilter compares hybrid quantities (the proxy IS the hybrid); O/U reference-only; exact-score ROI unverifiable historically - forward tracking is the arbiter | 60aa2cc | decisions.md entries 2026-10-26 |
+| B1 (prematch table) | prematch_odds table (own table over a kind flag: different bookmaker set, closing CHECK constraint, CLV-by-bookmaker code) + migration a86d9da4539e + fd loader (Avg/P/Max columns) + idempotent upsert; copy load: 21,017 rows (Avg 7427 / Max 7427 / P 6163), rerun 0 updates | f42c8dc | tests/test_football_data.py::test_prematch_odds_parsed_and_stored; run on /tmp/bt4b.db |
+| B1 (1X2 load) | 1X2 odds added to prematch_odds and closing_odds (home_price, draw_price, away_price) + migration b13589d81812; fd loader parses AvgH/D/A, PSH/D/A, MaxH/D/A, AvgCH/D/A, PSCH/D/A, MaxCH/D/A; idempotent copy load: 21,017 prematch updated, 5,543 written; rerun 0 writes / 0 updates | (this round) | tests/test_football_data.py; run on /tmp/bt4b.db |
+| B1 (CLV fix) + S5 | scripts/backtest_mixture.py selects bets at prematch price (p * price0 - 1 >= 0.02), measures shift prematch -> closing, ties separated. Validation: 1533 bets, line moved toward us in 47.4% (48.5% ex ties), mean shift 0.00 pp. S5 cross-validation across seasons: OOS LL 0.6656 vs market 0.6654 (CI [-0.0018, +0.0021]) -> O/U stays reference-only | (this round) | reports/backtest/4b_mixture.json |
+| B2/B3 + B1c | hybrid & market matrix in scripts/backtest_hybrid.py: --share {model, market_1x2} and --all-market. Validation: 1X2 share vs model share -0.0157 [-0.0205, -0.0113]; all-market -0.0163 [-0.0213, -0.0118]; alpha cross-fit = 0.0000; rho model vs rho=0 -0.0006 [-0.0026, +0.0014]; Pinnacle -0.0159. S3 kappa cross-fit by season (2023->2024: 0.337, 2024->2023: 0.179) | (this round) | reports/backtest/4b_hybrid_market_1x2.json, 4b_hybrid_all_market.json |
+| S2 lock | backtest_hybrid.py and backtest_mixture.py require FROZEN_CONFIG_4b.json under --period test; absent path raises TestPeriodLockedError | (this round) | tests/test_backtest_infra.py::test_phase4b_scripts_test_lock |
+| B5/B6 decisions | decisions.md B3/B4/B5/B6 updated: market exact-score matrix (O/U 2.5 + 1X2 + kappa_high) as base; model is fallback and anomaly detector; value against Fortuna; candidate prefilter on divergence; credit budget with h2h ~188/30d; 1X2 input-only; CLV arbiter for phase 7 | (this round) | docs/decisions.md |
 
 ## Headline numbers
 
-- Hybrid vs pure model, exact-score log loss: validation -0.0045
-  [-0.0088,-0.0001]; second-look test -0.0115 [-0.0163,-0.0068] - the
-  market's total level carries information the model lacks, and the
-  gain transfers.
-- Draw fix: model/hybrid underpriced 2:2 (z +3.2/+3.4); after the
-  high-draw inflation every 0:0..3:3 cell is calibrated (validation AND
-  test \|z\|<=2).
-- O/U 2.5: the mixture collapses onto the market (w_model 0.18); the
-  model's edge-bets see the line move AGAINST them (21% with us).
-  O/U stays reference-only.
-- Part A honesty numbers: de-vigged AvgC beats the model on O/U 2.5
-  (Brier 0.2376 vs 0.2422, CI excludes 0); model ROI is 3.3-5.0 pp
-  below the margin-only fair ROI on the test period.
+- Market matrix beats pure model and model-share hybrid on validation exact-score log loss:
+  share from 1X2 vs share from model: -0.0157 [-0.0205, -0.0113];
+  all from market vs share from model: -0.0163 [-0.0213, -0.0118];
+  total gain of market matrix over pure model: -0.0202 (1X2 share) / -0.0208 (all-market).
+- Model share weight alpha in cross-fitting is exactly 0.0000 in both season directions:
+  the statistical model adds no value over the devigged market 1X2.
+- Rho parameter: rho from model vs rho=0 gives delta -0.0006 [-0.0026, +0.0014] (tied).
+- O/U 2.5 CLV & mixture: CLV is neutral (47.4% moved towards us, 48.5% ex ties, mean shift 0.00 pp);
+  mixture out-of-sample log loss (0.6656) does not beat pure market (0.6654).
+  O/U stays strictly reference-only.
+- Draw fix: kappa_high=0.20 brings all cells to |z|<=2; cross-fitting confirms k_opt in [0.18, 0.34]
+  transfers across seasons. Justified a priori by bivariate Poisson underestimation of high draws.
+- Second-look test caveats: top-1 (0.119 vs 0.131) and top-3 (0.315 vs 0.329) are underpredicted,
+  meaning tails are overpredicted; risk of false value on long odds. Test period is considered exhausted.
 
 ## Not done
 
@@ -57,9 +58,12 @@ happened AFTER FROZEN_CONFIG_4b.json was committed.
 
 ## Owner commands (after checking nothing else writes the DB)
 
-    # migration + prematch odds load (idempotent):
+    # 1. migration to add 1X2 columns + prematch & closing odds load (idempotent):
     uv run alembic upgrade head
-    uv run python -m core.ingest backfill          # fd section writes prematch_odds
+    uv run python -m core.ingest backfill          # fd section writes prematch & closing 1X2 and totals
 
-21,017 prematch rows are expected for seasons 2022-2026 on the current
-data (measured on the copy); a rerun performs 0 writes.
+21,017 existing prematch rows are updated with 1X2 prices, and 5,543 prematch rows written (measured on copy);
+a rerun performs 0 writes and 0 updates.
+
+    # 2. reload match 4215 via --lineups-only:
+    uv run python -m core.ingest backfill --lineups-only --lineups-since 2026-09-05

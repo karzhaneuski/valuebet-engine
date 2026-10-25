@@ -92,18 +92,8 @@ metrics forbidden until FROZEN_CONFIG.json exists.
 
 ## Part B (phase-4b-hybrid)
 - B1 (f42c8dc): prematch_odds table + loader; copy load 21,017 rows.
-- B2: hybrid (prematch Avg de-vig lambda, model share+rho) validation
-  LL 2.9067 vs model 2.9112, delta -0.0045 CI [-0.0088,-0.0001];
-  closing source delta -0.0103 CI [-0.0153,-0.0052] - reviewer
-  reproduced exactly.
-- B3: flat diagonal kappa breaks 0:0; chosen high-draw-only kappa=0.20
-  (all cells |z|<=2, LL 2.9054, delta -0.0058); all fix variants
-  LL-TIED pairwise (bootstrap) - choice by cell calibration, 1 param.
-
-- B4 (97a785b): mixture w_model 0.18/w_market 1.01, LL tied with pure
-  market [-0.0021,+0.0006]; CLV: line moves toward us in 21.3% of 1842
-  bets (mean -1.7pp) -> O/U reference-only.
-- B5 (ec6db49 freeze): single second-look test: hybrid LL 2.9043 vs
-  model 2.9158, delta -0.0115 [-0.0163,-0.0068]; all cells |z|<=2;
-  multiscore top1 0.119/0.131, top3 0.315/0.329.
-- B6: phase-5 consequences recorded in decisions.md.
+- B1 (1X2 load): 1X2 odds added to prematch_odds and closing_odds (home_price, draw_price, away_price) + migration b13589d81812; fd loader parses AvgH/D/A, PSH/D/A, MaxH/D/A, AvgCH/D/A, PSCH/D/A, MaxCH/D/A; idempotent copy load: 21,017 prematch updated, 5,543 written; rerun 0 writes / 0 updates.
+- B1 (CLV fix) + S5: backtest_mixture.py selects bets at prematch price (p * price0 - 1 >= 0.02), measures shift prematch -> closing, ties separated. Validation: 1533 bets, line moved toward us in 47.4% (48.5% ex ties), mean shift 0.00 pp. S5 cross-validation across seasons: OOS LL 0.6656 vs market 0.6654 (CI [-0.0018, +0.0021]) -> O/U stays reference-only.
+- B2/B3 + B1c: hybrid & market matrix in scripts/backtest_hybrid.py: --share {model, market_1x2} and --all-market. Validation: 1X2 share vs model share -0.0157 [-0.0205, -0.0113]; all-market -0.0163 [-0.0213, -0.0118]; alpha cross-fit = 0.0000; rho model vs rho=0 -0.0006 [-0.0026, +0.0014]; Pinnacle -0.0159. S3 kappa cross-fit by season (2023->2024: 0.337, 2024->2023: 0.179).
+- S2 lock: backtest_hybrid.py and backtest_mixture.py require FROZEN_CONFIG_4b.json under --period test; absent path raises TestPeriodLockedError.
+- B5/B6 decisions: decisions.md B3/B4/B5/B6 updated: market exact-score matrix (O/U 2.5 + 1X2 + kappa_high) as base; model is fallback and anomaly detector; value against Fortuna; candidate prefilter on divergence; credit budget with h2h ~188/30d; 1X2 input-only; CLV arbiter for phase 7.

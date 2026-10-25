@@ -624,35 +624,44 @@ scenario):
   [-0.0088, -0.0001] (reviewer's numbers reproduced: -0.0045 and
   -0.0103 with closing AvgC, CI [-0.0153, -0.0052]). The market total
   level carries real information the model lacks.
-- B3 draw correction: the model and the hybrid UNDERprice 2:2 (model
+- B3 draw correction: the model and the hybrid underprice 2:2 (model
   cell z +3.2, hybrid +3.4; p 0.049 vs observed 0.062) and slightly
-  OVERprice 0:0 (hybrid z -1.9). A FLAT diagonal inflation cures 2:2
-  but breaks 0:0 (kappa 0.10 -> 0:0 z -2.9); a separate hybrid rho
-  (-0.05) improves LL marginally and leaves 2:2 untouched. Chosen:
-  option (c) - inflate ONLY the high draws (2:2, 3:3, ...) by
-  (1+kappa), kappa=0.20, renormalised: every 0:0..3:3 cell then has
-  |z| <= 2, LL 2.9054 (delta vs model -0.0058, CI [-0.0106, -0.0010]).
-  Paired comparisons show all fix variants are LL-TIED with each other
-  (kappa0.20 vs pure hybrid: -0.0013 [-0.0030, +0.0002]) - the choice
-  follows the cell-calibration criterion (the task's requirement) at
-  the price of ONE extra parameter; the rho+combo variants are TIED and
-  more complex, so rejected.
+  overprice 0:0 (hybrid z -1.9). Honest caveat (review S3): κ_high is
+  statistically indistinguishable by log loss (-0.0013 [-0.0030, +0.0002])
+  across 15 variants × 16 cells searched, so the |z|<=2 criterion is an
+  in-sample fit. Cross-fitting κ by season (2023 -> 2024: k_opt = 0.337,
+  eval diff -0.0003; 2024 -> 2023: k_opt = 0.179, eval diff -0.0023;
+  same for the market matrix: k_opt ≈ 0.18-0.34, test delta consistently
+  negative) confirms that κ_high in [0.18, 0.34] transfers stably across
+  seasons. Choosing κ_high=0.20 departs from "simpler is better" for a
+  principled a priori reason: bivariate Poisson Dixon-Coles is well-known
+  to underestimate high draws due to independent Poisson tails, so
+  inflating high draws corrects a known structural deficit rather than
+  fitting noise.
 
 **Reason**: phase-4b B2/B3; artefacts reports/backtest/4b_hybrid_*.json.
 
 ## 2026-10-26 — Phase 4b B4: O/U signals are reference-only (mixture + CLV)
 
-**Decision**: on validation, the fitted logit mixture on O/U 2.5 puts
-w_model = 0.18 vs w_market = 1.01 (prematch Avg): the mixture's binary
-log loss 0.6647 is TIED with the pure market (diff CI95 [-0.0021,
-+0.0006]) and only beats the pure model because the market does. CLV of
-the model's >=2%-edge bets against prematch prices: the closing line
-moved TOWARD our side in 21.3% of 1,842 bets (mean probability shift
--1.7 pp) - the market systematically moves AWAY from the model's O/U
-opinions. Conclusions recorded for phase 5: O/U totals probabilities
-are REFERENCE OUTPUT ONLY - the value engine emits no O/U
-recommendations from the model or the mixture (multiscore/exact-score
-markets, where the hybrid matrix lives, are the product).
+**Decision**:
+- On validation, the in-sample fitted logit mixture on O/U 2.5 puts
+  w_model = 0.18 vs w_market = 1.01 (prematch Avg); in-sample binary
+  log loss 0.6647 is tied with the pure market (diff CI95 [-0.0021,
+  +0.0006]). Out-of-sample cross-validation (train 2023 -> test 2024:
+  mixture 0.6699 vs market 0.6688; train 2024 -> test 2023: mixture
+  0.6613 vs market 0.6620; overall OOS mixture 0.6656 vs market 0.6654,
+  CI95 [-0.0018, +0.0021]) confirms the mixture does NOT beat the pure
+  market out of sample.
+- CLV of the model's >=2%-edge bets against PREMATCH prices (selected by
+  p * prematch_price - 1 >= 0.02, measuring shift prematch -> closing,
+  ties separated; review B1 a): 1,533 bets, line moved toward us in
+  726 (47.4% of all bets, 48.5% excluding ties), moved against in 772
+  (50.4%), tied (shift 0) in 35 (2.3%); mean probability shift is -0.00 pp
+  (-0.00005). The earlier claim of "systematic move away (21%)" was a bug
+  from selecting bets on closing prices. CLV is neutral (no market edge).
+- Conclusion for phase 5: O/U totals probabilities remain REFERENCE OUTPUT
+  ONLY — the value engine emits no O/U recommendations because CLV is
+  neutral and the mixture does not beat the market.
 
 **Reason**: phase-4b B4; reports/backtest/4b_mixture.json.
 
@@ -665,26 +674,50 @@ FROZEN_CONFIG_4b; the window was already used by phases 3/4):
   CI95 [-0.0163, -0.0068] - the validation gain TRANSFERRED (and is
   larger than validation's -0.0058). Every 0:0..3:3 cell within |z|<=2
   (diagonal: 0:0 -0.5, 1:1 +0.2, 2:2 -0.3); multiscore calibration:
-  top-1 0.119/0.131, top-3 0.315/0.329, {1:0,2:0,2:1} 0.242/0.248,
-  2-4 goals 0.610/0.614 (slightly conservative throughout).
+  top-1 0.119/0.131 (z ≈ 1.7), top-3 0.315/0.329 (z ≈ 1.4),
+  {1:0,2:0,2:1} 0.242/0.248, 2-4 goals 0.610/0.614.
+  Underestimating top scores means tail scores are overpredicted; this
+  can generate false value signals on long odds (review S4).
 
-**Phase-5 consequences (B6)**:
-1. The value engine computes EXACT SCORE and MULTISCORE candidates from
-   the HYBRID matrix, not from the pure model. Pure-model probabilities
-   are shown for context only.
-2. Live lambda_total source: TOA totals snapshots at T-24
-   (sport-level, already paid by policy (d)); de-vig = Pinnacle pair if
-   present, else the consensus of allowed books (decisions S10);
-   lambda via market_lambda_from_totals on the 2.5 line.
-3. Prefilter (phase-0 decisions S2) unchanged in structure but the
-   model side of the comparison is now the hybrid matrix; the proxy
-   distribution from decisions S2 IS the hybrid, so no separate proxy
-   step is needed - the prefilter compares hybrid vs market-derived
-   quantities directly.
-4. O/U totals remain REFERENCE-ONLY (B4: mixture = market, CLV 21%).
-5. Honest caveat: historical ROI on exact score cannot be verified (no
-   historical exact-score odds); the arbiter is forward tracking from
-   phase 7 (CLV against our own snapshots + realised flat ROI on
-   manual Fortuna input).
+**Phase-5 consequences (B6 rewritten, review B1 d)**:
+1. Base exact-score matrix in phase 5 is built ENTIRELY FROM MARKET
+   ODDS: total lambda from O/U 2.5 devigged, home goal share from
+   1X2 devigged, plus high-draw correction κ_high (0.20). The statistical
+   model Dixon-Coles is NOT in the matrix: validation evidence shows
+   market 1X2 share beats model share by -0.0157 [-0.0205, -0.0113],
+   all-market beats model share by -0.0163 [-0.0213, -0.0118], and
+   cross-fitting the model's weight α in the share yields α = 0.0000 in
+   both directions. The model serves as: (a) standby reserve if market
+   odds are missing, and (b) anomaly flag when |share_model - share_1x2|
+   is large.
+2. Value definition: value = discrepancy between Fortuna's exact-score and
+   multiscore prices and the fair market matrix.
+3. Benchmark for phase 5: fair matrix derived from Pinnacle event-level
+   correct_score grid (TOA) devigged.
+4. Prefilter (phase-0 decisions S2) redefined: the earlier
+   |P_hybrid - P_proxy| is degenerate (proxy = hybrid). The new ranking
+   rule selects candidate matches by divergence between model share and
+   market share |share_model - share_1x2| or divergence on totals,
+   capped at top 15 matches/week, without purchasing event-level odds.
+5. Live odds source and credit budget: sport-level /odds polls
+   `markets=totals,h2h` (2 markets × 1 region eu = 2 credits/snapshot).
+   5 leagues × 3 snapshots (T-48, T-24, T-3) × 2 credits = 30 credits/round,
+   ~120 credits/month. Adding candidate event-level correct_score (15/week ×
+   4 × 1 = 60) and UCL /scores (8 credits) yields ~188 credits/month,
+   well below the 450 hard-stop ceiling.
+6. 1X2 odds role: 1X2 is used STRICTLY AS INPUT to construct the fair
+   matrix. Bets on 1X2 are NEVER issued (SPEC §1).
+7. Quality arbiter for phase 7: CLV measured against our own exact-score
+   price snapshots before kickoff. Realised ROI is informational only
+   (at average odds ~9, a ±5% CI requires ~12,000 bets).
+8. Test period lock: after phase 4b, the test period (from 2025-07-01) is
+   exhausted. backtest_hybrid and backtest_mixture enforce
+   FROZEN_CONFIG_4b.json. Subsequent evaluation will occur exclusively
+   forward (phase 7 forward tracking).
+9. Data timing: football-data prematch odds can be captured later than
+   the weekly walk-forward as_of (Friday 06:00 UTC); this reflects
+   pre-kickoff market consensus, not match outcome leakage. PrematchOdds
+   constraints and comments are general, not restricted to O/U.
 
-**Reason**: phase-4b B5/B6; reports/backtest/4b_test_second_look.json.
+**Reason**: phase-4b B5/B6; reports/backtest/4b_test_second_look.json,
+reports/backtest/4b_hybrid_market_1x2.json, reports/backtest/4b_hybrid_all_market.json.
