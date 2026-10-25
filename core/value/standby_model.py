@@ -53,11 +53,11 @@ def get_model_home_share_and_model(
             as_of=as_of_utc,
             config=cfg.model,
         )
-        lh, la = model._rates(home_team, away_team)
+        lh, la = model.expected_goals(home_team, away_team)
         lt = lh + la
         share = float(lh / lt) if lt > 0.0 else 0.5
         return share, model
-    except Exception as err:
+    except (KeyError, ValueError, RuntimeError, OSError) as err:
         logger.warning(
             "Could not fit standby Dixon-Coles model for %s (%s vs %s): %s",
             league,

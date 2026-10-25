@@ -34,13 +34,16 @@ def _setup_test_db() -> tuple[Session, int]:
     session.add_all([t_home, t_away])
     session.flush()
 
+    now = dt.datetime.now(dt.UTC)
+    future_time = now + dt.timedelta(days=3)
+
     # Match
     m = Match(
         id=101,
         league="premier_league",
         season=2026,
-        date_utc=dt.date(2026, 10, 24),
-        commence_time_utc=dt.datetime(2026, 10, 24, 15, 0),
+        date_utc=future_time.date(),
+        commence_time_utc=future_time,
         kickoff_source="toa",
         status="scheduled",
         home_team_id=1,
@@ -306,6 +309,10 @@ def test_cli_evaluate_and_candidates(tmp_path: Path, monkeypatch) -> None:
     engine = create_engine(db_url)
     Base.metadata.create_all(engine)
 
+    now = dt.datetime.now(dt.UTC)
+    future_time = now + dt.timedelta(days=3)
+    past_time = now - dt.timedelta(days=3)
+
     with Session(engine) as session:
         t1 = Team(id=1, name="Arsenal", league="premier_league")
         t2 = Team(id=2, name="Everton", league="premier_league")
@@ -317,8 +324,8 @@ def test_cli_evaluate_and_candidates(tmp_path: Path, monkeypatch) -> None:
             id=101,
             league="premier_league",
             season=2026,
-            date_utc=dt.date(2026, 10, 30),
-            commence_time_utc=dt.datetime(2026, 10, 30, 15, 0, tzinfo=dt.UTC),
+            date_utc=future_time.date(),
+            commence_time_utc=future_time,
             kickoff_source="toa",
             status="scheduled",
             home_team_id=1,
@@ -329,8 +336,8 @@ def test_cli_evaluate_and_candidates(tmp_path: Path, monkeypatch) -> None:
             id=102,
             league="premier_league",
             season=2026,
-            date_utc=dt.date(2026, 10, 20),
-            commence_time_utc=dt.datetime(2026, 10, 20, 15, 0, tzinfo=dt.UTC),
+            date_utc=past_time.date(),
+            commence_time_utc=past_time,
             kickoff_source="toa",
             status="scheduled",
             home_team_id=3,
@@ -396,6 +403,6 @@ def test_cli_evaluate_and_candidates(tmp_path: Path, monkeypatch) -> None:
     code_cand = main([
         "candidates",
         "--days", "7",
-        "--from-date", "2026-10-20",
+        "--from-date", str((now - dt.timedelta(days=1)).date()),
     ])
     assert code_cand == 0

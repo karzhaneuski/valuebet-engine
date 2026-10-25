@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import datetime as dt
+import os
+from decimal import Decimal
+from pathlib import Path
+
 import numpy as np
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
+from core.orm import Base, Match, OddsSnapshot, Team
 from core.value.fair_matrix import (
     MarketInputs,
     MarketOdds1X2,
@@ -18,7 +26,7 @@ from core.value.pinnacle_benchmark import (
     parse_score_outcome,
 )
 
-DB_URL = "sqlite:////tmp/p5.db"
+REAL_DB_URL = os.environ.get("VALUEBET_DB_URL", "sqlite:////tmp/p5.db")
 
 
 def test_parse_score_outcome() -> None:
@@ -120,10 +128,102 @@ def test_compare_matrices_metrics() -> None:
     assert res_diff.draw_diff == pytest.approx(0.0)
 
 
+def test_pinnacle_benchmark_synthetic_db(tmp_path: Path) -> None:
+    """Test loading Pinnacle snapshots and benchmark building from a synthetic DB."""
+    db_file = tmp_path / "pinnacle_test.db"
+    db_url = f"sqlite:///{db_file}"
+    engine = create_engine(db_url)
+    Base.metadata.create_all(engine)
+
+    kickoff = dt.datetime(2026, 10, 20, 15, 0, tzinfo=dt.UTC)
+    snap_time = kickoff - dt.timedelta(hours=2)
+
+    with Session(engine) as session:
+        t1 = Team(id=1, name="Arsenal", league="premier_league")
+        t2 = Team(id=2, name="Chelsea", league="premier_league")
+        session.add_all([t1, t2])
+        session.flush()
+
+        m = Match(
+            id=501,
+            league="premier_league",
+            season=2026,
+            date_utc=kickoff.date(),
+            commence_time_utc=kickoff,
+            kickoff_source="toa",
+            status="scheduled",
+            home_team_id=1,
+            away_team_id=2,
+        )
+        session.add(m)
+        session.flush()
+
+        # Add Pinnacle correct_score snapshots
+        scores = [
+            ("1:0", Decimal("8.0")),
+            ("2:0", Decimal("10.0")),
+            ("2:1", Decimal("9.0")),
+            ("1:1", Decimal("7.0")),
+            ("0:0", Decimal("12.0")),
+            ("0:1", Decimal("8.5")),
+            ("0:2", Decimal("11.0")),
+            ("1:2", Decimal("9.5")),
+            ("Other", Decimal("5.0")),
+        ]
+        for idx, (sc, pr) in enumerate(scores):
+            session.add(
+                OddsSnapshot(
+                    id=idx + 1,
+                    match_id=501,
+                    bookmaker="pinnacle",
+                    market="correct_score",
+                    outcome=sc,
+                    price=pr,
+                    tier="T-3",
+                    source="toa",
+                    toa_sport_key="soccer_epl",
+                    toa_event_id="test_event_501",
+                    captured_at_utc=snap_time,
+                )
+            )
+        session.commit()
+
+    prices, other_price = load_pinnacle_correct_score_from_db(
+        db_url,
+        match_id=501,
+        home_team="Team A",
+        away_team="Team B",
+    )
+    assert len(prices) == 8
+    assert other_price == 5.0
+
+    # Build matrix
+    ref_inputs = MarketInputs(
+        source="synthetic",
+        snapshot_time=snap_time,
+        totals_by_book={"pinnacle": [MarketTotalsLine(line=2.5, over=1.85, under=2.05)]},
+        h2h_by_book={"pinnacle": MarketOdds1X2(home=2.10, draw=3.40, away=3.60)},
+    )
+    ref_mat = build_fair_matrix(ref_inputs)
+    bench_m = build_pinnacle_benchmark_matrix(
+        prices, other_price=other_price, reference_matrix=ref_mat.matrix, max_score=10
+    )
+    assert bench_m.shape == (11, 11)
+    assert abs(float(bench_m.sum()) - 1.0) < 1e-9
+
+    comp = compare_matrices(ref_mat.matrix, bench_m)
+    assert comp.max_cell_diff < 0.20
+    assert comp.tvd < 0.35
+
+
+@pytest.mark.skipif(
+    "VALUEBET_REAL_DB" not in os.environ,
+    reason="Requires real database with VALUEBET_REAL_DB=1",
+)
 def test_pinnacle_benchmark_on_real_db_snapshot_match_1973() -> None:
     """Evaluate benchmark on actual DB snapshot rows for match 1973."""
     prices, other_price = load_pinnacle_correct_score_from_db(
-        DB_URL,
+        REAL_DB_URL,
         match_id=1973,
         home_team="Aston Villa",
         away_team="Manchester City",
