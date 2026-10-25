@@ -48,8 +48,23 @@ Continuation point: this file + `git log phase-5-fair-pricing`. Rules: DB copy o
 - Added unit tests in `tests/test_fortuna_input.py` (11 tests): exact scores, other score phrases, multiscore, goals ranges, totals, 1X2, multi-line batches, conflicting odds, syntax errors, and overround calculation.
 - All checks green, strict mypy passing across 12 source files.
 
+## Step 4: Value Engine (core/value/engine.py)
+- Created `core/value/engine.py`:
+  - `EvaluatedOutcome` and `EvaluationResult` dataclasses containing full outcome breakdown (market, odds, p_fair, fair_odds, edge, recommended flag, rejection reason, flat stake, 1/4 Kelly capped at bankroll limit, raw price, and flags).
+  - `calculate_kelly_quarter_capped`: 1/4 Kelly criterion `0.25 * edge / (odds - 1)` with cap at 0.02 (2% bankroll).
+  - `check_model_anomaly`: checks divergence $|s_{\text{market}} - s_{\text{model}}| > 0.15$ and generates warning flag `"⚠️ Аномалия модели: расхождение доли голов ... > порога 15%. Проверь составы/данные!"`.
+  - Rejection logic and thresholds:
+    - Long odds filter: `odds > 21.0` -> `"Длинный коэффициент (> 21)"`.
+    - Low probability filter: `p_fair < 0.04` -> `"Мала p_fair (< 4.0%)"`.
+    - Edge thresholds: exact score / other score $\ge 12\%$; multiscore / goals range $\ge 8\%$.
+    - Reference markets: totals and 1X2 are strictly reference-only (`recommended = False`, `"Справочный рынок"`).
+    - Lineup risk factors: 1 key player absent or sources conflict -> edge threshold multiplied by $\times 1.5$ (e.g. $12\% \to 18\%$, $8\% \to 12\%$); $\ge 2$ key absences in a single team -> total exclusion (`is_excluded = True`, all outcomes rejected).
+  - Summary table in Russian formatted via `EvaluationResult.format_table()` with match header, market source, bookmakers used, Fortuna margin, risk flags / anomaly warnings, outcome rows with alignment, and total recommendation count.
+- Added unit tests in `tests/test_engine.py` (7 tests): Kelly calculation, model anomaly check, exact score thresholds and rejection reasons, multiscore / goals range thresholds, reference-only markets, risk multipliers and $\ge 2$ player exclusions, and full Russian summary table output.
+- All checks green (`ruff`, `mypy`, `mypy --strict core/model core/backtest core/value`, 246 tests passing).
+
 ---
-## Next: Step 4 (core/value/engine.py - Value Engine)
+## Next: Step 5 (Candidate Prefilter: core/value/prefilter.py)
 
 
 
