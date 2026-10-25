@@ -34,7 +34,11 @@ metrics forbidden until FROZEN_CONFIG.json exists.
 - 2.1b prior_sigma (grid_sigma.jsonl): sigma 0.75 marginally best
   (2.9113 at w0.3 / 2.9114 at w0.5) - differences ~0.000x, essentially
   flat over 0.25-0.75.
-- 2.1c options (grid_options.jsonl): [RUNNING] xgscale / levelgoals /
-  commonrho / decay on xi0.002 w0.5.
-- Selection (2.2): scripts/backtest_select.py - paired week-clustered
-  bootstrap of dLL; ties -> simpler config.
+- 2.1c options (grid_options.jsonl): base 2.9112 / xgscale 2.9115 /
+  levelgoals 2.9157 / commonrho 2.9110 / decay0.5 2.9109 / decay0.25
+  2.9107 - all within noise.
+- 2.2 selection (part2_selection.json): paired week bootstrap -> every
+  variant TIED with the best; chosen = SIMPLEST: xi=0.002, w=0.5,
+  prior_sigma=0.5, NO options (LL 2.9112, bin1-5 3.0133).
+- 2.3: part2_tuning.md + FROZEN_CONFIG.json committed (config_hash
+  5090b95a..., commit at freeze recorded). TEST PERIOD UNLOCKED.
