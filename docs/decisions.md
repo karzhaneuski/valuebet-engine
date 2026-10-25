@@ -682,20 +682,23 @@ FROZEN_CONFIG_4b; the window was already used by phases 3/4):
   Underestimating top scores means tail scores are overpredicted; this
   can generate false value signals on long odds (review S4).
 
-**Phase-5 consequences (B6 rewritten, review B1 d)**:
+**Phase-5 consequences (B6 rewritten, review B1 d, final review S1)**:
 1. Base exact-score matrix in phase 5 is built ENTIRELY FROM MARKET
-   ODDS: total lambda from O/U 2.5 devigged, home goal share from
-   1X2 devigged via least squares (fit_1x2_share), rho estimated
-   from the market draw probability (as in all-market) or fixed to 0.0
-   (the model's rho contribution is statistically indistinguishable from zero:
-   delta -0.0006 [-0.0026, +0.0014]), plus high-draw correction κ_high (0.20)
-   applied to all diagonal cells from 2:2 upwards (2:2, 3:3, 4:4...).
+   ODDS using a single, unambiguous specification:
+   - total lambda from devigged O/U 2.5;
+   - home goal share from devigged 1X2 via least squares (fit_1x2_share);
+   - rho is fixed to 0.0: empirical evaluation on validation (n=3504,
+     76 calendar weeks) shows estimating rho from market draw vs rho=0
+     yields delta -0.0013 [-0.0032, +0.0006] (statistically indistinguishable
+     from zero) -> principle "when indistinguishable, choose the simpler option";
+     model rho is also not used (delta -0.0006 [-0.0026, +0.0014]);
+   - high-draw correction κ_high = 0.20 applied to all diagonal cells from
+     2:2 upwards (2:2, 3:3, 4:4...).
    The statistical model Dixon-Coles is NOT in the matrix: validation evidence shows
    market 1X2 share beats model share by -0.0157 [-0.0205, -0.0113],
-   all-market beats model share by -0.0163 [-0.0213, -0.0118], and
-   cross-fitting the model's weight α in the share yields α = 0.0000 in
+   and cross-fitting the model's weight α in the share yields α = 0.0000 in
    both directions (OOS delta +0.0000). The requirement to "exactly reproduce
-   both O/U and 1X2" is dropped because the system is overdetermined (2-3
+   both O/U and 1X2" is dropped because the system is overdetermined (2
    parameters, 3 equations). The model serves as: (a) standby reserve if market
    odds are missing, and (b) anomaly flag ("check lineups/data") when
    discrepancy with market is large, without increasing bet priority.
