@@ -63,8 +63,23 @@ Continuation point: this file + `git log phase-5-fair-pricing`. Rules: DB copy o
 - Added unit tests in `tests/test_engine.py` (7 tests): Kelly calculation, model anomaly check, exact score thresholds and rejection reasons, multiscore / goals range thresholds, reference-only markets, risk multipliers and $\ge 2$ player exclusions, and full Russian summary table output.
 - All checks green (`ruff`, `mypy`, `mypy --strict core/model core/backtest core/value`, 246 tests passing).
 
+## Step 5: Candidate Prefilter (core/value/prefilter.py)
+- Created `core/value/prefilter.py`:
+  - `CandidateMatch`, `PrefilterDecisionRecord`, and `PrefilterReport` dataclasses.
+  - Criteria per decisions B6.4 and SPEC §5:
+    - Fortuna grid availability: `has_fortuna_grid` (default unknown/pass; False rejects with `"Нет сетки точного счёта Fortuna"`).
+    - `no_market` filter: rejects matches missing market odds.
+    - `compute_high_draws_mass`: calculates $\sum_{i \ge 2} M_{i,i}$ (zone where $\kappa_{\text{high}}$ operates).
+    - League rotation: round-robin interleaving across active leagues with configurable league cap (`max_per_league`, default 3) to prevent one league from consuming the candidate quota.
+    - Weekly budget limit: `weekly_cap` ($\le 10$ matches/week from `config.odds_policy.pinnacle_correct_score_max_weekly`).
+    - Model anomaly check: Dixon-Coles divergence $|s_{\text{market}} - s_{\text{model}}| > 0.15$ flags `"⚠️ Аномалия модели: проверь составы/данные"`, but explicitly does NOT alter ranking priority or candidate selection (model $\alpha = 0$).
+  - `log_prefilter_decisions_to_db`: records every accepted/rejected decision into the `prefilter_decisions` table in the database with match ID, date, BTTS proxy, edge, accepted boolean, and detailed reason. Idempotent: updates existing records if re-run on the same date.
+  - Russian summary table via `PrefilterReport.format_table()`.
+- Added unit tests in `tests/test_prefilter.py` (6 tests): high draws mass calculation, Fortuna grid / no_market rejections, league rotation and weekly cap, model anomaly flag without ranking boost, table formatting, and database persistence with idempotency.
+- All checks green (`ruff`, `mypy`, `mypy --strict core/model core/backtest core/value`, 252 tests passing).
+
 ---
-## Next: Step 5 (Candidate Prefilter: core/value/prefilter.py)
+## Next: Step 6 (Persistence and CLI: core.value)
 
 
 
