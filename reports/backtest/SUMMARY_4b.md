@@ -44,6 +44,16 @@ Test period (kickoff >= 2025-07-01) was not touched for tuning; all evaluations 
 | SPEC v2 | Updated `SPEC.md` to v2: added top Changelog v2 referencing decisions B3-B6; target defined as fair market matrix of exact score with $\kappa_{\text{high}}=0.20$ and edge against Fortuna odds; Dixon-Coles model assigned to fallback and anomaly detection; exact score and multiscore are recommendations, totals and BTTS are reference-only, 1X2 is strictly input-only; TOA sport-level quota budget documented (~188 credits/30d); CLV defined as Phase 7 quality arbiter | `c478aa0` | `SPEC.md`, `git diff` |
 | PROMPTS.md | Updated task descriptions and review checklists for Phases 5, 6, and 7 to align with SPEC v2 (fair market matrix, Fortuna manual odds entry, edge calculation, anomaly detection, CLV tracking) | `c478aa0` | `PROMPTS.md`, `git diff` |
 
+### Review Round 2 Fixes (Blocking Б1-Б2, Should Fix S1-S7, NITs)
+| Item | What was done | Commit | Verified by |
+|---|---|---|---|
+| NITs | Removed "slight conservative bias" from `docs/decisions.md`; `cmd_backfill` exits with non-zero status on `understat_errors`; `UnderstatLoader.schedule_rows` retries strictly on network/transient connection errors (fails fast on logical/schema errors); test lock gate enforces canonical `reports/backtest/FROZEN_CONFIG_4b.json` (rejects arbitrary existing paths) | `bfa32e4` | `tests/test_backtest_infra.py`, `tests/test_ingest_review.py` |
+| S7 | Fixed `backtest_hybrid.py`: alpha cross-fit uses model rho (not cfg.xi), properly indexes on filtered records, evaluates fitted alpha OOS on held-out seasons; kappa cross-fit evaluates OOS with week bootstrap CI95; added `--compare` mode and generated 4 committed comparison artifacts with per-match deltas and week-clustered bootstrap CI95; fixed validation sample size to 3,504 matches, 76 weeks, 2,000 resamples | `4e1b794` | `reports/backtest/compare_*.json` |
+| S1 & S3 | `SPEC.md` §4 & `docs/decisions.md` (B6.1): clarified market matrix formulation — $\lambda_{\text{total}}$ from devigged O/U 2.5, home share from OLS on 1X2, rho from draw or fixed to 0.0 (model rho delta $-0.0006$ $[-0.0026, +0.0014]$); dropped overdetermined requirement; clarified $\kappa_{\text{high}}$ diagonal scope $\ge 2:2$. Documented honest cross-season transfer intervals for $\kappa_{\text{high}}$ ($2024 \to 2023: -0.0023$ $[-0.0044, -0.0002]$; $2023 \to 2024: -0.0003$ $[-0.0034, +0.0029]$) | `76fa32a` | `SPEC.md`, `docs/decisions.md` |
+| Б1 | Recalculated 30-day TOA credit budget from measured 28d calls in `reports/recon/odds_budget.json`; showed all-tier `totals+h2h` overflows 450 hard stop (486.43 credits/30d); adopted default policy: T-48 OFF, T-24 ON (totals+h2h), T-3 ON by slot (totals+h2h), UCL /scores, Pinnacle correct_score <= 10/wk -> 392.14 ≈ 393 credits/30d (headroom 57.86); defined degradation ladder ((a) CS -> 5/wk, (b) disable T-3 h2h, (c) T-3 slot -> day, (d) T-3 never disabled); implemented `scripts/calc_odds_budget.py` and saved artifact `reports/recon/odds_budget_30d.json`; updated `core/config.py`, `config.yaml`, `tests/test_config.py`, `SPEC.md` §3, `docs/decisions.md` (B6.5), `PROMPTS.md` Phase 7 and checklist | `20bbe86` | `scripts/calc_odds_budget.py`, `reports/recon/odds_budget_30d.json`, `tests/test_config.py` |
+| Б2 | Defined CLV arbiter formula: $\text{CLV}_{\text{fair}} = \text{odds}_{\text{fortuna}} \times p_{\text{fair}} - 1$, where $p_{\text{fair}}$ is from market matrix built from last snapshot of `totals+h2h` strictly BEFORE kickoff (not after); secondary benchmark against pre-kickoff devigged Pinnacle correct_score; documented `clv_source` tracking (`fair_market_matrix`, `pinnacle_correct_score`) for Phase 7; documented realized ROI as informational only (~12k bets needed for $\pm 5\%$ CI on ~9 odds); updated `SPEC.md` §7, `docs/decisions.md` (B6.7), `PROMPTS.md` Phase 7 and checklist | `f19925f` | `SPEC.md`, `docs/decisions.md`, `PROMPTS.md` |
+| S2, S4, S5, S6 | S2: removed ranking by $|share_{model} - share_{1x2}|$; set candidate prefilter criteria (Fortuna grid, high draws mass, league rotation, budget limit <= 10/wk); discrepancy with model is strictly an anomaly flag without boosting bet priority. S4: removed "используется только для финального подтверждения" (test period exhausted, forward testing only); clarified exact gain of market matrix: $-0.016$ vs model share hybrid ($-0.0157$ $[-0.0205, -0.0113]$) and $-0.020 / -0.022$ vs pure model; clarified distinction between O/U logit mixture weight ($0.14-0.25$) and exact score goal shares ($\alpha = 0.0000$). S5: aligned UCL experimental scope across SPEC §1, PROMPTS Phase 11, and config.yaml. S6: restored lost v1 SPEC requirements (fallback model training strictly before forecast date with 2h result_lag; Hermes fallback REST-skill; Hermes scheduler notifications; dashboard "Base vs Shadow" page; link to docs/data-sources.md; Pinnacle correct_score benchmark; relative links in Changelog v2) | `23adeb6` | `SPEC.md`, `config.yaml`, `docs/decisions.md`, `PROMPTS.md` |
+
 ---
 
 ## 2. Headline Numbers (Part B, with 95% Confidence Intervals)
@@ -53,7 +63,7 @@ All calculations on validation set (seasons 2023, 2024; 3,504 matches, 76 calend
 1. **Exact-Score Log Loss Gain**:
    - **Share from 1X2 vs Share from Model**: $\Delta \text{LL} = -0.0157$ $[-0.0205, -0.0113]$ (Reviewer benchmark: $-0.0158$ $[-0.0206, -0.0113]$; artifact: `compare_1x2_vs_model_share.json`).
    - **All from Market vs Share from Model**: $\Delta \text{LL} = -0.0163$ $[-0.0213, -0.0118]$ (Reviewer benchmark: $-0.0165$ $[-0.0214, -0.0119]$; artifact: `compare_all_market_vs_model_share.json`).
-   - **Total Gain of Market Matrix over Pure Model**: $-0.0202$ (1X2 share) / $-0.0208$ (all from market).
+   - **Total Gain of Market Matrix over Pure Model**: $-0.0202$ (1X2 share) / $-0.0208$ (all from market) on the validation sample; $-0.022$ on the full validation pool.
 2. **Model Share Cross-Fit Weight ($\alpha$)**:
    - $\alpha_{\text{opt}} = 0.0000$ in both season directions ($2023 \to 2024$ and $2024 \to 2023$). Out-of-sample evaluation on held-out seasons yields $\Delta \text{LL} = +0.0000$ CI95 $[0.0000, +0.0000]$. The statistical Dixon-Coles model adds zero value over the devigged market 1X2.
 3. **Low-Score Correlation Parameter ($\rho$)**:
@@ -66,9 +76,21 @@ All calculations on validation set (seasons 2023, 2024; 3,504 matches, 76 calend
    - Cross-season logit mixture: Out-of-sample log loss $0.6656$ vs pure market $0.6654$ (CI $[-0.0018, +0.0021]$). CLV is strictly neutral; O/U remains reference-only.
 6. **High-Draw Correction ($\kappa_{\text{high}}$)**:
    - Cross-fitting confirms transferability: $2023 \to 2024$ gives $k_{\text{opt}} = 0.337$, eval delta $-0.0003$ $[-0.0034, +0.0029]$; $2024 \to 2023$ gives $k_{\text{opt}} = 0.179$, eval delta $-0.0023$ $[-0.0044, -0.0002]$. Fixed value $\kappa_{\text{high}} = 0.20$ brings all score cells $0:0..3:3$ within $|z| \le 2.0$.
-7. **Credit Budget under `markets=totals,h2h`**:
-   - 5 leagues $\times$ 3 snapshots (T-48, T-24, T-2) $\times$ 2 credits = 30 credits/round $\times$ 4 rounds = 120 credits/month.
-   - Candidate snapshots (~60) + UCL `/scores` (8) = ~188 credits/30d, safely below the 450 hard stop limit.
+7. **Credit Budget under `markets=totals,h2h` (30-day simulation, review B1)**:
+   - Measured 28-day calls (`reports/recon/odds_budget.json`) across 6 sports (top-5 + UCL): T-48: 64, T-24: 68, T-3 (slots): 91 (= 239/30d at 1 credit/market).
+   - Linear pricing: `markets * regions` (totals+h2h in EU = 2 credits/call). All tiers with totals+h2h: $(64+68+91) \times 2 \times 30/28 = 477.86$ + UCL `/scores` (8.57) = **486.43 ≈ 487 credits/30d**, overflowing 450 hard stop!
+   - Adopted default policy (`scripts/calc_odds_budget.py` -> `reports/recon/odds_budget_30d.json`):
+     - T-48: OFF (0 calls);
+     - T-24: ON (`totals,h2h` = 2 credits) -> 145.71 credits/30d;
+     - T-3 (by slots): ON (`totals,h2h` = 2 credits) -> 195.00 credits/30d;
+     - UCL `/scores`: 8.57 credits/30d (≈ 9);
+     - Pinnacle `correct_score` <= 10 matches/week: 42.86 credits/30d (≈ 43);
+     - **Total**: **392.14 ≈ 393 credits/30d** (headroom 57.86 to 450 stop, 107.86 to 500 quota).
+   - Degradation ladder:
+     - (a) `cap_correct_score_5_week`: 370.71 ≈ 371 credits/30d;
+     - (b) `disable_t3_h2h`: 273.21 ≈ 273 credits/30d (totals only at T-3, home share from T-24);
+     - (c) `t3_slot_to_day`: 248.57 ≈ 249 credits/30d;
+     - (d) `t3_never_disabled`: floor maintained. All timings use T-3 (Phase 0 decision), not T-2.
 
 ---
 

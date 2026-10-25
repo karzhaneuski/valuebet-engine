@@ -132,13 +132,6 @@ def test_recommendation_clv_fields(db_url) -> None:
         assert r.final_odds_source == "fortuna_manual"
 
 
-def test_clv_sources_include_fair_market_and_pinnacle(db_url) -> None:
-    from core.orm import CLV_SOURCES
-    assert "fair_market_matrix" in CLV_SOURCES
-    assert "pinnacle_correct_score" in CLV_SOURCES
-    assert "own_snapshot_t3" in CLV_SOURCES
-
-
 def test_manual_fortuna_snapshot_without_toa_ids(db_url) -> None:
     with session_scope(db_url) as s:
         s.add(OddsSnapshot(

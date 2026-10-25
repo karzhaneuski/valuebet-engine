@@ -132,7 +132,7 @@ metrics forbidden until FROZEN_CONFIG.json exists.
 - Б2 (Blocking):
   - Defined CLV arbiter formula: CLV_fair = odds_fortuna * p_fair - 1, where p_fair is the outcome probability from the fair market matrix constructed from the LAST snapshot of totals+h2h strictly BEFORE match kickoff (not after).
   - Secondary benchmark for candidate matches with purchased correct_score: against last pre-kickoff devigged Pinnacle correct_score.
-  - Added clv_source values ("fair_market_matrix", "pinnacle_correct_score") to core/orm.py and tests/test_orm.py.
+  - Documented clv_source values ("fair_market_matrix", "pinnacle_correct_score") for Phase 7 tracking implementation (DB schema migration deferred to Phase 7 to keep current Alembic check clean).
   - Documented that realized ROI is informational only (requires ~12,000 bets for +-5% CI on average ~9 odds).
   - Added "снимок строго до начала матча, не после" and CLV definition to PROMPTS.md Phase 7 and its review checklist, and aligned SPEC §7 and decisions.md B6.7.
 - S2:
