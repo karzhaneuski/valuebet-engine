@@ -103,9 +103,12 @@ def test_score_records_gates_and_filters(tmp_path) -> None:
                 "log_p": -2.0, "home_goals": 1, "away_goals": 1}]
     val = score_records(records, "validation")
     assert len(val) == 1 and val[0]["season"] == 2023
-    # the lock applies even when no test records would be returned
+    # the lock applies even when no test records would be returned; use a
+    # dedicated absent path so a repo-level FROZEN_CONFIG.json (created in
+    # part 2.3) does not satisfy the lock for this test
     with pytest.raises(TestPeriodLockedError):
-        score_records([{"season": 2023}], "test")
+        score_records([{"season": 2023}], "test",
+                      frozen_config=tmp_path / "absent.json")
     frozen.write_text("{}")
     assert score_records(records, "test", frozen_config=frozen) \
         == [records[1]]
