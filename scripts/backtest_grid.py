@@ -44,7 +44,10 @@ def main() -> None:
             print(f"skip {tag} (already in {out_path})")
             continue
         summary = run(tag, "validation", overrides)
+        from scripts.backtest_select import complexity
+
         row = {"tag": tag, "overrides": overrides,
+               "complexity": complexity(overrides),
                "n": summary["n"], "log_loss": summary["log_loss"],
                "bins": {k: v["mean"] for k, v in summary["bins"].items()
                         if v["n"]},

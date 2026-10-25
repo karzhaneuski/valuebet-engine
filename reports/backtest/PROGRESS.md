@@ -68,3 +68,14 @@ metrics forbidden until FROZEN_CONFIG.json exists.
   fair (adverse selection: expected 0.518, market 0.444, actual 0.432).
   part3_test.md sections 3.2a/3.2b; forbidden phrases removed; CLV
   dropped from SUMMARY (zero by construction).
+
+- S3 (f4bbaf6): quantile calibration + Wilson CIs + cell/total z-tables
+  (test: all 0:0..3:3 cells |z|<=1.6; only total=6 off, z=-2.5).
+- S4/S5 (cac5bc8, a0678dc): no-threshold-positive verdict recorded; MaxC
+  unreachable upper bound (1104/3504 forks, 31.5%); AvgC margin 4.79%
+  vs 6.53% -> no cross-period ROI comparisons.
+- NIT: core.backtest under strict mypy (explicit flag set); records
+  field log_p -> p_score (readers migrate old JSON); selection
+  complexity is an explicit field computed from overrides (re-run:
+  chosen unchanged opt_base_xi0.002_w0.5); bootstraps cluster on
+  calendar weeks (kickoff ISO week in honesty, as_of week elsewhere).

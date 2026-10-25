@@ -34,7 +34,8 @@ def score_records(records: Iterable[dict], period: str,
 
 
 def mean_log_loss(records: Sequence[dict]) -> float:
-    return -sum(math.log(max(r["log_p"], 1e-300)) for r in records) / len(records)
+    return -sum(math.log(max(r["p_score"], 1e-300))
+                for r in records) / len(records)
 
 
 def log_loss_by_bin(records: Sequence[dict]) -> dict[str, dict[str, float]]:

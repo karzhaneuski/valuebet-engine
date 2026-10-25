@@ -27,7 +27,10 @@ RECORDS = Path(".cache/bt_records")
 
 
 def load(tag: str) -> list[dict]:
-    return json.loads((RECORDS / f"{tag}.json").read_text())
+    records = json.loads((RECORDS / f"{tag}.json").read_text())
+    for r in records:  # migrate phase-4 field name
+        r.setdefault("p_score", r.pop("log_p", None))
+    return records
 
 
 def mean_ll(rec: list[dict]) -> float:
@@ -46,8 +49,8 @@ def paired_delta_boot(rec_a: list[dict], rec_b: list[dict],
               if r["match_id"] in by_id_a]
     import math
 
-    la = np.array([-math.log(max(x["log_p"], 1e-300)) for x, _ in common])
-    lb = np.array([-math.log(max(y["log_p"], 1e-300)) for _, y in common])
+    la = np.array([-math.log(max(x["p_score"], 1e-300)) for x, _ in common])
+    lb = np.array([-math.log(max(y["p_score"], 1e-300)) for _, y in common])
     weeks = np.array([f"{x['league']}|{x['as_of'][:10]}" for x, _ in common])
     uniq = np.unique(weeks)
     groups = [np.where(weeks == w)[0] for w in uniq]
@@ -60,19 +63,30 @@ def paired_delta_boot(rec_a: list[dict], rec_b: list[dict],
     return float(la.mean() - lb.mean()), float(deltas.std(ddof=1))
 
 
-SIMPLICITY = {
-    # lower = simpler: baseline flags first, then single options
-    "opt_base_xi0.002_w0.5": 0,
-    "xiw_xi0.002_w0.5": 0,
-    "opt_xgscale": 1,
-    "opt_commonrho": 1,
-    "opt_levelgoals": 1,
-    "opt_decay0.5": 1,
-    "opt_decay0.25": 1,
-    "sig0.75_xi0.002_w0.5": 0,
-    "sig0.75_xi0.002_w0.3": 0,
-    "xiw_xi0.002_w0.3": 0,
-}
+def complexity(overrides: dict | None) -> int:
+    """Explicit simplicity ordering, independent of tag names: the number
+    of switched-on model options plus one for a non-default prior_sigma
+    (ties resolved toward the LOWER complexity)."""
+    if not overrides:
+        return 0
+    score = sum(bool(overrides.get(k, False))
+                for k in ("xg_goals_scaling", "level_from_goals",
+                          "common_rho"))
+    if overrides.get("league_decay_multiplier", 1.0) != 1.0:
+        score += 1
+    if overrides.get("prior_sigma", 0.5) != 0.5:
+        score += 1
+    return score
+
+
+def tag_complexity(tag: str) -> int:
+    """Look the tag up in the grid jsonl files for its overrides."""
+    for path in sorted(Path("reports/backtest").glob("grid_*.jsonl")):
+        for line in path.read_text().splitlines():
+            row = json.loads(line)
+            if row.get("tag") == tag:
+                return complexity(row.get("overrides"))
+    return 0
 
 
 def main() -> None:
@@ -99,7 +113,7 @@ def main() -> None:
             "ci95": [delta - 1.96 * se, delta + 1.96 * se],
             "indistinguishable": abs(delta) < 1.96 * se,
             "simpler_challenger":
-                SIMPLICITY.get(challenger, 99) < SIMPLICITY.get(best, 99),
+                tag_complexity(challenger) < tag_complexity(best),
         })
     chosen = best
     for comp in comparisons:

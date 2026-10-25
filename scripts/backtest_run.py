@@ -53,6 +53,8 @@ def run(tag: str, period: str, overrides: dict | None = None) -> dict:
     records_path = RECORDS_DIR / f"{tag}.json"
     if records_path.exists():
         records = json.loads(records_path.read_text())
+        for r in records:  # migrate phase-4 field name
+            r.setdefault("p_score", r.pop("log_p", None))
         print(f"[{tag}] loaded {len(records)} cached records")
     else:
         t0 = time.perf_counter()
