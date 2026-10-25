@@ -639,3 +639,19 @@ scenario):
   more complex, so rejected.
 
 **Reason**: phase-4b B2/B3; artefacts reports/backtest/4b_hybrid_*.json.
+
+## 2026-10-26 — Phase 4b B4: O/U signals are reference-only (mixture + CLV)
+
+**Decision**: on validation, the fitted logit mixture on O/U 2.5 puts
+w_model = 0.18 vs w_market = 1.01 (prematch Avg): the mixture's binary
+log loss 0.6647 is TIED with the pure market (diff CI95 [-0.0021,
++0.0006]) and only beats the pure model because the market does. CLV of
+the model's >=2%-edge bets against prematch prices: the closing line
+moved TOWARD our side in 21.3% of 1,842 bets (mean probability shift
+-1.7 pp) - the market systematically moves AWAY from the model's O/U
+opinions. Conclusions recorded for phase 5: O/U totals probabilities
+are REFERENCE OUTPUT ONLY - the value engine emits no O/U
+recommendations from the model or the mixture (multiscore/exact-score
+markets, where the hybrid matrix lives, are the product).
+
+**Reason**: phase-4b B4; reports/backtest/4b_mixture.json.
