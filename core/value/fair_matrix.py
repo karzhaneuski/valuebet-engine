@@ -74,6 +74,10 @@ class MarketInputs:
     h2h_by_book: dict[str, MarketOdds1X2] = field(default_factory=dict)
     match_name: str | None = None
 
+    def is_empty(self) -> bool:
+        """True if either totals or h2h lines are missing."""
+        return not bool(self.totals_by_book) or not bool(self.h2h_by_book)
+
     def compute_hash(self) -> str:
         """Deterministic SHA-256 hash of all input odds for full traceability."""
         payload: dict[str, object] = {

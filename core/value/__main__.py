@@ -33,6 +33,7 @@ from core.value.prefilter import (
     filter_candidates,
     log_prefilter_decisions_to_db,
 )
+from core.value.standby_model import get_model_home_share_and_model
 
 
 def _cmd_evaluate(args: argparse.Namespace, session: Session) -> int:
@@ -99,9 +100,34 @@ def _cmd_evaluate(args: argparse.Namespace, session: Session) -> int:
         sys.stderr.write(f"Ошибка парсинга котировок Fortuna:\n{e}\n")
         return 1
 
-    # 4. Load market inputs and build FairMatrix
+    # 4. Load market inputs and dynamic standby model (if needed)
     m_inputs = load_market_inputs_for_match(session, match.id)
-    fair_mat = build_fair_matrix(m_inputs)
+
+    model_share = args.model_home_share
+    standby_model = None
+    if model_share is None or m_inputs.is_empty():
+        db_url = os.environ.get("DATABASE_URL") or load_config().database.url
+        kickoff_time = match.commence_time_utc or dt.datetime.combine(
+            match.date_utc, dt.time(15, 0), tzinfo=dt.UTC
+        )
+        dyn_share, dyn_model = get_model_home_share_and_model(
+            db_url=db_url,
+            league=match.league,
+            as_of=kickoff_time,
+            home_team=h_team,
+            away_team=a_team,
+        )
+        if model_share is None:
+            model_share = dyn_share
+        standby_model = dyn_model
+
+    fair_mat = build_fair_matrix(
+        m_inputs,
+        allow_model_fallback=True,
+        model=standby_model,
+        home_team=h_team,
+        away_team=a_team,
+    )
 
     # 5. Process risk flags
     abs_h = [x.strip() for x in args.key_absences_home.split(",")] if args.key_absences_home else []
@@ -112,7 +138,7 @@ def _cmd_evaluate(args: argparse.Namespace, session: Session) -> int:
         fair_matrix=fair_mat,
         fortuna_prices=prices,
         match_name=match_display,
-        model_home_share=args.model_home_share,
+        model_home_share=model_share,
         key_absences_home=abs_h,
         key_absences_away=abs_a,
         sources_conflict=args.sources_conflict,

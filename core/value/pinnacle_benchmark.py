@@ -9,6 +9,7 @@ event-level correct_score market in odds_snapshots (SPEC §4, decisions B6.3):
 
 from __future__ import annotations
 
+import datetime as dt
 import math
 import re
 from dataclasses import dataclass
@@ -26,7 +27,7 @@ from core.model.markets import btts as calc_btts
 from core.model.markets import goals_range as calc_goals_range
 from core.model.markets import multiscore_set as calc_multiscore_set
 from core.model.markets import total_over as calc_total_over
-from core.orm import OddsSnapshot
+from core.orm import Match, OddsSnapshot
 
 ParsedOutcome = tuple[int, int] | Literal["other"]
 
@@ -46,7 +47,17 @@ def parse_score_outcome(
     """
     cleaned = outcome.strip()
     lowered = cleaned.lower()
-    if any(k in lowered for k in ("other", "any other", "inny", "pozostał", "rest")):
+    other_exact = {
+        "other",
+        "any other",
+        "any other score",
+        "inny",
+        "inny wynik",
+        "pozostałe",
+        "pozostale",
+        "rest",
+    }
+    if lowered in other_exact:
         return "other"
 
     # Pattern 1: Team1:G1|Team2:G2
@@ -281,19 +292,34 @@ def load_pinnacle_correct_score_from_db(
     match_id: int,
     home_team: str | None = None,
     away_team: str | None = None,
+    as_of: dt.datetime | None = None,
 ) -> tuple[dict[tuple[int, int], float], float | None]:
-    """Load Pinnacle correct_score odds from odds_snapshots for a match."""
+    """Load Pinnacle correct_score odds from odds_snapshots for a match (<= cutoff)."""
     prices: dict[tuple[int, int], float] = {}
     other_price: float | None = None
 
     with session_scope(db_url) as session:
+        match = session.get(Match, match_id)
+        cutoff = as_of or (match.commence_time_utc if match else None)
+
         stmt = select(OddsSnapshot).where(
             OddsSnapshot.match_id == match_id,
             OddsSnapshot.bookmaker == "pinnacle",
             OddsSnapshot.market == "correct_score",
         )
-        rows = list(session.scalars(stmt))
-        for r in rows:
+        if cutoff is not None:
+            stmt = stmt.where(OddsSnapshot.captured_at_utc <= cutoff)
+
+        stmt = stmt.order_by(OddsSnapshot.captured_at_utc.desc())
+        all_rows = list(session.scalars(stmt))
+        if not all_rows:
+            return {}, None
+
+        # Filter to the latest capture timestamp
+        latest_ts = all_rows[0].captured_at_utc
+        latest_rows = [r for r in all_rows if r.captured_at_utc == latest_ts]
+
+        for r in latest_rows:
             p_val = float(r.price)
             parsed = parse_score_outcome(r.outcome, home_team=home_team, away_team=away_team)
             if parsed == "other":

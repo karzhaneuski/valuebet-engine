@@ -32,6 +32,8 @@ def test_parse_score_outcome() -> None:
     # simple 2:1 or 2-1
     assert parse_score_outcome("2:1") == (2, 1)
     assert parse_score_outcome("0-0") == (0, 0)
+    # Team with 'other' substring (e.g. Rotherham) must NOT be parsed as 'other'
+    assert parse_score_outcome("Rotherham:1|Ipswich:0", "Rotherham", "Ipswich") == (1, 0)
     # other
     assert parse_score_outcome("Other") == "other"
     assert parse_score_outcome("Any Other Score") == "other"

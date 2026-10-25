@@ -47,6 +47,10 @@ from core.value.prefilter import (
     filter_candidates,
     log_prefilter_decisions_to_db,
 )
+from core.value.standby_model import (
+    get_key_players_for_team,
+    get_model_home_share_and_model,
+)
 
 __all__ = [
     "CandidateMatch",
@@ -75,6 +79,8 @@ __all__ = [
     "filter_candidates",
     "find_matches_by_query",
     "fit_1x2_share",
+    "get_key_players_for_team",
+    "get_model_home_share_and_model",
     "load_market_inputs_for_match",
     "load_pinnacle_correct_score_from_db",
     "log_prefilter_decisions_to_db",
