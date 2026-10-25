@@ -90,6 +90,15 @@ class RiskFlagsConfig(BaseModel):
     max_key_absences_per_team: int = 2
 
 
+class FairMatrixConfig(BaseModel):
+    """Parameters for fair market matrix construction (SPEC §4, decisions B6.1)."""
+
+    rho: float = 0.0
+    kappa_high: float = 0.20
+    default_totals_line: float = 2.5
+    anomaly_share_threshold: float = 0.15
+
+
 class OddsTierWindows(BaseModel):
     """Tolerance windows in hours (docs/decisions.md, review B1)."""
 
@@ -241,6 +250,7 @@ class AppConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     thresholds: ThresholdsConfig = Field(default_factory=ThresholdsConfig)
     risk_flags: RiskFlagsConfig = Field(default_factory=RiskFlagsConfig)
+    fair_matrix: FairMatrixConfig = Field(default_factory=FairMatrixConfig)
     odds_policy: OddsPolicyConfig = Field(default_factory=OddsPolicyConfig)
     prefilter: PrefilterConfig = Field(default_factory=PrefilterConfig)
     books: BooksConfig = Field(default_factory=BooksConfig)

@@ -62,6 +62,13 @@ def test_prefilter(config: AppConfig) -> None:
     assert config.prefilter.weekly_cap == 15
 
 
+def test_fair_matrix_config(config: AppConfig) -> None:
+    assert config.fair_matrix.rho == 0.0
+    assert config.fair_matrix.kappa_high == 0.20
+    assert config.fair_matrix.default_totals_line == 2.5
+    assert config.fair_matrix.anomaly_share_threshold == 0.15
+
+
 def test_books_fortuna_only_bettable(config: AppConfig) -> None:
     assert config.books.bookmaker_whitelist == ["fortuna"]
     assert "pinnacle" in config.books.market_reference_books  # TOA key
