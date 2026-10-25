@@ -655,3 +655,36 @@ recommendations from the model or the mixture (multiscore/exact-score
 markets, where the hybrid matrix lives, are the product).
 
 **Reason**: phase-4b B4; reports/backtest/4b_mixture.json.
+
+## 2026-10-26 — Phase 4b B5/B6: hybrid transfers to the test; phase-5 consequences
+
+**Decision** (single SECOND-LOOK test run after freezing
+FROZEN_CONFIG_4b; the window was already used by phases 3/4):
+- hybrid (prematch-Avg lambda + model shape + kappa_high 0.20) test
+  exact-score LL 2.9043 vs pure model 2.9158: delta -0.0115,
+  CI95 [-0.0163, -0.0068] - the validation gain TRANSFERRED (and is
+  larger than validation's -0.0058). Every 0:0..3:3 cell within |z|<=2
+  (diagonal: 0:0 -0.5, 1:1 +0.2, 2:2 -0.3); multiscore calibration:
+  top-1 0.119/0.131, top-3 0.315/0.329, {1:0,2:0,2:1} 0.242/0.248,
+  2-4 goals 0.610/0.614 (slightly conservative throughout).
+
+**Phase-5 consequences (B6)**:
+1. The value engine computes EXACT SCORE and MULTISCORE candidates from
+   the HYBRID matrix, not from the pure model. Pure-model probabilities
+   are shown for context only.
+2. Live lambda_total source: TOA totals snapshots at T-24
+   (sport-level, already paid by policy (d)); de-vig = Pinnacle pair if
+   present, else the consensus of allowed books (decisions S10);
+   lambda via market_lambda_from_totals on the 2.5 line.
+3. Prefilter (phase-0 decisions S2) unchanged in structure but the
+   model side of the comparison is now the hybrid matrix; the proxy
+   distribution from decisions S2 IS the hybrid, so no separate proxy
+   step is needed - the prefilter compares hybrid vs market-derived
+   quantities directly.
+4. O/U totals remain REFERENCE-ONLY (B4: mixture = market, CLV 21%).
+5. Honest caveat: historical ROI on exact score cannot be verified (no
+   historical exact-score odds); the arbiter is forward tracking from
+   phase 7 (CLV against our own snapshots + realised flat ROI on
+   manual Fortuna input).
+
+**Reason**: phase-4b B5/B6; reports/backtest/4b_test_second_look.json.

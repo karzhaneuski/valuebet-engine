@@ -89,3 +89,11 @@ metrics forbidden until FROZEN_CONFIG.json exists.
 - B3: flat diagonal kappa breaks 0:0; chosen high-draw-only kappa=0.20
   (all cells |z|<=2, LL 2.9054, delta -0.0058); all fix variants
   LL-TIED pairwise (bootstrap) - choice by cell calibration, 1 param.
+
+- B4 (97a785b): mixture w_model 0.18/w_market 1.01, LL tied with pure
+  market [-0.0021,+0.0006]; CLV: line moves toward us in 21.3% of 1842
+  bets (mean -1.7pp) -> O/U reference-only.
+- B5 (ec6db49 freeze): single second-look test: hybrid LL 2.9043 vs
+  model 2.9158, delta -0.0115 [-0.0163,-0.0068]; all cells |z|<=2;
+  multiscore top1 0.119/0.131, top3 0.315/0.329.
+- B6: phase-5 consequences recorded in decisions.md.
