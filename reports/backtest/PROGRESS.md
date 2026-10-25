@@ -113,6 +113,10 @@ metrics forbidden until FROZEN_CONFIG.json exists.
   - cmd_backfill exits with non-zero status (sys.exit) when understat_errors are present.
   - Understat schedule_rows retries strictly on network/transient connection errors (via is_network_error); logical/schema errors fail fast without retries.
   - Test period lock: ensure_period_allowed_4b added and used in backtest_hybrid and backtest_mixture, enforcing canonical reports/backtest/FROZEN_CONFIG_4b.json (rejects arbitrary existing files).
+- S7:
+  - Fixed scripts/backtest_hybrid.py: alpha cross-fit uses model rho (instead of cfg.xi), properly indexes on filtered records, and evaluates fitted alpha out-of-sample on held-out seasons; kappa cross-fit evaluates OOS with week-clustered bootstrap CI95.
+  - Added --compare mode to backtest_hybrid.py and generated 4 committed comparison artifacts with per-match deltas and week-clustered bootstrap CI95: compare_1x2_vs_model_share.json (-0.0157 [-0.0205, -0.0113]), compare_all_market_vs_model_share.json (-0.0163 [-0.0213, -0.0118]), compare_rho_model_vs_rho0.json (-0.0006 [-0.0026, +0.0014]), compare_pinnacle_1x2_vs_model_share.json (-0.0157 [-0.0204, -0.0113]).
+  - Fixed validation sample size in SUMMARY_4b.md to 3,504 matches, 76 calendar weeks, 2,000 bootstrap resamples.
 
 - All items in Step 0, Part A, Part B, Part C, and Part D completed.
 - Full verification table and owner commands documented in `reports/backtest/SUMMARY_4b.md`.

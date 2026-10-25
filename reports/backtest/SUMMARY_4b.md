@@ -48,24 +48,24 @@ Test period (kickoff >= 2025-07-01) was not touched for tuning; all evaluations 
 
 ## 2. Headline Numbers (Part B, with 95% Confidence Intervals)
 
-All calculations on validation set (seasons 2023, 2024; 1,480 matches, 48 calendar weeks). Bootstraps clustered on calendar weeks (1,000 resamples):
+All calculations on validation set (seasons 2023, 2024; 3,504 matches, 76 calendar weeks). Bootstraps clustered on calendar weeks (2,000 resamples):
 
 1. **Exact-Score Log Loss Gain**:
-   - **Share from 1X2 vs Share from Model**: $\Delta \text{LL} = -0.0157$ $[-0.0205, -0.0113]$ (Reviewer benchmark: $-0.0158$ $[-0.0206, -0.0113]$).
-   - **All from Market vs Share from Model**: $\Delta \text{LL} = -0.0163$ $[-0.0213, -0.0118]$ (Reviewer benchmark: $-0.0165$ $[-0.0214, -0.0119]$).
+   - **Share from 1X2 vs Share from Model**: $\Delta \text{LL} = -0.0157$ $[-0.0205, -0.0113]$ (Reviewer benchmark: $-0.0158$ $[-0.0206, -0.0113]$; artifact: `compare_1x2_vs_model_share.json`).
+   - **All from Market vs Share from Model**: $\Delta \text{LL} = -0.0163$ $[-0.0213, -0.0118]$ (Reviewer benchmark: $-0.0165$ $[-0.0214, -0.0119]$; artifact: `compare_all_market_vs_model_share.json`).
    - **Total Gain of Market Matrix over Pure Model**: $-0.0202$ (1X2 share) / $-0.0208$ (all from market).
 2. **Model Share Cross-Fit Weight ($\alpha$)**:
-   - $\alpha = 0.0000$ in both season directions ($2023 \to 2024$ and $2024 \to 2023$). The statistical Dixon-Coles model adds zero value over the devigged market 1X2.
+   - $\alpha_{\text{opt}} = 0.0000$ in both season directions ($2023 \to 2024$ and $2024 \to 2023$). Out-of-sample evaluation on held-out seasons yields $\Delta \text{LL} = +0.0000$ CI95 $[0.0000, +0.0000]$. The statistical Dixon-Coles model adds zero value over the devigged market 1X2.
 3. **Low-Score Correlation Parameter ($\rho$)**:
-   - $\rho$ from model vs $\rho = 0$: $\Delta \text{LL} = -0.0006$ $[-0.0026, +0.0014]$ (Reviewer benchmark: $-0.0008$ $[-0.0027, +0.0012]$). The difference is statistically indistinguishable from zero.
+   - $\rho$ from model vs $\rho = 0$: $\Delta \text{LL} = -0.0006$ $[-0.0026, +0.0014]$ (Reviewer benchmark: $-0.0008$ $[-0.0027, +0.0012]$; artifact: `compare_rho_model_vs_rho0.json`). The difference is statistically indistinguishable from zero.
 4. **Pinnacle Prematch Odds vs Consensus**:
-   - Pinnacle 1X2 share vs model share: $\Delta \text{LL} = -0.0159$ $[-0.0206, -0.0116]$ (Reviewer benchmark: $-0.0160$).
+   - Pinnacle 1X2 share vs Pinnacle model share: $\Delta \text{LL} = -0.0157$ $[-0.0204, -0.0113]$ (3,462 matches; artifact: `compare_pinnacle_1x2_vs_model_share.json`).
 5. **O/U 2.5 CLV & Mixture**:
    - Fixed prematch selection ($p \cdot \text{price}_0 - 1 \ge 0.02$): 1,533 bets selected.
    - Line moved towards us in 47.4% of bets (48.5% excluding ties). Mean shift: $0.00$ percentage points.
    - Cross-season logit mixture: Out-of-sample log loss $0.6656$ vs pure market $0.6654$ (CI $[-0.0018, +0.0021]$). CLV is strictly neutral; O/U remains reference-only.
 6. **High-Draw Correction ($\kappa_{\text{high}}$)**:
-   - Cross-fitting confirms transferability: $2023 \to 2024$ gives $k_{\text{opt}} = 0.337$; $2024 \to 2023$ gives $k_{\text{opt}} = 0.179$. Fixed value $\kappa_{\text{high}} = 0.20$ brings all score cells $0:0..3:3$ within $|z| \le 2.0$.
+   - Cross-fitting confirms transferability: $2023 \to 2024$ gives $k_{\text{opt}} = 0.337$, eval delta $-0.0003$ $[-0.0034, +0.0029]$; $2024 \to 2023$ gives $k_{\text{opt}} = 0.179$, eval delta $-0.0023$ $[-0.0044, -0.0002]$. Fixed value $\kappa_{\text{high}} = 0.20$ brings all score cells $0:0..3:3$ within $|z| \le 2.0$.
 7. **Credit Budget under `markets=totals,h2h`**:
    - 5 leagues $\times$ 3 snapshots (T-48, T-24, T-2) $\times$ 2 credits = 30 credits/round $\times$ 4 rounds = 120 credits/month.
    - Candidate snapshots (~60) + UCL `/scores` (8) = ~188 credits/30d, safely below the 450 hard stop limit.
