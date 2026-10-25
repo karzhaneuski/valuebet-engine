@@ -14,12 +14,12 @@ import os
 import sys
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from core.config import load_config
 from core.db import get_engine
-from core.orm import Match
+from core.orm import Match, PrefilterDecision
 from core.value.engine import evaluate_fortuna_prices
 from core.value.fair_matrix import build_fair_matrix
 from core.value.fortuna_input import parse_fortuna_text
@@ -122,15 +122,24 @@ def _cmd_evaluate(args: argparse.Namespace, session: Session) -> int:
     print(res.format_table())
 
     # 8. Save recommendations to DB if requested
-    if args.save and res.recommendations_count > 0:
-        saved = save_recommendations_to_db(session, match.id, res)
-        session.commit()
-        print(
-            f"\n[OK] Записано {saved} рекомендаций в таблицу 'recommendations' "
-            f"(матч ID {match.id})."
-        )
-    elif args.save:
-        print("\n[ИНФО] Рекомендаций выше порогов нет. Запись в базу не требуется.")
+    if args.save:
+        now_utc = dt.datetime.now(dt.UTC)
+        if match.commence_time_utc and now_utc >= match.commence_time_utc:
+            sys.stderr.write(
+                f"\n[ОШИБКА] Нельзя сохранять рекомендации после начала матча "
+                f"(начало: {match.commence_time_utc.isoformat()}, сейчас: {now_utc.isoformat()}).\n"
+            )
+            return 1
+
+        if res.recommendations_count > 0:
+            saved = save_recommendations_to_db(session, match.id, res)
+            session.commit()
+            print(
+                f"\n[OK] Записано {saved} рекомендаций в таблицу 'recommendations' "
+                f"(матч ID {match.id})."
+            )
+        else:
+            print("\n[ИНФО] Рекомендаций выше порогов нет. Запись в базу не требуется.")
 
     return 0
 
@@ -139,6 +148,27 @@ def _cmd_candidates(args: argparse.Namespace, session: Session) -> int:
     """Run candidate prefilter for upcoming matches."""
     today = dt.date.fromisoformat(args.from_date) if args.from_date else dt.date.today()
     end_date = today + dt.timedelta(days=args.days)
+
+    # Calculate weekly cap accounting for candidates already accepted in current ISO week
+    iso_year, iso_week, _ = today.isocalendar()
+    monday = today - dt.timedelta(days=today.weekday())
+    sunday = monday + dt.timedelta(days=6)
+
+    accepted_this_week = session.scalar(
+        select(func.count(func.distinct(PrefilterDecision.match_id)))
+        .where(
+            PrefilterDecision.decision_date >= monday,
+            PrefilterDecision.decision_date <= sunday,
+            PrefilterDecision.accepted.is_(True),
+        )
+    ) or 0
+
+    effective_weekly_cap = max(0, args.cap - accepted_this_week)
+    if accepted_this_week > 0:
+        print(
+            f"[ИНФО] В ISO-неделю {iso_year}-W{iso_week:02d} уже отобрано {accepted_this_week} "
+            f"кандидатов. Оставшийся лимит: {effective_weekly_cap} (из {args.cap}).\n"
+        )
 
     stmt = (
         select(Match)
@@ -186,12 +216,13 @@ def _cmd_candidates(args: argparse.Namespace, session: Session) -> int:
                 league=m.league,
                 kickoff=kickoff,
                 fair_matrix=fair_mat,
+                has_fortuna_grid=args.has_fortuna_grid,
             )
         )
 
     report = filter_candidates(
         candidate_items,
-        weekly_cap=args.cap,
+        weekly_cap=effective_weekly_cap,
         max_per_league=args.max_per_league,
     )
 
@@ -293,6 +324,19 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=3,
         help="Максимум матчей из одной лиги для ротации (по умолчанию 3)",
+    )
+    cand_p.add_argument(
+        "--has-fortuna-grid",
+        dest="has_fortuna_grid",
+        action="store_true",
+        default=None,
+        help="Считать, что сетка Fortuna доступна",
+    )
+    cand_p.add_argument(
+        "--no-fortuna-grid",
+        dest="has_fortuna_grid",
+        action="store_false",
+        help="Считать, что сетка Fortuna отсутствует (отклонить всех кандидатов)",
     )
     cand_p.add_argument(
         "--save",

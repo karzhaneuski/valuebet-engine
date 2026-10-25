@@ -218,3 +218,58 @@ def test_evaluation_summary_table_output(sample_fair_matrix: FairMatrix) -> None
     assert "Аномалия модели" in table
     assert "Исход" in table and "Fortuna" in table and "p_fair" in table and "Edge" in table
     assert "Итого рекомендаций:" in table
+
+
+def test_inny_incomplete_vs_complete_grid(sample_fair_matrix: FairMatrix) -> None:
+    # 1. Incomplete grid: 3 scores + inny
+    p_inny = FortunaPrice("other", "other", 25.0, "inny", 4)
+    res_incomp = evaluate_fortuna_prices(
+        sample_fair_matrix,
+        [
+            FortunaPrice("exact_score", (1, 0), 7.0, "1:0", 1),
+            FortunaPrice("exact_score", (2, 0), 10.0, "2:0", 2),
+            FortunaPrice("exact_score", (2, 1), 9.0, "2:1", 3),
+            p_inny,
+        ],
+    )
+    inny_out = res_incomp.outcomes[-1]
+    assert inny_out.recommended is False
+    assert "Неполная сетка Fortuna (3 из 25): inny не оценивается" in inny_out.rejection_reason
+
+    # 2. Complete grid: all 25 scores + inny
+    all_25_prices = [
+        FortunaPrice("exact_score", (h, a), 15.0, f"{h}:{a}", i + 1)
+        for i, (h, a) in enumerate([(h, a) for h in range(5) for a in range(5)])
+    ]
+    all_25_prices.append(FortunaPrice("other", "other", 25.0, "inny", 26))
+    res_comp = evaluate_fortuna_prices(sample_fair_matrix, all_25_prices)
+    inny_out_comp = res_comp.outcomes[-1]
+    assert inny_out_comp.recommended is False
+    assert inny_out_comp.p_fair is not None
+    assert inny_out_comp.p_fair == pytest.approx(1.0 - sample_fair_matrix.matrix[:5, :5].sum())
+    assert "Справочно: inny (хвост 5+ смещен, z=-2.25)" in inny_out_comp.rejection_reason
+
+
+def test_implausible_edge_guards(sample_fair_matrix: FairMatrix) -> None:
+    p_21 = sample_fair_matrix.exact_score(2, 1)
+    # Exact score with 45% edge (> 40% cap) -> rejected as implausible
+    p_crazy_cs = (1.0 / p_21) * 1.45
+    item_crazy_cs = FortunaPrice("exact_score", (2, 1), p_crazy_cs, "2:1", 1)
+
+    # Multiscore with 30% edge (> 25% cap) -> rejected as implausible
+    p_multi = sample_fair_matrix.multiscore([(1, 0), (2, 0)])
+    p_crazy_ms = (1.0 / p_multi) * 1.30
+    item_crazy_ms = FortunaPrice("multiscore", frozenset([(1, 0), (2, 0)]), p_crazy_ms, "multi", 2)
+
+    # Goals range with 28% edge (> 25% cap) -> rejected as implausible
+    p_range = sample_fair_matrix.goals_range(2, 4)
+    p_crazy_rg = (1.0 / p_range) * 1.28
+    item_crazy_rg = FortunaPrice("goals_range", (2, 4), p_crazy_rg, "2-4 gole", 3)
+
+    res = evaluate_fortuna_prices(
+        sample_fair_matrix,
+        [item_crazy_cs, item_crazy_ms, item_crazy_rg],
+    )
+    for out in res.outcomes:
+        assert out.recommended is False
+        assert "Неправдоподобный edge" in out.rejection_reason

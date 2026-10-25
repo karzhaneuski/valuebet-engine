@@ -102,3 +102,9 @@ def test_secrets_never_required() -> None:
     # secrets come from .env; empty defaults must not break loading
     s = load_secrets()
     assert isinstance(s.api_token, str)
+
+
+def test_fortuna_config(config: AppConfig) -> None:
+    assert config.fortuna.cs_grid_max_goals == 4
+    assert config.thresholds.implausible_edge_exact_score == 0.40
+    assert config.thresholds.implausible_edge_multiscore == 0.25

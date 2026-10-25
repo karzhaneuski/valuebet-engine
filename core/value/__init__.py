@@ -23,6 +23,7 @@ from core.value.fortuna_input import (
     FortunaParseError,
     FortunaPrice,
     calculate_fortuna_overround,
+    calculate_section_overrounds,
     parse_fortuna_line,
     parse_fortuna_text,
 )
@@ -64,6 +65,7 @@ __all__ = [
     "build_pinnacle_benchmark_matrix",
     "calculate_fortuna_overround",
     "calculate_kelly_quarter_capped",
+    "calculate_section_overrounds",
     "check_model_anomaly",
     "compare_matrices",
     "compute_high_draws_mass",

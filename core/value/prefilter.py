@@ -255,11 +255,14 @@ def filter_candidates(
         if len(accepted_matches) >= cap:
             break
 
-    # If weekly cap is not yet reached and some leagues have remaining matches beyond league_cap,
-    # fill remaining slots up to weekly_cap
+    # If weekly cap is not yet reached and some leagues have remaining matches,
+    # fill remaining slots up to weekly_cap while strictly enforcing league_cap (no bypass)
     if len(accepted_matches) < cap:
         remaining_pool = [
-            m for m in eligible if m.match_id not in accepted_set
+            m
+            for m in eligible
+            if m.match_id not in accepted_set
+            and accepted_by_league.get(m.league, 0) < league_cap
         ]
         remaining_pool.sort(
             key=lambda x: high_draw_map[x.match_id],
@@ -268,6 +271,8 @@ def filter_candidates(
         for cand in remaining_pool:
             if len(accepted_matches) >= cap:
                 break
+            if accepted_by_league.get(cand.league, 0) >= league_cap:
+                continue
             accepted_matches.append(cand)
             accepted_set.add(cand.match_id)
             accepted_by_league[cand.league] = accepted_by_league.get(cand.league, 0) + 1

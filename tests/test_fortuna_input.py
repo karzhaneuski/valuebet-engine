@@ -69,13 +69,43 @@ def test_parse_goals_range_formats() -> None:
         ("2-4 гола 1.80", (2, 4), 1.80),
         ("0-1 goli @ 3.20", (0, 1), 3.20),
         ("2-3 goals 2.05", (2, 3), 2.05),
-        ("2–4 @ 1.85", (2, 4), 1.85),
     ]
     for raw, exp_sel, exp_odds in cases:
         p = parse_fortuna_line(raw)
         assert p.market == "goals_range"
         assert p.selection == exp_sel
         assert p.odds == pytest.approx(exp_odds)
+
+
+def test_dashes_without_keywords_parse_as_exact_score() -> None:
+    """Hyphen, en-dash, em-dash without range keywords must parse as exact score."""
+    cases = [
+        ("1–2 7.00", (1, 2), 7.00),
+        ("2–1 9.50", (2, 1), 9.50),
+        ("2–4 @ 1.85", (2, 4), 1.85),
+        ("3—1 15.0", (3, 1), 15.0),
+        ("0-0 10.0", (0, 0), 10.0),
+    ]
+    for raw, exp_sel, exp_odds in cases:
+        p = parse_fortuna_line(raw)
+        assert p.market == "exact_score"
+        assert p.selection == exp_sel
+        assert p.odds == pytest.approx(exp_odds)
+
+
+def test_exact_score_outside_grid_raises_error() -> None:
+    """Scores outside config grid (0..4) must raise FortunaParseError."""
+    with pytest.raises(FortunaParseError) as exc1:
+        parse_fortuna_line("5:0 12.0")
+    assert "вне стандартной сетки Fortuna 0..4" in str(exc1.value)
+
+    with pytest.raises(FortunaParseError) as exc2:
+        parse_fortuna_line("0:5 15.0")
+    assert "вне стандартной сетки Fortuna 0..4" in str(exc2.value)
+
+    with pytest.raises(FortunaParseError) as exc3:
+        parse_fortuna_line("5-2 30.0")
+    assert "вне стандартной сетки Fortuna 0..4" in str(exc3.value)
 
 
 def test_parse_reference_totals_and_h2h() -> None:
@@ -180,8 +210,8 @@ def test_calculate_fortuna_overround() -> None:
     sparse = parse_fortuna_text("1:0 @ 6.5; 2:1 @ 8.5; 0:0 @ 10.0")
     assert calculate_fortuna_overround(sparse) is None
 
-    # 2. Complete realistic grid (16 scores + other)
-    full_grid_text = """
+    # 2. Incomplete grid (16 scores + other) with grid_max_goals=4 -> returns None
+    grid16_text = """
     1:0 @ 7.00
     2:0 @ 10.00
     2:1 @ 9.00
@@ -200,8 +230,72 @@ def test_calculate_fortuna_overround() -> None:
     2:3 @ 32.00
     inny wynik @ 25.00
     """
-    grid_items = parse_fortuna_text(full_grid_text)
-    margin = calculate_fortuna_overround(grid_items)
+    grid16_items = parse_fortuna_text(grid16_text)
+    assert calculate_fortuna_overround(grid16_items, grid_max_goals=4) is None
+    # But with grid_max_goals=3 (16 scores + other), it is complete
+    margin16 = calculate_fortuna_overround(grid16_items, grid_max_goals=3)
+    assert margin16 is not None
+    assert 0.05 < margin16 < 0.35
+
+
+def test_parse_real_fortuna_fixture_barcelona_real() -> None:
+    """Test parsing complete real Fortuna copy-paste fixture."""
+    from pathlib import Path
+
+    fixture_path = Path("tests/fixtures/fortuna_barcelona_real_2026-10-25.txt")
+    assert fixture_path.exists()
+    content = fixture_path.read_text(encoding="utf-8")
+    items = parse_fortuna_text(content)
+
+    # 1. Exact scores: 25 scores + inny
+    cs_items = [it for it in items if it.market in ("exact_score", "other")]
+    assert len(cs_items) == 26
+    margin = calculate_fortuna_overround(items, grid_max_goals=4)
     assert margin is not None
-    # Bookmaker margin on exact score grids is typically ~10% to 25% (0.10 - 0.25)
-    assert 0.05 < margin < 0.35
+    # Real Fortuna margin on El Clasico exact score is ~32.7%
+    assert 0.30 < margin < 0.35
+
+    # 2. Multiwynik items: 11 outcomes
+    multi_items = [it for it in items if it.market == "multiscore"]
+    assert len(multi_items) == 11
+    # Check Remis in multiwynik parsed as multi:remis
+    remis_it = next(it for it in multi_items if it.selection == "multi:remis")
+    assert remis_it.odds == pytest.approx(4.60)
+    # Check other win phrases
+    assert any(it.selection == "multi:home_other" for it in multi_items)
+    assert any(it.selection == "multi:away_other" for it in multi_items)
+
+    # 3. Totals items
+    tot_items = [it for it in items if it.market == "totals"]
+    assert len(tot_items) > 10
+    tot_25_u = next(it for it in tot_items if it.selection == ("under", 2.5))
+    tot_25_o = next(it for it in tot_items if it.selection == ("over", 2.5))
+    assert tot_25_u.odds == pytest.approx(4.70)
+    assert tot_25_o.odds == pytest.approx(1.21)
+
+    # 4. Team totals
+    tt_items = [it for it in items if it.market == "team_totals"]
+    assert len(tt_items) > 0
+
+
+def test_parse_real_fortuna_fixtures_udinese_and_nice() -> None:
+    """Test parsing Udinese - Milan and Nice - Rennes real copy-paste fixtures."""
+    from pathlib import Path
+
+    for fname, exp_margin_range in [
+        ("fortuna_udinese_milan_2026-10-25.txt", (0.30, 0.35)),
+        ("fortuna_nice_rennes_2026-10-25.txt", (0.30, 0.35)),
+    ]:
+        p = Path(f"tests/fixtures/{fname}")
+        assert p.exists()
+        items = parse_fortuna_text(p.read_text(encoding="utf-8"))
+        cs_items = [it for it in items if it.market in ("exact_score", "other")]
+        assert len(cs_items) == 26
+        margin = calculate_fortuna_overround(items, grid_max_goals=4)
+        assert margin is not None
+        assert exp_margin_range[0] < margin < exp_margin_range[1]
+
+        # Multiwynik has 11 outcomes
+        multi_items = [it for it in items if it.market == "multiscore"]
+        assert len(multi_items) == 11
+        assert any(it.selection == "multi:remis" for it in multi_items)

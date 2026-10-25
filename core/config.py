@@ -76,11 +76,25 @@ class ModelConfig(BaseModel):
 
 
 class ThresholdsConfig(BaseModel):
+    # Uncalibrated initial starting thresholds (empirical tuning occurs via forward CLV)
     totals_edge: float | None = None  # reference-only (totals have no reco)
-    multiscore_edge: float = 0.08
-    exact_score_edge: float = 0.12
+    multiscore_edge: float = 0.08     # uncalibrated starting threshold
+    exact_score_edge: float = 0.12    # uncalibrated starting threshold
     exact_score_min_p: float = 0.04
     exact_score_max_odds: float = 21.0
+    implausible_edge_exact_score: float = 0.40
+    implausible_edge_multiscore: float = 0.25
+    implausible_edge_goals_range: float = 0.25
+    multiscore_max_odds: float = 15.0
+    multiscore_min_p: float = 0.06
+    goals_range_max_odds: float = 8.0
+    goals_range_min_p: float = 0.15
+
+
+class FortunaConfig(BaseModel):
+    """Fortuna bookmaker grid configuration."""
+
+    cs_grid_max_goals: int = 4  # 0..4 goals per team (25 scores + inny)
 
 
 class RiskFlagsConfig(BaseModel):
@@ -258,6 +272,7 @@ class AppConfig(BaseModel):
     llm: LlmModelsConfig = Field(default_factory=LlmModelsConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     ingest: IngestConfig = Field(default_factory=IngestConfig)
+    fortuna: FortunaConfig = Field(default_factory=FortunaConfig)
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:

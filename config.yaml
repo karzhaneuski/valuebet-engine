@@ -56,10 +56,20 @@ model:                           # frozen by phase-4 backtest (FROZEN_CONFIG.jso
   weight_xg: 0.5                 # w=1.0 uniformly worst on validation
 
 thresholds:
-  multiscore_edge: 0.08
-  exact_score_edge: 0.12
+  multiscore_edge: 0.08          # uncalibrated initial starting threshold
+  exact_score_edge: 0.12         # uncalibrated initial starting threshold
   exact_score_min_p: 0.04
   exact_score_max_odds: 21.0
+  implausible_edge_exact_score: 0.40
+  implausible_edge_multiscore: 0.25
+  implausible_edge_goals_range: 0.25
+  multiscore_max_odds: 15.0
+  multiscore_min_p: 0.06
+  goals_range_max_odds: 8.0
+  goals_range_min_p: 0.15
+
+fortuna:
+  cs_grid_max_goals: 4           # standard 0..4 grid (25 scores + inny)
 
 fair_matrix:
   rho: 0.0

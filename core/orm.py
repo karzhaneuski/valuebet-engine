@@ -81,6 +81,7 @@ ODD_MARKETS = ("totals", "btts", "correct_score", "alternate_totals")
 # spelling of the exact-score market, exact_score/multiscore/goals_range
 # are our internal names
 RECO_MARKETS = ("exact_score", "multiscore", "goals_range", "totals", "btts")
+RECO_STATUSES = ("active", "superseded", "withdrawn")
 ODD_TIERS = ("T-48", "T-24", "T-3", "T-1", "manual", "off_window")
 ODD_SOURCES = ("toa", "manual_fortuna")
 CLV_SOURCES = ("avgc", "maxc", "own_snapshot_t3")
@@ -262,15 +263,25 @@ class Recommendation(Base):
         # shadow_llm recommendations must reference their LLM call
         CheckConstraint("variant != 'shadow_llm' OR llm_call_id IS NOT NULL",
                         name="ck_recommendations_shadow_llm_call"),
-        UniqueConstraint(
-            "match_id", "market", "outcome", "variant", "input_hash",
-            name="uq_recommendations_idempotency",
+        Index(
+            "uq_recommendations_active",
+            "match_id",
+            "market",
+            "selection_key",
+            "variant",
+            unique=True,
+            sqlite_where=sa_text("status = 'active'"),
+            postgresql_where=sa_text("status = 'active'"),
         ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
     market: Mapped[str] = mapped_column(sa_enum(*RECO_MARKETS, name="reco_market"))
+    selection_key: Mapped[str] = mapped_column(String(80), nullable=False, default="", index=True)
+    status: Mapped[str] = mapped_column(
+        sa_enum(*RECO_STATUSES, name="reco_status"), default="active", server_default="active"
+    )
     line: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
     outcome: Mapped[str] = mapped_column(String(40))
     # multiscore: JSON array like [[1,0],[2,0],[2,1]]; goals_range: lo-hi
@@ -279,7 +290,7 @@ class Recommendation(Base):
     goals_range_hi: Mapped[int | None] = mapped_column(Integer)
     bookmaker: Mapped[str | None] = mapped_column(String(60))
     odds: Mapped[Decimal] = mapped_column(Numeric(8, 3))
-    p_model: Mapped[Decimal] = mapped_column(Numeric(6, 4))
+    p_model: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
     p_market_devig: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
     edge: Mapped[Decimal] = mapped_column(Numeric(6, 4))
     kelly_quarter_capped: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))

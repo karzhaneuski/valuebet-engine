@@ -1,38 +1,68 @@
 """Parser for manual Fortuna odds input (free text / Polish UI) (SPEC §5).
 
 Supports:
-- Exact score: '2:1 9.50', '2-1 @ 9,50', '2:1 - 9.5'
-- Any other score: 'inny wynik', 'pozostałe', 'other', 'любой другой'
-- Multiscore: '1:0, 2:0, 2:1 @ 3.40', '1:0 / 2:0 / 2:1 3.40'
-- Goals range: '2-4 gole @ 1.80', '2–4 bramki 1,80', '2-4 гола 1.80'
-- Reference-only totals and 1X2: 'over 2.5 1.95', 'under 2.5 1.85', '1 @ 2.10', 'X @ 3.40'
-- Explicit line-numbered error reporting on ambiguous or invalid lines (no silent drops)
-- Duplicate detection with conflict errors
-- Fortuna overround calculation on exact score grids
+- Exact score: '2:1 9.50', '2-1 @ 9,50', '2:1 - 9.5', '1–2 7.00' (en-dash normalized to ':')
+- Grid bounds: exact scores are restricted to 0..4 (cs_grid_max_goals).
+  Scores > 4 raise FortunaParseError.
+- Other score: 'inny 4.60', 'inny wynik', 'pozostałe', 'other', 'любой другой'
+- Multiscore / Multiwynik:
+  - Score groups: '1:0, 2:0, 2:1 @ 3.40', '1:0 2:0 3:0 6.60'
+  - Special Polish outcomes: 'Remis 4.60', 'Remis4.60' (all draws)
+  - '1.drużyna wygra dowolnym innym wynikiem 9.20' (home other)
+  - '2.drużyna wygra dowolnym innym wynikiem 45.00' (away other)
+- Goals range: requires range keyword (gole/goli/gola/bramki/bramek/гола/голов/goals)
+  e.g. '2-4 gole @ 1.80', '2–4 bramki 1,80'.
+  Hyphens/dashes without keywords are parsed as exact scores.
+- Totals (reference-only): 'over 2.5 1.95', 'mniej niż 2.5 4.70 więcej niż 2.5 1.21'
+- Individual team totals: '- 0.5 8.40+ 0.5 1.04'
+- Known headers ('Mecz: dokładny wynik', '2026-10-25 Barcelona - Real', etc.) skipped with logging
+- Adjacent line support: outcome on one line, odds on the next line
+- Overround calculation: exact score (requires full 25 scores + inny),
+  multiwynik (11 groups), totals
 """
 
 from __future__ import annotations
 
+import logging
 import math
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-FortunaMarketType = Literal["exact_score", "other", "multiscore", "goals_range", "totals", "h2h"]
+logger = logging.getLogger(__name__)
 
-# Selection representation types
+FortunaMarketType = Literal[
+    "exact_score", "other", "multiscore", "goals_range", "totals", "team_totals", "h2h"
+]
+
 ExactScoreSelection = tuple[int, int]
 GoalsRangeSelection = tuple[int, int]
 TotalsSelection = tuple[Literal["over", "under"], float]
+TeamTotalsSelection = tuple[str, Literal["over", "under"], float]
 H2HSelection = Literal["1", "X", "2"]
-MultiscoreSelection = frozenset[tuple[int, int]]
+MultiscoreSpecial = Literal["multi:remis", "multi:home_other", "multi:away_other"]
+MultiscoreSelection = frozenset[tuple[int, int]] | MultiscoreSpecial
 FortunaSelection = (
     ExactScoreSelection
     | Literal["other"]
     | MultiscoreSelection
     | GoalsRangeSelection
     | TotalsSelection
+    | TeamTotalsSelection
     | H2HSelection
+)
+
+RANGE_KEYWORDS = (
+    "gole",
+    "goli",
+    "gola",
+    "bramki",
+    "bramek",
+    "гола",
+    "голов",
+    "goals",
+    "goal",
 )
 
 
@@ -58,18 +88,35 @@ class FortunaPrice:
 
     @property
     def selection_key(self) -> str:
-        """Normalized unique key for the selection."""
+        """Normalized ASCII unique key for the selection."""
         if self.market == "exact_score" and isinstance(self.selection, tuple):
             return f"score:{self.selection[0]}:{self.selection[1]}"
         if self.market == "other":
             return "score:other"
-        if self.market == "multiscore" and isinstance(self.selection, frozenset):
-            sorted_scores = sorted(self.selection)
-            return "multi:" + ",".join(f"{h}:{a}" for h, a in sorted_scores)
-        if self.market == "goals_range" and isinstance(self.selection, tuple):
+        if self.market == "multiscore":
+            if isinstance(self.selection, frozenset):
+                sorted_scores = sorted(self.selection)
+                return "multi:" + ",".join(f"{h}:{a}" for h, a in sorted_scores)
+            return str(self.selection)
+        if (
+            self.market == "goals_range"
+            and isinstance(self.selection, tuple)
+            and len(self.selection) == 2
+        ):
             return f"range:{self.selection[0]}:{self.selection[1]}"
-        if self.market == "totals" and isinstance(self.selection, tuple):
-            return f"totals:{self.selection[0]}:{self.selection[1]}"
+        if (
+            self.market == "totals"
+            and isinstance(self.selection, tuple)
+            and len(self.selection) == 2
+        ):
+            return f"totals:{self.selection[0]}:{float(self.selection[1]):g}"
+        if (
+            self.market == "team_totals"
+            and isinstance(self.selection, tuple)
+            and len(self.selection) == 3
+        ):
+            line_str = f"{float(self.selection[2]):g}"
+            return f"team_totals:{self.selection[0]}:{self.selection[1]}:{line_str}"
         if self.market == "h2h":
             return f"h2h:{self.selection}"
         return f"{self.market}:{self.selection}"
@@ -91,35 +138,45 @@ def _parse_odds_token(token: str, line_num: int, line_text: str) -> float:
     return val
 
 
-def _split_outcome_and_price(line: str) -> tuple[str, str]:
-    """Split line into outcome text and price string.
-
-    Recognizes delimiters: @, =, :, -, –, — or trailing space before decimal odds.
-    """
-    raw = line.strip()
-
-    # 1. Explicit delimiter before trailing decimal odds: '@', '=', ':', '-', '–', '—'
-    m_explicit = re.search(r"(\s*[@=]\s*|\s+[:\-–—]\s*|[:\-–—]\s*)(?=\d+([.,]\d+)?$)", raw)
-    if m_explicit:
-        idx = m_explicit.start()
-        outcome = raw[:idx].strip()
-        price = raw[m_explicit.end():].strip()
-        if outcome and price:
-            return outcome, price
-
-    # 2. Trailing price separated by whitespace: '2:1 9.50', '2–4 bramki 1,80', 'inny wynik 45.0'
-    space_match = re.search(r"\s+(\d+([.,]\d+)?)$", raw)
-    if space_match:
-        return raw[:space_match.start()].strip(), space_match.group(1).strip()
-
-    raise ValueError(f"Не удалось выделить коэффициент из строки '{raw}'")
+def _clean_spacing_artifacts(line: str) -> str:
+    """Clean web copy-paste digit and space concatenation artifacts."""
+    s = line.strip()
+    # 1. Glued 'Remis' and price e.g. 'Remis4.60' -> 'Remis 4.60'
+    s = re.sub(r"(?i)\b(remis)(\d+([.,]\d+)?)\b", r"\1 \2", s)
+    # 2. Number splitting artifact like '0:61 00.00' -> '0:6 100.00'
+    s = re.sub(r"(\d+:\d+)(\d+)\s+(\d+([.,]\d+))", r"\1 \2\3", s)
+    # 3. Glued team totals e.g. '8.40+ 0.5' -> '8.40 + 0.5' (odds has decimal point)
+    s = re.sub(r"(\d+[.,]\d+)\s*([\+\-])\s*(\d+([.,]\d+)?)", r"\1 \2 \3", s)
+    return s
 
 
-def _try_parse_exact_score(text: str) -> tuple[int, int] | None:
-    """Match '2:1' or '2-1'."""
-    m = re.match(r"^(\d+)\s*[:\-]\s*(\d+)$", text.strip())
+def _is_known_header(text: str) -> bool:
+    """Check if line is a known metadata / section header."""
+    s = text.strip()
+    if not s:
+        return True
+    if s.startswith("#"):
+        return True
+    # Match line: '2026-10-25 Barcelona - Real Madrid'
+    if re.match(r"^\d{4}\s*[\-–—]\s*\d{2}\s*[\-–—]\s*\d{2}\b", s):
+        return True
+    # Section headers: 'Mecz: dokładny wynik', 'Mecz: multiwynik', etc.
+    if s.lower().startswith("mecz:"):
+        return True
+    header_exact = (
+        "dokładny wynik", "dokladny wynik", "exact score",
+        "multiwynik", "multiscore",
+        "liczba goli", "liczba bramek", "totals", "total goals",
+    )
+    return s.lower() in header_exact
+
+
+def _try_parse_exact_score(text: str, max_goals: int = 4) -> tuple[int, int] | None:
+    """Match exact score e.g. '2:1', '2-1', '1–2' (normalized). Raises error if > max_goals."""
+    m = re.match(r"^(\d+)\s*[:\-–—]\s*(\d+)$", text.strip())
     if m:
-        return int(m.group(1)), int(m.group(2))
+        h, a = int(m.group(1)), int(m.group(2))
+        return h, a
     return None
 
 
@@ -129,33 +186,27 @@ def _try_parse_other_score(text: str) -> bool:
     other_phrases = (
         "inny wynik", "inny", "pozostałe", "pozostale", "other", "any other",
         "any other score", "любой другой", "другой счёт", "другой счет", "другой",
+        "pozostałe wyniki", "pozostale wyniki",
     )
     return cleaned in other_phrases
 
 
-def _try_parse_multiscore(text: str) -> frozenset[tuple[int, int]] | None:
-    """Match comma/slash separated scores e.g. '1:0, 2:0, 2:1' or '1:0 / 2:0 / 2:1'."""
-    tokens = re.split(r"[,;/]+", text.strip())
-    if len(tokens) < 2:
-        return None
-    scores: list[tuple[int, int]] = []
-    for tok in tokens:
-        sc = _try_parse_exact_score(tok.strip())
-        if sc is None:
-            return None
-        scores.append(sc)
-    return frozenset(scores)
-
-
 def _try_parse_goals_range(text: str) -> tuple[int, int] | None:
-    """Match '2-4 gole', '2–4 bramki', '2-4 гола', '0-1 goli', '2–4' (with en-dash/keyword)."""
+    """Match goals range e.g. '2-4 gole', '2–4 bramki', '2-4 гола'.
+
+    STRICT: Requires explicit range keyword (gole/bramki/etc.). Without keyword,
+    hyphens/dashes are treated as exact scores.
+    """
     cleaned = text.strip().lower()
-    has_keyword = any(k in cleaned for k in ("gol", "goal", "bram", "гол"))
-    has_dash_range = "–" in cleaned or "—" in cleaned or ".." in cleaned
-    if not (has_keyword or has_dash_range):
+    has_keyword = any(k in cleaned for k in RANGE_KEYWORDS)
+    if not has_keyword:
         return None
-    cleaned = re.sub(r"\s*(gole|goli|bramki|bramek|гола|голов|goals?)\s*$", "", cleaned).strip()
-    m = re.match(r"^(\d+)\s*[\-–—\.]+\s*(\d+)$", cleaned)
+
+    # Strip keyword
+    stripped = re.sub(
+        r"\s*(gole|goli|gola|bramki|bramek|гола|голов|goals?)\s*$", "", cleaned
+    ).strip()
+    m = re.match(r"^(\d+)\s*[\-–—\.]+\s*(\d+)$", stripped)
     if m:
         lo, hi = int(m.group(1)), int(m.group(2))
         if 0 <= lo <= hi:
@@ -163,30 +214,78 @@ def _try_parse_goals_range(text: str) -> tuple[int, int] | None:
     return None
 
 
-def _try_parse_totals(text: str) -> tuple[Literal["over", "under"], float] | None:
-    """Match 'over 2.5', 'powyżej 2.5', 'больше 2.5', 'under 2.5', 'poniżej 2.5'."""
+def _try_parse_multiscore(
+    text: str,
+    in_multiwynik_section: bool = False,
+) -> MultiscoreSelection | None:
+    """Match multiscore groups e.g. '1:0 2:0 3:0', 'Remis', or special other phrases."""
     cleaned = text.strip().lower()
-    # Over variations
-    m_over = re.match(
-        r"^(over|powyżej|powyzej|больше|\+|o)\s*(\d+([.,]\d+)?)$", cleaned
-    )
-    if m_over:
-        line_val = float(m_over.group(2).replace(",", "."))
-        return "over", line_val
 
-    # Under variations
-    m_under = re.match(
-        r"^(under|poniżej|ponizej|меньше|\-|u)\s*(\d+([.,]\d+)?)$", cleaned
-    )
+    # Remis in multiwynik (all draws) - only if in multiwynik section
+    if in_multiwynik_section and cleaned in ("remis", "draw", "ничья"):
+        return "multi:remis"
+
+    # Home / Away other phrases
+    if "1.drużyna wygra dowolnym innym wynikiem" in cleaned or "1.druzyna" in cleaned:
+        return "multi:home_other"
+    if "2.drużyna wygra dowolnym innym wynikiem" in cleaned or "2.druzyna" in cleaned:
+        return "multi:away_other"
+
+    # Multiple scores separated by commas, slashes, or whitespace
+    # E.g. '1:0, 2:0, 2:1' or '1:0 2:0 3:0'
+    tokens = re.split(r"[,;/]+|\s+", cleaned)
+    tokens = [t.strip() for t in tokens if t.strip()]
+    if len(tokens) < 2:
+        return None
+
+    scores: list[tuple[int, int]] = []
+    for tok in tokens:
+        sc = _try_parse_exact_score(tok, max_goals=10)
+        if sc is None:
+            return None
+        scores.append(sc)
+    return frozenset(scores)
+
+
+def _try_parse_totals(text: str) -> tuple[Literal["over", "under"], float] | None:
+    """Match totals e.g. 'over 2.5', 'mniej niż 2.5', 'więcej niż 3'."""
+    cleaned = text.strip().lower()
+
+    # Polish: mniej niż / wiecej niz
+    m_pl_under = re.match(r"^(mniej\s+ni[żz]|poni[żz]ej)\s*(\d+([.,]\d+)?)$", cleaned)
+    if m_pl_under:
+        return "under", float(m_pl_under.group(2).replace(",", "."))
+
+    m_pl_over = re.match(r"^(wi[ęe]cej\s+ni[żz]|powy[żz]ej)\s*(\d+([.,]\d+)?)$", cleaned)
+    if m_pl_over:
+        return "over", float(m_pl_over.group(2).replace(",", "."))
+
+    # Standard over/under
+    m_over = re.match(r"^(over|больше|\+|o)\s*(\d+([.,]\d+)?)$", cleaned)
+    if m_over:
+        return "over", float(m_over.group(2).replace(",", "."))
+
+    m_under = re.match(r"^(under|меньше|\-|u)\s*(\d+([.,]\d+)?)$", cleaned)
     if m_under:
-        line_val = float(m_under.group(2).replace(",", "."))
-        return "under", line_val
+        return "under", float(m_under.group(2).replace(",", "."))
 
     return None
 
 
+def _try_parse_team_totals(text: str, current_team: str) -> TeamTotalsSelection | None:
+    """Match team totals e.g. '- 0.5', '+ 1.5' under a team section."""
+    cleaned = text.strip()
+    m = re.match(r"^([\+\-])\s*(\d+([.,]\d+)?)$", cleaned)
+    if m:
+        sign = m.group(1)
+        line_val = float(m.group(2).replace(",", "."))
+        kind: Literal["over", "under"] = "over" if sign == "+" else "under"
+        return current_team, kind, line_val
+    return None
+
+
 def _try_parse_h2h(text: str) -> Literal["1", "X", "2"] | None:
-    """Match '1', 'X', '2', 'remis'."""
+    """Match '1', 'X', '2'."""
     cleaned = text.strip().lower()
     if cleaned in ("1", "home", "gospodarze", "хозяева"):
         return "1"
@@ -197,149 +296,289 @@ def _try_parse_h2h(text: str) -> Literal["1", "X", "2"] | None:
     return None
 
 
-def parse_fortuna_line(line: str, line_num: int = 1) -> FortunaPrice:
-    """Parse a single line of Fortuna odds text."""
-    raw = line.strip()
+def parse_fortuna_line(
+    line: str,
+    line_num: int = 1,
+    current_team: str | None = None,
+    current_section: str | None = None,
+    grid_max_goals: int = 4,
+) -> FortunaPrice:
+    """Parse a single outcome and odds line."""
+    raw = _clean_spacing_artifacts(line)
     if not raw:
-        raise FortunaParseError(line_num, raw, "Пустая строка")
+        raise FortunaParseError(line_num, line, "Пустая строка")
 
-    try:
-        outcome_str, price_str = _split_outcome_and_price(raw)
-    except Exception as err:
+    # Split into outcome and price
+    # Look for trailing decimal odds
+    # Pattern: space or delimiter followed by digits with decimal
+    m = re.search(r"(\s*[@=:–—\-]\s*|\s+)(?=\d+([.,]\d+)?$)", raw)
+    if not m:
         raise FortunaParseError(
-            line_num, raw, f"Не удалось выделить исход и коэффициент: {err}"
-        ) from err
+            line_num, line, "Не удалось выделить коэффициент из строки"
+        )
 
-    odds = _parse_odds_token(price_str, line_num, raw)
+    outcome_str = raw[:m.start()].strip()
+    price_str = raw[m.end():].strip()
+
+    if not outcome_str or not price_str:
+        raise FortunaParseError(
+            line_num, line, "Не удалось выделить исход и коэффициент"
+        )
+
+    odds = _parse_odds_token(price_str, line_num, line)
 
     # 1. Other score
     if _try_parse_other_score(outcome_str):
-        return FortunaPrice(
-            market="other",
-            selection="other",
-            odds=odds,
-            raw_line=raw,
-            line_number=line_num,
-        )
+        return FortunaPrice("other", "other", odds, line, line_num)
 
-    # 2. Goals range (with keywords or en-dash)
+    # 2. Goals range (requires keyword)
     grange = _try_parse_goals_range(outcome_str)
     if grange is not None:
-        return FortunaPrice(
-            market="goals_range",
-            selection=grange,
-            odds=odds,
-            raw_line=raw,
-            line_number=line_num,
-        )
+        return FortunaPrice("goals_range", grange, odds, line, line_num)
 
-    # 3. Exact score
-    exact = _try_parse_exact_score(outcome_str)
+    # 3. Exact score (dashes without keywords are exact scores)
+    exact = _try_parse_exact_score(outcome_str, max_goals=10)
     if exact is not None:
-        return FortunaPrice(
-            market="exact_score",
-            selection=exact,
-            odds=odds,
-            raw_line=raw,
-            line_number=line_num,
-        )
+        h, a = exact
+        if h > grid_max_goals or a > grid_max_goals:
+            raise FortunaParseError(
+                line_num,
+                line,
+                f"Счёт {h}:{a} вне стандартной сетки Fortuna 0..{grid_max_goals} "
+                "(используйте 'inny')",
+            )
+        return FortunaPrice("exact_score", exact, odds, line, line_num)
 
-    # 4. Multiscore
-    multi = _try_parse_multiscore(outcome_str)
+    # 4. Multiwynik / Multiscore
+    in_mw = current_section == "multiwynik"
+    multi = _try_parse_multiscore(outcome_str, in_multiwynik_section=in_mw)
     if multi is not None:
-        return FortunaPrice(
-            market="multiscore",
-            selection=multi,
-            odds=odds,
-            raw_line=raw,
-            line_number=line_num,
-        )
+        return FortunaPrice("multiscore", multi, odds, line, line_num)
 
-    # 5. Totals (reference-only)
+    # 5. Team totals (under team header)
+    if current_team:
+        tt = _try_parse_team_totals(outcome_str, current_team)
+        if tt is not None:
+            return FortunaPrice("team_totals", tt, odds, line, line_num)
+
+    # 6. Regular totals
     tot = _try_parse_totals(outcome_str)
     if tot is not None:
-        return FortunaPrice(
-            market="totals",
-            selection=tot,
-            odds=odds,
-            raw_line=raw,
-            line_number=line_num,
-        )
+        return FortunaPrice("totals", tot, odds, line, line_num)
 
-    # 6. H2H 1X2 (reference-only)
+    # 7. H2H
     h2h_sel = _try_parse_h2h(outcome_str)
     if h2h_sel is not None:
-        return FortunaPrice(
-            market="h2h",
-            selection=h2h_sel,
-            odds=odds,
-            raw_line=raw,
-            line_number=line_num,
-        )
+        return FortunaPrice("h2h", h2h_sel, odds, line, line_num)
 
     raise FortunaParseError(
-        line_num, raw, f"Не удалось распознать рынок или исход: '{outcome_str}'"
+        line_num, line, f"Не удалось распознать рынок или исход: '{outcome_str}'"
     )
 
 
-def parse_fortuna_text(text: str) -> list[FortunaPrice]:
-    """Parse multi-line or delimited text with Fortuna odds into FortunaPrice items.
+def _split_multi_outcome_line(line: str) -> list[str]:
+    """Split a single line containing multiple outcomes into individual item strings."""
+    cleaned = _clean_spacing_artifacts(line)
 
-    Validates:
-    - No empty non-whitespace lines;
-    - Each line unambiguously parses into a supported market;
-    - No conflicting prices for the same outcome (raises FortunaParseError);
-    - Idempotent: identical odds on the same outcome are deduplicated.
+    # Case 1: Semicolon separation
+    if ";" in cleaned:
+        return [s.strip() for s in cleaned.split(";") if s.strip()]
+
+    # Case 2: Total goals line: 'mniej niż X.X Y.YY więcej niż X.X Y.YY'
+    # Or 'mniej niz ... wiecej niz ...'
+    m_split = re.search(r"\s+(?=(?:wi[ęe]cej\s+ni[żz]|powy[żz]ej)\b)", cleaned, re.IGNORECASE)
+    if m_split:
+        part1 = cleaned[:m_split.start()].strip()
+        part2 = cleaned[m_split.start():].strip()
+        return [part1, part2]
+
+    # Case 3: Team totals: '- 0.5 8.40 + 0.5 1.04'
+    m_tt = re.search(r"(\d+([.,]\d+)?)\s+(?=\+\s*\d)", cleaned)
+    if m_tt:
+        split_pt = m_tt.end()
+        part1 = cleaned[:split_pt].strip()
+        part2 = cleaned[split_pt:].strip()
+        return [part1, part2]
+
+    return [cleaned]
+
+
+def parse_fortuna_text(
+    text: str,
+    grid_max_goals: int = 4,
+) -> list[FortunaPrice]:
+    """Parse multi-line Fortuna odds text with robust support for real copy-paste layouts.
+
+    Handles:
+    - Headers skipping with logging ('Mecz:', match dates, section names);
+    - Multi-outcome lines ('mniej niż 1.5 11.00 więcej niż 1.5 1.06');
+    - Spacing and concatenation artifacts ('Remis4.60', '0:4 0:5 0:61 00.00');
+    - Adjacent lines where outcome and odds are on separate lines;
+    - Semicolon separated lines;
+    - Conflict errors on duplicated outcomes with different odds;
+    - Strict line number reporting on unparseable lines.
     """
     raw_lines = text.splitlines()
     if not raw_lines:
         return []
 
-    # If the user pasted a single line with items separated by semicolons
-    processed_lines: list[tuple[int, str]] = []
-    for line_idx, line in enumerate(raw_lines, start=1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        # Check if line has multiple items separated by semicolons
-        if ";" in stripped and not _try_parse_multiscore(stripped):
-            sub_items = [s.strip() for s in stripped.split(";") if s.strip()]
-            for sub in sub_items:
-                processed_lines.append((line_idx, sub))
-        else:
-            processed_lines.append((line_idx, stripped))
+    # Phase A: Handle adjacent lines (outcome on line i, number on line i+1)
+    merged_lines: list[tuple[int, str]] = []
+    idx = 0
+    while idx < len(raw_lines):
+        line_num = idx + 1
+        line_str = raw_lines[idx].strip()
+        idx += 1
 
+        if not line_str:
+            continue
+
+        # Check if line_str has no price, and next line is solely a decimal price
+        if idx < len(raw_lines):
+            next_str = raw_lines[idx].strip()
+            # If line_str is not a header and has no price token at the end
+            if (
+                not _is_known_header(line_str)
+                and not re.search(r"\d+([.,]\d+)?$", line_str)
+                and re.match(r"^\d+([.,]\d+)?$", next_str)
+            ):
+                merged_lines.append((line_num, f"{line_str} {next_str}"))
+                idx += 1
+                continue
+
+        merged_lines.append((line_num, line_str))
+
+    # Phase B: Parse lines with section tracking
     results: list[FortunaPrice] = []
     seen: dict[str, FortunaPrice] = {}
+    current_team: str | None = None
+    current_section: str | None = None
 
-    for line_num, item_text in processed_lines:
-        item = parse_fortuna_line(item_text, line_num=line_num)
-        key = item.selection_key
-        if key in seen:
-            prev = seen[key]
-            if abs(prev.odds - item.odds) > 1e-4:
-                raise FortunaParseError(
-                    line_num,
-                    item_text,
-                    f"Конфликт коэффициентов для исхода '{key}': ранее было {prev.odds} "
-                    f"(строка {prev.line_number}), получено {item.odds}",
-                )
-            # Identical duplicate -> skip duplicate entry
+    for line_num, line_str in merged_lines:
+        cleaned = _clean_spacing_artifacts(line_str)
+        if not cleaned:
             continue
-        seen[key] = item
-        results.append(item)
+
+        # Header check & team context tracking
+        if _is_known_header(cleaned):
+            logger.debug("Skipping header at line %d: %s", line_num, cleaned)
+            hdr_low = cleaned.lower()
+            if "multiwynik" in hdr_low or "multiscore" in hdr_low:
+                current_section = "multiwynik"
+            elif any(
+                k in hdr_low
+                for k in ("dokładny wynik", "dokladny wynik", "exact score")
+            ):
+                current_section = "exact_score"
+            elif "liczba goli" in hdr_low or "totals" in hdr_low:
+                current_section = "totals"
+            elif "1x2" in hdr_low or "wynik meczu" in hdr_low:
+                current_section = "h2h"
+
+            # Check for team total headers e.g. 'Mecz: Barcelona - liczba goli'
+            m_team_tot = re.search(r"Mecz:\s*([^\-]+)-\s*liczba goli", cleaned, re.IGNORECASE)
+            if m_team_tot:
+                current_team = m_team_tot.group(1).strip()
+                current_section = "team_totals"
+            elif cleaned.lower().startswith("mecz:"):
+                current_team = None
+            continue
+
+        # Split multi-outcome lines
+        sub_items = _split_multi_outcome_line(cleaned)
+        for sub in sub_items:
+            item = parse_fortuna_line(
+                sub,
+                line_num=line_num,
+                current_team=current_team,
+                current_section=current_section,
+                grid_max_goals=grid_max_goals,
+            )
+            key = item.selection_key
+            if key in seen:
+                prev = seen[key]
+                if abs(prev.odds - item.odds) > 1e-4:
+                    raise FortunaParseError(
+                        line_num,
+                        sub,
+                        f"Конфликт коэффициентов для исхода '{key}': ранее было {prev.odds} "
+                        f"(строка {prev.line_number}), получено {item.odds}",
+                    )
+                continue
+            seen[key] = item
+            results.append(item)
 
     return results
 
 
-def calculate_fortuna_overround(prices: list[FortunaPrice]) -> float | None:
-    """Calculate Fortuna bookmaker overround (margin) on exact score market.
+def calculate_fortuna_overround(
+    prices: Sequence[FortunaPrice],
+    grid_max_goals: int = 4,
+) -> float | None:
+    """Calculate Fortuna overround (margin) on exact score market.
 
-    Returns margin as float (e.g. 0.154 for 15.4%), or None if exact score grid
-    is too sparse to form a complete market (< 10 quoted scores).
+    Only evaluates when the full grid is present (all (grid_max_goals+1)^2 scores + inny).
+    For standard grid_max_goals=4, this requires exactly 25 scores + inny.
+    Returns margin as float (e.g. 0.327 for 32.7%), or None if grid is incomplete.
     """
-    exact_prices = [p.odds for p in prices if p.market in ("exact_score", "other")]
-    if len(exact_prices) < 10:
+    exact_dict: dict[tuple[int, int], float] = {}
+    other_odds: float | None = None
+
+    for p in prices:
+        if p.market == "exact_score" and isinstance(p.selection, tuple) and len(p.selection) == 2:
+            exact_dict[(int(p.selection[0]), int(p.selection[1]))] = p.odds
+        elif p.market == "other":
+            other_odds = p.odds
+
+    expected_scores = {
+        (h, a) for h in range(grid_max_goals + 1) for a in range(grid_max_goals + 1)
+    }
+    if other_odds is None or not expected_scores.issubset(exact_dict.keys()):
         return None
-    inv_sum = sum(1.0 / o for o in exact_prices)
-    return inv_sum - 1.0
+
+    inv_sum = sum(1.0 / exact_dict[sc] for sc in expected_scores) + (1.0 / other_odds)
+    return float(inv_sum - 1.0)
+
+
+def calculate_section_overrounds(
+    prices: Sequence[FortunaPrice],
+    grid_max_goals: int = 4,
+) -> dict[str, float]:
+    """Calculate overrounds across parsed Fortuna sections."""
+    res: dict[str, float] = {}
+
+    # 1. Exact score
+    cs_margin = calculate_fortuna_overround(prices, grid_max_goals=grid_max_goals)
+    if cs_margin is not None:
+        res["exact_score"] = cs_margin
+
+    # 2. Multiwynik (11 groups)
+    multi_prices = [p for p in prices if p.market == "multiscore"]
+    if len(multi_prices) == 11:
+        res["multiwynik"] = float(sum(1.0 / p.odds for p in multi_prices) - 1.0)
+
+    # 3. Totals by line (over + under)
+    totals_by_line: dict[float, dict[str, float]] = {}
+    for p in prices:
+        if p.market == "totals" and isinstance(p.selection, tuple) and len(p.selection) == 2:
+            kind, line_val = str(p.selection[0]), float(p.selection[1])
+            totals_by_line.setdefault(line_val, {})[kind] = p.odds
+
+    for line_val, sub in totals_by_line.items():
+        if "over" in sub and "under" in sub:
+            margin = (1.0 / sub["over"] + 1.0 / sub["under"]) - 1.0
+            res[f"totals_{line_val:g}"] = float(margin)
+
+    # 4. Team totals by line
+    tt_by_key: dict[tuple[str, float], dict[str, float]] = {}
+    for p in prices:
+        if p.market == "team_totals" and isinstance(p.selection, tuple) and len(p.selection) == 3:
+            team_s, kind, line_val = str(p.selection[0]), str(p.selection[1]), float(p.selection[2])
+            tt_by_key.setdefault((team_s, line_val), {})[kind] = p.odds
+
+    for (team_s, line_val), sub in tt_by_key.items():
+        if "over" in sub and "under" in sub:
+            margin = (1.0 / sub["over"] + 1.0 / sub["under"]) - 1.0
+            res[f"team_totals_{team_s}_{line_val:g}"] = float(margin)
+
+    return res
