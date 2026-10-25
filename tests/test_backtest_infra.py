@@ -194,3 +194,49 @@ def test_week_models_common_rho_single_value(db_url, tmp_path) -> None:
     assert -1.0 < m.rho < 1.0
     # pass A and pass B produce distinct cache entries
     assert len(list((tmp_path / "cache").iterdir())) == 2
+
+
+def test_date_lock_refuses_windows_reaching_into_test(tmp_path, db_url) -> None:
+    """Review S2: a walk-forward window ENDING in the test dates is
+    refused without a frozen config even if it would predict no matches."""
+
+    from core.backtest.periods import (
+        TEST_START,
+        TestPeriodLockedError,
+        ensure_window_allowed,
+    )
+    from core.backtest.runner import predictions
+
+    frozen = tmp_path / "absent.json"
+    with pytest.raises(TestPeriodLockedError):
+        ensure_window_allowed(
+            dt.datetime(2025, 1, 1, tzinfo=UTC),
+            dt.datetime(2025, 8, 1, tzinfo=UTC), frozen_config=frozen)
+    # a window fully before the test start is fine
+    ensure_window_allowed(
+        dt.datetime(2025, 1, 1, tzinfo=UTC),
+        dt.datetime(2025, 6, 30, tzinfo=UTC), frozen_config=frozen)
+    # and creating the file unlocks
+    frozen.write_text("{}")
+    ensure_window_allowed(dt.datetime(2025, 1, 1, tzinfo=UTC),
+                          TEST_START, frozen_config=frozen)
+    # predictions() gates the same way (absent repo file would unlock
+    # the real path, so pin the lock through a monkeypatched path)
+    import core.backtest.runner as runner_mod
+
+    original = runner_mod.ensure_window_allowed
+
+    def strict(start, end, frozen_config=None):
+        return original(start, end,
+                        frozen_config=frozen_config or tmp_path / "no.json")
+
+    monkeypatch_fn = strict
+    runner_mod.ensure_window_allowed = monkeypatch_fn
+    try:
+        with pytest.raises(TestPeriodLockedError):
+            predictions(db_url, ModelConfig(xi=0.005),
+                        dt.datetime(2025, 1, 1, tzinfo=UTC),
+                        dt.datetime(2025, 9, 1, tzinfo=UTC),
+                        leagues=("premier_league",))
+    finally:
+        runner_mod.ensure_window_allowed = original

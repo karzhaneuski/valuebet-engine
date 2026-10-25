@@ -559,3 +559,22 @@ with the frozen values.
 
 **Reason**: phase-4 task; all numbers from real runs on DB copies
 (reports/backtest/*, records under .cache/bt_records).
+
+
+## 2026-10-26 — Phase 4 review S2: the test period was touched by phase-3 work
+
+**Decision/acknowledgement**: before the phase-4 freeze, the window
+2025-08..2026-10 was scored by scripts/model_walkforward.py (phase-3
+review step A) and by the phase-3 reviewer (prior_sigma=0.5 chosen,
+w=1.0 rejected on that window's evidence). The frozen config itself was
+selected on validation only, but the test period is NOT pristine - treat
+phase-4 test numbers as mildly optimistic. Mitigation now in code: a
+DATE lock in core.backtest (ensure_window_allowed - any walk-forward
+window ending on/after 2025-07-01 refuses to run without
+FROZEN_CONFIG.json; runner.predictions and scripts/model_walkforward.py
+both gate through it; tested). FROZEN_CONFIG.json now records the real
+freeze-commit timestamp as frozen_at (2026-10-25T00:39:51Z, commit
+fc789a8). Part B adds a "second look" label to its single test run.
+
+**Reason**: review S2; leakage hygiene must be structural, not
+behavioural.

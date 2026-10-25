@@ -58,6 +58,9 @@ def week_matches(db_url: str, lo: dt.datetime, hi: dt.datetime) -> list[tuple]:
 
 
 def run(db_url: str, weight_xg: float) -> dict[str, dict[str, list[float]]]:
+    from core.backtest.periods import ensure_window_allowed
+
+    ensure_window_allowed(START, dt.datetime.now(dt.UTC))
     config = ModelConfig(xi=0.005, weight_xg=weight_xg)
     now = dt.datetime.now(dt.UTC)
     scores: dict[str, dict[str, list[float]]] = {

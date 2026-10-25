@@ -16,10 +16,11 @@
  },
  "config_hash": "5090b95a35ffed09582206fdce5eb44de7e9daf524ec77bca687d7c881737f98",
  "commit_at_freeze": "4575d5eefef9b4878231e90c23cec5cc15414eeb",
- "frozen_at": "2026-10-25T03:00:00+00:00",
+ "frozen_at": "2026-10-25T02:39:51+02:00",
  "validation": {
   "log_loss": 2.9112,
   "bin_1_5": 3.0133,
   "n": 3504
- }
+ },
+ "note_frozen_at": "actual commit timestamp of the freeze commit"
 }

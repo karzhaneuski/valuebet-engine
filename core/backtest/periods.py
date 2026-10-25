@@ -14,6 +14,7 @@ seasons by accident.
 
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 
 WARMUP_SEASONS = frozenset({2021, 2022})
@@ -27,6 +28,11 @@ PERIODS = {
     "validation": VALIDATION_SEASONS,
     "test": TEST_SEASONS,
 }
+
+
+TEST_START = dt.datetime(2025, 7, 1, tzinfo=dt.UTC)
+"""Earliest moment considered test period for the DATE lock (S2): the
+2025/26 season window. Anything ending after this needs a frozen config."""
 
 
 class TestPeriodLockedError(RuntimeError):
@@ -54,3 +60,16 @@ def ensure_period_allowed(period: str,
 def season_range(period: str) -> tuple[int, int]:
     seasons = PERIODS[period]
     return min(seasons), max(seasons)
+
+
+def ensure_window_allowed(start: dt.datetime, end: dt.datetime,
+                          frozen_config: Path = FROZEN_CONFIG_PATH) -> None:
+    """DATE lock (review S2): any walk-forward window that reaches into
+    the test dates is refused without a frozen config, regardless of the
+    seasons of the matches inside it."""
+    if end >= TEST_START and not frozen_config.exists():
+        raise TestPeriodLockedError(
+            f"walk-forward window ends at {end.isoformat()}, inside the "
+            "test period (>= 2025-07-01); refusing without "
+            "reports/backtest/FROZEN_CONFIG.json"
+        )

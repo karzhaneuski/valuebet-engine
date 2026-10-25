@@ -22,6 +22,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import aliased, selectinload
 
+from core.backtest.periods import ensure_window_allowed
 from core.config import ModelConfig
 from core.db import session_scope
 from core.model.dataset import load_quarantined_match_ids
@@ -204,6 +205,7 @@ def predictions(db_url: str, config: ModelConfig,
     """
     from core.model.markets import btts, total_over
 
+    ensure_window_allowed(start, end)
     records: list[dict] = []
     for as_of in week_starts(start, end):
         models = week_models(db_url, leagues, as_of, config, cache_dir,
