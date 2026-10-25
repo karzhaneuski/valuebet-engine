@@ -78,8 +78,29 @@ Continuation point: this file + `git log phase-5-fair-pricing`. Rules: DB copy o
 - Added unit tests in `tests/test_prefilter.py` (6 tests): high draws mass calculation, Fortuna grid / no_market rejections, league rotation and weekly cap, model anomaly flag without ranking boost, table formatting, and database persistence with idempotency.
 - All checks green (`ruff`, `mypy`, `mypy --strict core/model core/backtest core/value`, 252 tests passing).
 
+## Step 6: Persistence and CLI (core.value)
+- Database schema migration (`48fd4f90f079_recommendations_matrix_provenance.py`):
+  - Added `matrix_source` (VARCHAR(40)) and `input_hash` (VARCHAR(64)) to `recommendations` table.
+  - Added unique constraint `uq_recommendations_idempotency` on `(match_id, market, outcome, variant, input_hash)`.
+  - Applied cleanly to `/tmp/p5.db`. Verified `tests/test_migrations.py` passing (alembic check, up/down cycle).
+- Created `core/value/persistence.py`:
+  - `save_recommendations_to_db`: records value recommendations with `variant="base"`, `final_odds_source="fortuna_manual"`, `matrix_source`, `input_hash`, `p_model` (p_fair), `p_market_devig`, `edge`, `kelly_quarter_capped`, and `flags`. Idempotency key `(match_id, market, outcome, variant, input_hash)` guarantees re-evaluation does not create duplicate rows. Leaves `clv` and `clv_source` empty for Phase 7.
+  - `load_market_inputs_for_match`: loads latest available market odds from `prematch_odds` (football-data: Pinnacle and Consensus) and `odds_snapshots` (TOA live snapshots). Returns `no_market` when 1X2 odds are unavailable.
+  - `find_matches_by_query`: fuzzy team name and alias matching with delimiter splitting and candidate resolution.
+- Created `core/value/__main__.py` (CLI via `uv run python -m core.value`):
+  - `evaluate`: evaluates Fortuna prices for a match against the fair matrix. Supports `--match "<Home> - <Away>"`, `--input <file>` (or stdin), `--date`, risk flags (`--key-absences-home`, `--key-absences-away`, `--sources-conflict`), `--model-home-share`, and `--save` (default True). Prints Russian summary table and persists recommendations.
+  - `candidates`: runs candidate prefilter for upcoming matches with `--days`, `--cap`, `--max-per-league`, `--save`.
+- Added unit tests in `tests/test_persistence_cli.py` (4 tests): market loading from prematch odds, query match lookup, idempotency verification (re-run updates without duplicates), and end-to-end CLI command execution.
+- Real data verification on database copy `/tmp/p5.db`:
+  - Executed `candidates --days 7 --cap 10`: evaluated 79 upcoming scheduled matches, correctly identified `no_market` status, and logged decisions to `prefilter_decisions`.
+  - Executed `evaluate` on 3 validation matches:
+    - Match 1141: Manchester United vs Fulham (Premier League, 2024-08-16) -> Pinnacle market inputs loaded, 2 recommendations saved (2-4 goals @ 1.85, other @ 15.00). Idempotency verified: re-running kept exactly 2 rows.
+    - Match 3426: Valencia vs Barcelona (La Liga, 2024-08-17) -> Pinnacle market inputs loaded, 1 recommendation saved (2-4 goals @ 1.78).
+    - Match 9743: Le Havre vs Paris Saint Germain (Ligue 1, 2024-08-16) -> Pinnacle market inputs loaded, 1 recommendation saved (2-4 goals @ 1.82).
+- All checks green (`ruff`, `mypy`, `mypy --strict core/model core/backtest core/value`, 256 tests passing).
+
 ---
-## Next: Step 6 (Persistence and CLI: core.value)
+## Next: Step 7 (Documentation & Wrap-up: decisions.md, reports/phase5_report.md)
 
 
 

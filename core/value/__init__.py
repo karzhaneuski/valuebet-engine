@@ -26,6 +26,11 @@ from core.value.fortuna_input import (
     parse_fortuna_line,
     parse_fortuna_text,
 )
+from core.value.persistence import (
+    find_matches_by_query,
+    load_market_inputs_for_match,
+    save_recommendations_to_db,
+)
 from core.value.pinnacle_benchmark import (
     MatrixComparisonResult,
     build_pinnacle_benchmark_matrix,
@@ -66,10 +71,13 @@ __all__ = [
     "devig_totals",
     "evaluate_fortuna_prices",
     "filter_candidates",
+    "find_matches_by_query",
     "fit_1x2_share",
+    "load_market_inputs_for_match",
     "load_pinnacle_correct_score_from_db",
     "log_prefilter_decisions_to_db",
     "parse_fortuna_line",
     "parse_fortuna_text",
     "parse_score_outcome",
+    "save_recommendations_to_db",
 ]

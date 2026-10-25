@@ -262,6 +262,10 @@ class Recommendation(Base):
         # shadow_llm recommendations must reference their LLM call
         CheckConstraint("variant != 'shadow_llm' OR llm_call_id IS NOT NULL",
                         name="ck_recommendations_shadow_llm_call"),
+        UniqueConstraint(
+            "match_id", "market", "outcome", "variant", "input_hash",
+            name="uq_recommendations_idempotency",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -282,6 +286,8 @@ class Recommendation(Base):
     flags: Mapped[str] = mapped_column(String(200), default="")
     variant: Mapped[str] = mapped_column(
         sa_enum(*RECO_VARIANTS, name="reco_variant"), default="base")
+    matrix_source: Mapped[str | None] = mapped_column(String(40))
+    input_hash: Mapped[str | None] = mapped_column(String(64))
     # CLV provenance per docs/decisions.md (CLV metric definition)
     clv: Mapped[Decimal | None] = mapped_column(Numeric(7, 4))
     clv_source: Mapped[str | None] = mapped_column(
