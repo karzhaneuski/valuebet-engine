@@ -1,29 +1,76 @@
 {
  "period": "validation",
  "n": 3504,
- "weights": {
-  "w0": -0.007519688851803779,
-  "w_model": 0.18029797900691352,
-  "w_market": 1.0054569276010714
+ "in_sample": {
+  "weights": {
+   "w0": -0.007519688851803779,
+   "w_model": 0.18029797900691352,
+   "w_market": 1.0054569276010714
+  },
+  "logloss_model": 0.668665812382453,
+  "logloss_market": 0.6654081797546368,
+  "logloss_mixture": 0.6646694933854964,
+  "mix_vs_model_ci95": [
+   -0.007119417585582672,
+   -0.0010738075366819532
+  ],
+  "mix_vs_market_ci95": [
+   -0.0020677016863009184,
+   0.0006109466247322649
+  ],
+  "market_vs_model_ci95": [
+   -0.006783275410552627,
+   0.00022959614217993356
+  ]
  },
- "logloss_model": 0.668665812382453,
- "logloss_market": 0.6654081797546368,
- "logloss_mixture": 0.6646694933854964,
- "mix_vs_model_ci95": [
-  -0.007119417585582672,
-  -0.0010738075366819532
- ],
- "mix_vs_market_ci95": [
-  -0.0020677016863009184,
-  0.0006109466247322649
- ],
- "market_vs_model_ci95": [
-  -0.006783275410552627,
-  0.00022959614217993356
- ],
+ "cross_validation": {
+  "by_test_season": {
+   "2023": {
+    "train_seasons": [
+     2024
+    ],
+    "weights": {
+     "w0": -0.02641863280361022,
+     "w_model": 0.1421107624461912,
+     "w_market": 0.9480434076547487
+    },
+    "logloss_model": 0.6649208725113996,
+    "logloss_market": 0.6620196778884758,
+    "logloss_mixture": 0.661311815394601
+   },
+   "2024": {
+    "train_seasons": [
+     2023
+    ],
+    "weights": {
+     "w0": 0.011876823091239438,
+     "w_model": 0.2500286689390201,
+     "w_market": 1.0432635082952282
+    },
+    "logloss_model": 0.6724107522535065,
+    "logloss_market": 0.668796681620798,
+    "logloss_mixture": 0.6699228644938862
+   }
+  },
+  "overall_oos_logloss_mixture": 0.6656173399442435,
+  "overall_logloss_market": 0.6654081797546368,
+  "overall_logloss_model": 0.668665812382453,
+  "oos_mix_vs_market_ci95": [
+   -0.0017524402335191375,
+   0.0021147425653125435
+  ],
+  "oos_mix_vs_model_ci95": [
+   -0.006183231267251543,
+   -3.558957250858662e-05
+  ]
+ },
  "clv": {
-  "bets": 1842,
-  "share_moved_toward": 0.21281216069489686,
-  "mean_probability_shift": -0.017265136860756296
+  "bets": 1533,
+  "moved_toward": 726,
+  "moved_against": 772,
+  "moved_tied": 35,
+  "share_moved_toward": 0.4735812133072407,
+  "share_moved_toward_ex_ties": 0.48464619492656874,
+  "mean_probability_shift": -4.834518829847561e-05
  }
 }
