@@ -308,6 +308,15 @@ def parse_fortuna_line(
     if not raw:
         raise FortunaParseError(line_num, line, "Пустая строка")
 
+    # Check for glued score without separator e.g. '2:19.50'
+    if re.search(r"\b\d+:\d+[.,]\d+\b", raw):
+        raise FortunaParseError(
+            line_num,
+            line,
+            f"Слипшийся счёт и коэффициент в '{raw}': "
+            "отсутствует пробел между счётом и коэффициентом",
+        )
+
     # Split into outcome and price
     # Look for trailing decimal odds
     # Pattern: space or delimiter followed by digits with decimal
@@ -436,11 +445,13 @@ def parse_fortuna_text(
         # Check if line_str has no price, and next line is solely a decimal price
         if idx < len(raw_lines):
             next_str = raw_lines[idx].strip()
-            # If line_str is not a header and has no price token at the end
+            is_exact_score_only = bool(re.match(r"^\d+\s*[:\-]\s*\d+$", line_str))
+            has_separated_price = bool(re.search(r"(\s+|[@=–—\-])\d+([.,]\d+)?$", line_str))
+            next_is_price = bool(re.match(r"^\d+([.,]\d+)?$", next_str))
             if (
                 not _is_known_header(line_str)
-                and not re.search(r"\d+([.,]\d+)?$", line_str)
-                and re.match(r"^\d+([.,]\d+)?$", next_str)
+                and next_is_price
+                and (is_exact_score_only or not has_separated_price)
             ):
                 merged_lines.append((line_num, f"{line_str} {next_str}"))
                 idx += 1

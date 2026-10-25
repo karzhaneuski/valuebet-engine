@@ -273,3 +273,124 @@ def test_implausible_edge_guards(sample_fair_matrix: FairMatrix) -> None:
     for out in res.outcomes:
         assert out.recommended is False
         assert "Неправдоподобный edge" in out.rejection_reason
+
+
+def test_integer_and_quarter_totals_lines(sample_fair_matrix: FairMatrix) -> None:
+    """Integer lines must account for push; quarter lines must be cleanly rejected."""
+    # Integer line 3.0
+    item_u3 = FortunaPrice("totals", ("under", 3.0), 1.90, "mniej niż 3 1.90", 1)
+    item_o3 = FortunaPrice("totals", ("over", 3.0), 1.95, "więcej niż 3 1.95", 2)
+
+    # Quarter lines 2.25 and 2.75
+    item_q1 = FortunaPrice("totals", ("under", 2.25), 1.85, "mniej niż 2.25", 3)
+    item_q2 = FortunaPrice("totals", ("over", 2.75), 2.05, "więcej niż 2.75", 4)
+
+    res = evaluate_fortuna_prices(
+        sample_fair_matrix,
+        [item_u3, item_o3, item_q1, item_q2],
+    )
+    assert len(res.outcomes) == 4
+
+    out_u3, out_o3 = res.outcomes[0], res.outcomes[1]
+    # Under 3 + Over 3 effective fair probabilities must sum to 1.0!
+    assert out_u3.p_fair + out_o3.p_fair == pytest.approx(1.0, abs=1e-9)
+    assert out_u3.recommended is False
+    assert out_u3.rejection_reason == "Справочный рынок"
+
+    # Quarter lines
+    out_q1, out_q2 = res.outcomes[2], res.outcomes[3]
+    assert out_q1.recommended is False
+    assert out_q1.p_fair == 0.0
+    assert "Четвертная линия тотала не поддерживается" in out_q1.rejection_reason
+    assert out_q2.recommended is False
+    assert out_q2.p_fair == 0.0
+    assert "Четвертная линия тотала не поддерживается" in out_q2.rejection_reason
+
+
+def test_team_totals_side_matching(sample_fair_matrix: FairMatrix) -> None:
+    """Test side determination for team totals, handling abbreviations like 'Real M.'."""
+    item_real = FortunaPrice("team_totals", ("Real M.", "over", 1.5), 1.90, "+ 1.5 1.90", 1)
+    item_barca = FortunaPrice("team_totals", ("Barcelona", "over", 1.5), 1.80, "+ 1.5 1.80", 2)
+    item_unkn = FortunaPrice("team_totals", ("Unknown FC", "over", 1.5), 2.00, "+ 1.5 2.00", 3)
+
+    res = evaluate_fortuna_prices(
+        sample_fair_matrix,
+        [item_real, item_barca, item_unkn],
+        match_name="Barcelona - Real Madrid",
+        home_team="Barcelona",
+        away_team="Real Madrid",
+    )
+
+    out_real = res.outcomes[0]
+    out_barca = res.outcomes[1]
+    out_unkn = res.outcomes[2]
+
+    # Real M. matches away team (Real Madrid), Barcelona matches home team
+    # Home team in sample_fair_matrix is stronger, so home over 1.5 > away over 1.5
+    marg_home = sample_fair_matrix.matrix.sum(axis=1)
+    marg_away = sample_fair_matrix.matrix.sum(axis=0)
+    exp_barca = float(sum(marg_home[g] for g in range(len(marg_home)) if g > 1.5))
+    exp_real = float(sum(marg_away[g] for g in range(len(marg_away)) if g > 1.5))
+
+    assert out_barca.p_fair == pytest.approx(exp_barca, abs=1e-9)
+    assert out_real.p_fair == pytest.approx(exp_real, abs=1e-9)
+    # Real M. is NOT Barcelona
+    assert out_real.p_fair != pytest.approx(exp_barca, abs=1e-3)
+
+    # Unknown team is rejected as unmatchable
+    assert out_unkn.p_fair == 0.0
+    assert "Не удалось однозначно сопоставить команду" in out_unkn.rejection_reason  # noqa: RUF001
+
+
+def test_multiwynik_11_groups_exact_partition(sample_fair_matrix: FairMatrix) -> None:
+    """Sum of fair probabilities across all 11 Multiwynik groups must equal 1.0 within 1e-9."""
+    groups: list[FortunaPrice] = [
+        # 4 home groups
+        FortunaPrice("multiscore", frozenset([(1, 0), (2, 0), (3, 0)]), 6.60, "1:0 2:0 3:0", 1),
+        FortunaPrice("multiscore", frozenset([(2, 1), (3, 1), (4, 1)]), 4.30, "2:1 3:1 4:1", 2),
+        FortunaPrice(
+            "multiscore", frozenset([(3, 2), (4, 2), (4, 3), (5, 1)]), 5.80, "3:2 4:2 4:3 5:1", 3
+        ),
+        FortunaPrice("multiscore", frozenset([(4, 0), (5, 0), (6, 0)]), 16.00, "4:0 5:0 6:0", 4),
+        # Home other
+        FortunaPrice("multiscore", "multi:home_other", 9.20, "1.drużyna wygra dowolnym innym", 5),
+        # Remis (all draws)
+        FortunaPrice("multiscore", "multi:remis", 4.60, "Remis", 6),
+        # 4 away groups
+        FortunaPrice("multiscore", frozenset([(0, 1), (0, 2), (0, 3)]), 18.00, "0:1 0:2 0:3", 7),
+        FortunaPrice("multiscore", frozenset([(1, 2), (1, 3), (1, 4)]), 10.00, "1:2 1:3 1:4", 8),
+        FortunaPrice(
+            "multiscore", frozenset([(2, 3), (2, 4), (3, 4), (1, 5)]), 13.00, "2:3 2:4 3:4 1:5", 9
+        ),
+        FortunaPrice("multiscore", frozenset([(0, 4), (0, 5), (0, 6)]), 100.00, "0:4 0:5 0:6", 10),
+        # Away other
+        FortunaPrice("multiscore", "multi:away_other", 45.00, "2.drużyna wygra dowolnym innym", 11),
+    ]
+
+    res = evaluate_fortuna_prices(sample_fair_matrix, groups)
+    assert len(res.outcomes) == 11
+    total_p = sum(out.p_fair for out in res.outcomes)
+    assert total_p == pytest.approx(1.0, abs=1e-9)
+
+
+def test_evaluate_all_three_real_fixtures(sample_fair_matrix: FairMatrix) -> None:
+    """Verify all 3 Fortuna fixtures evaluate without errors and compute realistic overrounds."""
+    from pathlib import Path
+
+    from core.value.fortuna_input import parse_fortuna_text
+
+    fixtures = [
+        "fortuna_barcelona_real_2026-10-25.txt",
+        "fortuna_udinese_milan_2026-10-25.txt",
+        "fortuna_nice_rennes_2026-10-25.txt",
+    ]
+
+    for fname in fixtures:
+        p = Path(f"tests/fixtures/{fname}")
+        assert p.exists()
+        prices = parse_fortuna_text(p.read_text(encoding="utf-8"))
+        assert len(prices) > 60
+        res = evaluate_fortuna_prices(sample_fair_matrix, prices, match_name=p.stem)
+        assert len(res.outcomes) == len(prices)
+        assert res.fortuna_overround is not None
+        assert 0.28 < res.fortuna_overround < 0.38

@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Literal
 
 import numpy as np
 
@@ -170,6 +172,65 @@ def check_model_anomaly(
     return False, ""
 
 
+def match_team_side(
+    team_query: str,
+    home_name: str | None,
+    away_name: str | None,
+) -> Literal["home", "away"] | None:
+    """Determine whether team_query refers to the home or away team.
+
+    Handles:
+    - Direct keywords: 'home'/'1'/'1.drużyna' vs 'away'/'2'/'2.drużyna'
+    - Name abbreviations: 'Real M.' -> 'Real Madrid'
+    - Exact match, prefix match, and token-based containment
+    - Returns None if ambiguous or neither matches.
+    """
+    q = team_query.strip().lower().rstrip(".")
+    if not q:
+        return None
+
+    # Keyword check
+    if q in ("home", "1", "1.", "1.drużyna", "1.druzyna", "gospodarze", "хозяева"):
+        return "home"
+    if q in ("away", "2", "2.", "2.drużyna", "2.druzyna", "goście", "goscie", "гости"):
+        return "away"
+
+    h = (home_name or "").strip().lower()
+    a = (away_name or "").strip().lower()
+    if not h and not a:
+        return None
+
+    def _score_match(query: str, target: str) -> float:
+        if not target:
+            return 0.0
+        if query == target:
+            return 100.0
+        if query in target or target in query:
+            return 80.0
+        q_tokens = [re.sub(r"[^\w]", "", t) for t in query.split() if re.sub(r"[^\w]", "", t)]
+        t_tokens = [re.sub(r"[^\w]", "", t) for t in target.split() if re.sub(r"[^\w]", "", t)]
+        if not q_tokens or not t_tokens:
+            return 0.0
+
+        matches = 0
+        for q_tok in q_tokens:
+            if any(t_tok == q_tok or t_tok.startswith(q_tok) for t_tok in t_tokens):
+                matches += 1
+
+        if matches == len(q_tokens):
+            return 50.0 + 10.0 * matches
+        return 0.0
+
+    score_h = _score_match(q, h)
+    score_a = _score_match(q, a)
+
+    if score_h > score_a and score_h >= 50.0:
+        return "home"
+    if score_a > score_h and score_a >= 50.0:
+        return "away"
+    return None
+
+
 def _format_selection_display(item: FortunaPrice) -> str:
     """Format human-friendly outcome display for CLI table."""
     if item.market == "exact_score" and isinstance(item.selection, tuple):
@@ -223,6 +284,8 @@ def evaluate_fortuna_prices(
     sources_conflict: bool = False,
     market_snapshot_time: dt.datetime | None = None,
     absence_news_time: dt.datetime | None = None,
+    home_team: str | None = None,
+    away_team: str | None = None,
 ) -> EvaluationResult:
     """Evaluate manual Fortuna prices against the fair market matrix."""
     cfg = config or load_config()
@@ -230,6 +293,16 @@ def evaluate_fortuna_prices(
     risk_cfg = cfg.risk_flags
     fm_cfg = cfg.fair_matrix
     fortuna_cfg = cfg.fortuna
+
+    # Resolve home/away team names from parameters or match_name
+    h_team = home_team
+    a_team = away_team
+    if not h_team and not a_team and match_name:
+        for sep in (" - ", " vs ", " — ", " – "):
+            if sep in match_name:
+                parts = match_name.split(sep, 1)
+                h_team, a_team = parts[0].strip(), parts[1].strip()
+                break
 
     # Calculate exact score grid margin if full grid is present
     overround = calculate_fortuna_overround(
@@ -337,7 +410,8 @@ def evaluate_fortuna_prices(
                     f"inny не оценивается"
                 )
             else:
-                p_fair = max(0.0, 1.0 - float(fair_matrix.matrix[:5, :5].sum()))
+                max_g = fortuna_cfg.cs_grid_max_goals + 1
+                p_fair = max(0.0, 1.0 - float(fair_matrix.matrix[:max_g, :max_g].sum()))
                 item_reason_override = "Справочно: inny (хвост 5+ смещен, z=-2.25)"
         elif item.market == "multiscore":
             if isinstance(item.selection, (frozenset, set, list)):
@@ -349,23 +423,25 @@ def evaluate_fortuna_prices(
                 # All draws (0:0 .. 10:10)
                 p_fair = float(np.diag(fair_matrix.matrix).sum())
             elif item.selection == "multi:home_other":
-                # Home wins minus groups 1-4
+                # Home wins minus quoted groups 1-4
                 covered_home = {
                     (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0),
                     (2, 1), (3, 1), (4, 1), (5, 1),
                     (3, 2), (4, 2), (4, 3),
                 }
                 cov_p = sum(fair_matrix.exact_score(h, a) for h, a in covered_home)
-                p_fair = max(0.0, fair_matrix.p_home_devig - cov_p)
+                total_home_wins = float(np.tril(fair_matrix.matrix, -1).sum())
+                p_fair = max(0.0, total_home_wins - cov_p)
             elif item.selection == "multi:away_other":
-                # Away wins minus groups 1-4
+                # Away wins minus quoted groups 1-4
                 covered_away = {
                     (0, 1), (0, 2), (0, 3), (0, 4), (0, 5), (0, 6),
                     (1, 2), (1, 3), (1, 4), (1, 5),
                     (2, 3), (2, 4), (3, 4),
                 }
                 cov_p = sum(fair_matrix.exact_score(h, a) for h, a in covered_away)
-                p_fair = max(0.0, fair_matrix.p_away_devig - cov_p)
+                total_away_wins = float(np.triu(fair_matrix.matrix, 1).sum())
+                p_fair = max(0.0, total_away_wins - cov_p)
         elif (
             item.market == "goals_range"
             and isinstance(item.selection, tuple)
@@ -379,11 +455,26 @@ def evaluate_fortuna_prices(
             and isinstance(item.selection[0], str)
         ):
             t_kind, t_line = item.selection[0], float(item.selection[1])
-            p_fair = (
-                fair_matrix.total_over(t_line)
-                if t_kind == "over"
-                else fair_matrix.total_under(t_line)
-            )
+            # Quarter lines (e.g. 2.25, 2.75) are not supported
+            if abs(t_line * 2.0 - round(t_line * 2.0)) > 1e-6:
+                p_fair = 0.0
+                item_reason_override = "Четвертная линия тотала не поддерживается"
+            else:
+                n = fair_matrix.matrix.shape[0]
+                totals_grid = np.add.outer(np.arange(n), np.arange(n))
+                is_integer = abs(t_line - round(t_line)) < 1e-6
+                int_line = round(t_line)
+                p_push = (
+                    float(fair_matrix.matrix[totals_grid == int_line].sum())
+                    if is_integer
+                    else 0.0
+                )
+                if t_kind == "over":
+                    p_over = float(fair_matrix.matrix[totals_grid > t_line].sum())
+                    p_fair = p_over / (1.0 - p_push) if p_push < 1.0 else 0.0
+                else:
+                    p_under = float(fair_matrix.matrix[totals_grid < t_line].sum())
+                    p_fair = p_under / (1.0 - p_push) if p_push < 1.0 else 0.0
         elif (
             item.market == "team_totals"
             and isinstance(item.selection, tuple)
@@ -392,14 +483,30 @@ def evaluate_fortuna_prices(
             team_s = str(item.selection[0])
             t_kind = str(item.selection[1])
             t_line = float(item.selection[2])
-            if team_s in ("away", "2") or "away" in team_s.lower():
-                marg = fair_matrix.matrix.sum(axis=0)
+            side = match_team_side(team_s, h_team, a_team)
+            if side is None:
+                p_fair = 0.0
+                item_reason_override = (
+                    f"Не удалось однозначно сопоставить команду '{team_s}' с участниками матча"
+                )
+            elif abs(t_line * 2.0 - round(t_line * 2.0)) > 1e-6:
+                p_fair = 0.0
+                item_reason_override = "Четвертная линия тотала не поддерживается"
             else:
-                marg = fair_matrix.matrix.sum(axis=1)
-            if t_kind == "over":
-                p_fair = float(sum(marg[g] for g in range(11) if g > t_line))
-            else:
-                p_fair = float(sum(marg[g] for g in range(11) if g < t_line))
+                marg = (
+                    fair_matrix.matrix.sum(axis=1)
+                    if side == "home"
+                    else fair_matrix.matrix.sum(axis=0)
+                )
+                is_integer = abs(t_line - round(t_line)) < 1e-6
+                int_line = round(t_line)
+                p_push = float(marg[int_line]) if is_integer and 0 <= int_line < len(marg) else 0.0
+                if t_kind == "over":
+                    p_over = float(sum(marg[g] for g in range(len(marg)) if g > t_line))
+                    p_fair = p_over / (1.0 - p_push) if p_push < 1.0 else 0.0
+                else:
+                    p_under = float(sum(marg[g] for g in range(len(marg)) if g < t_line))
+                    p_fair = p_under / (1.0 - p_push) if p_push < 1.0 else 0.0
         elif item.market == "h2h":
             if item.selection == "1":
                 p_fair = fair_matrix.p_home_devig
@@ -424,7 +531,7 @@ def evaluate_fortuna_prices(
             reason = "Резервная модель (справочно)"
         elif item.market in ("totals", "team_totals", "h2h"):
             recommended = False
-            reason = "Справочный рынок"
+            reason = item_reason_override or "Справочный рынок"
         elif item.market == "other":
             recommended = False
             reason = item_reason_override or "Справочно: inny"

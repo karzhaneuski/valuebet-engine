@@ -299,3 +299,25 @@ def test_parse_real_fortuna_fixtures_udinese_and_nice() -> None:
         multi_items = [it for it in items if it.market == "multiscore"]
         assert len(multi_items) == 11
         assert any(it.selection == "multi:remis" for it in multi_items)
+
+
+def test_glued_score_and_odds_raises_line_error() -> None:
+    """Glued score and odds '2:19.50' must raise FortunaParseError, NOT be misparsed as 1X2."""
+    with pytest.raises(FortunaParseError) as exc_info:
+        parse_fortuna_text("1:0 15.00\n2:19.50\n0:0 12.00")
+    assert exc_info.value.line_num == 2
+    assert "Слипшийся счёт и коэффициент" in exc_info.value.reason
+
+
+def test_score_on_one_line_and_odds_on_next() -> None:
+    """Support score on line N and odds on line N+1 ('2:1\\n9.50')."""
+    text = "2:1\n9.50\n1:0\n8.00\ninny\n15.00"
+    items = parse_fortuna_text(text)
+    assert len(items) == 3
+    assert items[0].market == "exact_score"
+    assert items[0].selection == (2, 1)
+    assert items[0].odds == pytest.approx(9.50)
+    assert items[1].selection == (1, 0)
+    assert items[1].odds == pytest.approx(8.00)
+    assert items[2].market == "other"
+    assert items[2].odds == pytest.approx(15.00)
