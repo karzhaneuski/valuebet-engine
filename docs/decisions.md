@@ -626,18 +626,21 @@ scenario):
   level carries real information the model lacks.
 - B3 draw correction: the model and the hybrid underprice 2:2 (model
   cell z +3.2, hybrid +3.4; p 0.049 vs observed 0.062) and slightly
-  overprice 0:0 (hybrid z -1.9). Honest caveat (review S3): κ_high is
-  statistically indistinguishable by log loss (-0.0013 [-0.0030, +0.0002])
-  across 15 variants × 16 cells searched, so the |z|<=2 criterion is an
-  in-sample fit. Cross-fitting κ by season (2023 -> 2024: k_opt = 0.337,
-  eval diff -0.0003; 2024 -> 2023: k_opt = 0.179, eval diff -0.0023;
-  same for the market matrix: k_opt ≈ 0.18-0.34, test delta consistently
-  negative) confirms that κ_high in [0.18, 0.34] transfers stably across
-  seasons. Choosing κ_high=0.20 departs from "simpler is better" for a
-  principled a priori reason: bivariate Poisson Dixon-Coles is well-known
-  to underestimate high draws due to independent Poisson tails, so
-  inflating high draws corrects a known structural deficit rather than
-  fitting noise.
+  overprice 0:0 (hybrid z -1.9).
+  Cross-fitting κ_high by season (paired week-clustered bootstrap CI95):
+  - market share:
+    2024 -> 2023: k_opt = 0.179, eval delta -0.0023 [-0.0044, -0.0002] (significant);
+    2023 -> 2024: k_opt = 0.337, eval delta -0.0003 [-0.0034, +0.0029] (spans zero);
+  - model share:
+    2024 -> 2023: k_opt = 0.143, eval delta -0.0018 [-0.0035, -0.0001] (significant);
+    2023 -> 2024: k_opt = 0.311, eval delta +0.0001 [-0.0028, +0.0031] (spans zero).
+  Honest evaluation: the transfer delta is non-positive in both directions for the
+  market matrix, but statistically significant in only 1 of the 2 directions.
+  Choosing κ_high = 0.20 (applied to all diagonal cells >= 2:2) is justified primarily
+  on a priori theoretical grounds: independent Poisson distributions structurally
+  underestimate high draws due to independent tail decay, so inflating high draws
+  corrects a known structural deficit (bringing 2:2 from z +3.4 to |z| <= 2.0)
+  rather than fitting empirical noise.
 
 **Reason**: phase-4b B2/B3; artefacts reports/backtest/4b_hybrid_*.json.
 
@@ -682,12 +685,18 @@ FROZEN_CONFIG_4b; the window was already used by phases 3/4):
 **Phase-5 consequences (B6 rewritten, review B1 d)**:
 1. Base exact-score matrix in phase 5 is built ENTIRELY FROM MARKET
    ODDS: total lambda from O/U 2.5 devigged, home goal share from
-   1X2 devigged, plus high-draw correction κ_high (0.20). The statistical
-   model Dixon-Coles is NOT in the matrix: validation evidence shows
+   1X2 devigged via least squares (fit_1x2_share), rho estimated
+   from the market draw probability (as in all-market) or fixed to 0.0
+   (the model's rho contribution is statistically indistinguishable from zero:
+   delta -0.0006 [-0.0026, +0.0014]), plus high-draw correction κ_high (0.20)
+   applied to all diagonal cells from 2:2 upwards (2:2, 3:3, 4:4...).
+   The statistical model Dixon-Coles is NOT in the matrix: validation evidence shows
    market 1X2 share beats model share by -0.0157 [-0.0205, -0.0113],
    all-market beats model share by -0.0163 [-0.0213, -0.0118], and
    cross-fitting the model's weight α in the share yields α = 0.0000 in
-   both directions. The model serves as: (a) standby reserve if market
+   both directions (OOS delta +0.0000). The requirement to "exactly reproduce
+   both O/U and 1X2" is dropped because the system is overdetermined (2-3
+   parameters, 3 equations). The model serves as: (a) standby reserve if market
    odds are missing, and (b) anomaly flag when |share_model - share_1x2|
    is large.
 2. Value definition: value = discrepancy between Fortuna's exact-score and

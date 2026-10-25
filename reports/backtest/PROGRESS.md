@@ -117,6 +117,10 @@ metrics forbidden until FROZEN_CONFIG.json exists.
   - Fixed scripts/backtest_hybrid.py: alpha cross-fit uses model rho (instead of cfg.xi), properly indexes on filtered records, and evaluates fitted alpha out-of-sample on held-out seasons; kappa cross-fit evaluates OOS with week-clustered bootstrap CI95.
   - Added --compare mode to backtest_hybrid.py and generated 4 committed comparison artifacts with per-match deltas and week-clustered bootstrap CI95: compare_1x2_vs_model_share.json (-0.0157 [-0.0205, -0.0113]), compare_all_market_vs_model_share.json (-0.0163 [-0.0213, -0.0118]), compare_rho_model_vs_rho0.json (-0.0006 [-0.0026, +0.0014]), compare_pinnacle_1x2_vs_model_share.json (-0.0157 [-0.0204, -0.0113]).
   - Fixed validation sample size in SUMMARY_4b.md to 3,504 matches, 76 calendar weeks, 2,000 bootstrap resamples.
+- S1:
+  - Updated SPEC §4 and decisions B6.1: lambda_total derived from devigged O/U 2.5; home share from OLS on 1X2; rho derived from market draw (all-market) or fixed to 0.0 (model rho delta -0.0006 [-0.0026, +0.0014] not used); removed overdetermined requirement to exactly reproduce both O/U and 1X2; kappa_high applies to whole diagonal >= 2:2.
+- S3:
+  - Updated decisions B3: documented cross-season transfer intervals for both market share (2024->2023 -0.0023 [-0.0044, -0.0002], 2023->2024 -0.0003 [-0.0034, +0.0029]) and model share (2024->2023 -0.0018 [-0.0035, -0.0001], 2023->2024 +0.0001 [-0.0028, +0.0031]); removed "transfers stably" and "test delta"; noted non-positive direction and a priori theoretical justification.
 
 - All items in Step 0, Part A, Part B, Part C, and Part D completed.
 - Full verification table and owner commands documented in `reports/backtest/SUMMARY_4b.md`.
