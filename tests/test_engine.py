@@ -248,7 +248,7 @@ def test_inny_incomplete_vs_complete_grid(sample_fair_matrix: FairMatrix) -> Non
     assert inny_out_comp.recommended is False
     assert inny_out_comp.p_fair is not None
     assert inny_out_comp.p_fair == pytest.approx(1.0 - sample_fair_matrix.matrix[:5, :5].sum())
-    assert "Справочно: inny (хвост 5+ смещен, z=-2.25)" in inny_out_comp.rejection_reason
+    assert "Справочно: inny (хвост 5+ смещен, z=-2.28)" in inny_out_comp.rejection_reason
 
 
 def test_implausible_edge_guards(sample_fair_matrix: FairMatrix) -> None:

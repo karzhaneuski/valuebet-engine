@@ -108,7 +108,7 @@ Continuation point: this file + `git log phase-5-fair-pricing`. Rules: DB copy o
   - $p_{\text{fair}}(\text{inny}) = 1 - \sum M[0..4, 0..4]$ computed purely from the fair matrix, completely independent of user input.
   - Any score outcome outside 0..4 raises explicit `FortunaParseError` ("Счёт 5:0 вне сетки Fortuna 0..4; такие исходы входят в 'inny'").
   - `inny` and grid margin are evaluated ONLY when all 25 scores are present in the batch; otherwise rejected with `"Неполная сетка Fortuna (N из 25): inny не оценивается"`.
-  - Recorded empirical bias $z = -2.25$ (predicted $p_{\text{fair}} = 0.0474$ vs actual frequency $0.0393$, $p=0.024$, $N=3,462$ validation matches, verified by `scripts/verify_inny_bias.py`). Earlier drafts noted 5.7% vs 4.6% from a smaller preliminary sample; 4.74% vs 3.93% is the canonical full-dataset figure. `inny` is marked `recommended = False` with reason `"Только для справки: эмпирическое смещение z=-2.25"`.
+  - Recorded empirical bias $z = -2.28$ (predicted $p_{\text{fair}} = 0.0474$ vs actual frequency $0.0393$, $p=0.023$, $N=3,462$ validation matches, verified by `scripts/verify_inny_bias.py`). Earlier drafts noted 5.7% vs 4.6% from a smaller preliminary sample; 4.74% vs 3.93% is the canonical full-dataset figure. `inny` is marked `recommended = False` with reason `"Только для справки: эмпирическое смещение z=-2.28"`.
 - **BLOCKING 2: Free-text Parser Hardening** (commit `3a21b36`):
   - Goals ranges strictly require an explicit keyword (`gole/bramki/гола/голов`); bare dashes without keywords (e.g. `1-2`) are parsed as exact scores.
   - Glued numbers from browser table copy-pastes handled cleanly (`Remis4.60` -> Remis 4.60; `0:4 0:5 0:61 00.00` -> 100.00).
@@ -154,12 +154,12 @@ Continuation point: this file + `git log phase-5-fair-pricing`. Rules: DB copy o
   - Market-wide line shopping (`MaxC` across ~30 books): ROI +4.36% at 2% threshold (N=1,079).
   - Margin sensitivity analysis: at Fortuna's 6.0%–7.0% margin, Scenario 1 yields only 18–21 signals (0.5%–0.6%), and Scenario 3 yields 43–53 signals (1.2%–1.5%).
 - **Verification of "inny" bias** (`scripts/verify_inny_bias.py`):
-  - Verified canonical predicted $p_{\text{fair}}(\text{inny}) = 4.74\%$ vs actual frequency $3.93\%$ ($z = -2.25$, $p = 0.024$) across all $N = 3,462$ matches.
+  - Verified canonical predicted $p_{\text{fair}}(\text{inny}) = 4.74\%$ vs actual frequency $3.93\%$ ($z = -2.28$, $p = 0.023$) across all $N = 3,462$ matches.
   - Unified all documentation references to these exact reproducible figures.
 
 ### 4. M5 & Architectural Decisions
 - Updated `docs/decisions.md` (decisions 8–12 under Phase 5):
-  - Recorded `inny` empirical bias $z=-2.25$ (4.74% vs 3.93%) and reference-only status.
+  - Recorded `inny` empirical bias $z=-2.28$ (4.74% vs 3.93%) and reference-only status.
   - Recorded recommendation lifecycle and partial index `uq_recommendations_active`.
   - Recorded Fortuna exact score margin ~32.7% and zero-value mathematical barrier.
   - Recorded soft vs sharp totals backtest results (Scenarios 1 and 3, look-ahead status of Scenario 2).

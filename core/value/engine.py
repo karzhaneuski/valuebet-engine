@@ -5,7 +5,7 @@ Thresholds:
 - Exact score: edge >= 12%, p_fair >= 4%, odds <= 21.0, edge <= 40% (implausible edge guard).
 - Multiscore: edge >= 8%, p_fair >= 6%, odds <= 15.0, edge <= 25% (implausible edge guard).
 - Goals range: edge >= 8%, p_fair >= 15%, odds <= 8.0, edge <= 25% (implausible edge guard).
-- Inny (other score): reference-only (P(5+) has empirical bias z=-2.25 on validation).
+- Inny (other score): reference-only (P(5+) has empirical bias z=-2.28 on validation).
   Requires full 25-score grid.
 - Totals and 1X2: strictly reference-only (no bets).
 - Fallback model: strictly reference-only.
@@ -413,7 +413,7 @@ def evaluate_fortuna_prices(
             else:
                 max_g = fortuna_cfg.cs_grid_max_goals + 1
                 p_fair = max(0.0, 1.0 - float(fair_matrix.matrix[:max_g, :max_g].sum()))
-                item_reason_override = "Справочно: inny (хвост 5+ смещен, z=-2.25)"
+                item_reason_override = "Справочно: inny (хвост 5+ смещен, z=-2.28)"
         elif item.market == "multiscore":
             if isinstance(item.selection, (frozenset, set, list)):
                 valid_scores = [

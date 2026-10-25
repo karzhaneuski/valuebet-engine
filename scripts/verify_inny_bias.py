@@ -8,7 +8,7 @@ matches in the validation dataset (seasons 2023/24 and 2024/25, 5 leagues).
 Reproduces:
 - Mean predicted p_fair(inny): 4.74%
 - Actual occurrence rate: 3.93% (136 matches)
-- Binomial z-score: -2.25 (p = 0.024)
+- Poisson binomial z-score: -2.28 (p = 0.023)
 """
 
 from __future__ import annotations
