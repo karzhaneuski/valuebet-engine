@@ -550,7 +550,7 @@ Test (ONE run, after the freeze): frozen LL 2.9157 vs baseline 2.9221 -
 tuning transferred out of sample; bins 0/1-5/6-15/>15 =
 2.722/3.129/2.858/2.908. Calibration on test: top-1 exact score
 p=0.118 vs observed 0.126, top-3 set 0.311/0.332, {1:0,2:0,2:1}
-0.239/0.248, 2-4 goals 0.608/0.614 - slight conservative bias.
+0.239/0.248, 2-4 goals 0.608/0.614.
 ROI on O/U 2.5 vs football-data closings (de-vigged AvgC market,
 thresholds 2/4/6/8%): AvgC execution -9..-11% (CI excludes 0), MaxC
 -4..-6% (CI spans 0) - NO edge over the closing market; expected and

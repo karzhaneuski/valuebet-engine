@@ -107,7 +107,13 @@ metrics forbidden until FROZEN_CONFIG.json exists.
 - SPEC.md updated to v2: added top Changelog v2 referencing decisions B3-B6; target defined as fair market matrix of exact score with kappa_high=0.20 and edge against Fortuna odds; Dixon-Coles model assigned to fallback and anomaly detection; exact score and multiscore are recommendations, totals and BTTS are reference-only, 1X2 is strictly input-only; TOA sport-level quota budget documented (~188 credits/30d); CLV defined as Phase 7 quality arbiter.
 - PROMPTS.md updated: task descriptions and review checklists for Phases 5, 6, and 7 updated to align with SPEC v2 (fair market matrix, Fortuna manual odds entry, edge calculation, anomaly detection, CLV tracking).
 
-## Summary & Verification
+## Review Round 2 (Phase 4b fixes)
+- NITs:
+  - decisions.md ~553: removed "slight conservative bias".
+  - cmd_backfill exits with non-zero status (sys.exit) when understat_errors are present.
+  - Understat schedule_rows retries strictly on network/transient connection errors (via is_network_error); logical/schema errors fail fast without retries.
+  - Test period lock: ensure_period_allowed_4b added and used in backtest_hybrid and backtest_mixture, enforcing canonical reports/backtest/FROZEN_CONFIG_4b.json (rejects arbitrary existing files).
+
 - All items in Step 0, Part A, Part B, Part C, and Part D completed.
 - Full verification table and owner commands documented in `reports/backtest/SUMMARY_4b.md`.
 - All checks green: ruff (0 errors), mypy (0 errors across 54 files), pytest (209 tests passed).

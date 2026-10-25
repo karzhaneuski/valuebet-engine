@@ -243,7 +243,7 @@ def test_date_lock_refuses_windows_reaching_into_test(tmp_path, db_url) -> None:
 
 
 def test_phase4b_scripts_test_lock(tmp_path) -> None:
-    """S2: backtest_hybrid and backtest_mixture require frozen config for test period."""
+    """S2 & NIT: backtest_hybrid and backtest_mixture require canonical FROZEN_CONFIG_4b.json."""
     import subprocess
     import sys
 
@@ -251,30 +251,42 @@ def test_phase4b_scripts_test_lock(tmp_path) -> None:
         FROZEN_CONFIG_4B_PATH,
         TestPeriodLockedError,
         ensure_period_allowed,
+        ensure_period_allowed_4b,
     )
 
     absent = tmp_path / "nonexistent.json"
     with pytest.raises(TestPeriodLockedError):
         ensure_period_allowed("test", frozen_config=absent)
 
+    with pytest.raises(TestPeriodLockedError):
+        ensure_period_allowed_4b("test", frozen_config=absent)
+
+    arbitrary = tmp_path / "arbitrary.json"
+    arbitrary.write_text("{}")
+    with pytest.raises(TestPeriodLockedError):
+        ensure_period_allowed_4b("test", frozen_config=arbitrary)
+
     # Valid with existing 4b frozen config
     assert FROZEN_CONFIG_4B_PATH.exists()
     ensure_period_allowed("test", frozen_config=FROZEN_CONFIG_4B_PATH)
+    ensure_period_allowed_4b("test", frozen_config=FROZEN_CONFIG_4B_PATH)
 
-    # CLI test lock check on both scripts
+    # CLI test lock check on both scripts with absent and arbitrary files
     dummy_records = tmp_path / "records.json"
     dummy_records.write_text("[]")
-    for mod in ("scripts.backtest_hybrid", "scripts.backtest_mixture"):
-        res = subprocess.run(
-            [sys.executable, "-m", mod,
-             "--records", str(dummy_records),
-             "--period", "test",
-             "--frozen-config", str(absent),
-             "--config", "{}",
-             "--out", str(tmp_path / "out.json")],
-            capture_output=True,
-            text=True,
-        )
-        assert res.returncode != 0
-        assert "TestPeriodLockedError" in res.stderr
+    for bad_cfg in (absent, arbitrary):
+        for mod in ("scripts.backtest_hybrid", "scripts.backtest_mixture"):
+            res = subprocess.run(
+                [sys.executable, "-m", mod,
+                 "--records", str(dummy_records),
+                 "--period", "test",
+                 "--frozen-config", str(bad_cfg),
+                 "--config", "{}",
+                 "--out", str(tmp_path / "out.json")],
+                capture_output=True,
+                text=True,
+            )
+            assert res.returncode != 0
+            assert "TestPeriodLockedError" in res.stderr
+
 

@@ -32,7 +32,11 @@ from scipy.optimize import brentq, least_squares, minimize_scalar
 from sqlalchemy import select
 
 from core.backtest.metrics import score_records
-from core.backtest.periods import FROZEN_CONFIG_4B_PATH, ensure_period_allowed
+from core.backtest.periods import (
+    FROZEN_CONFIG_4B_PATH,
+    ensure_period_allowed,
+    ensure_period_allowed_4b,
+)
 from core.backtest.runner import fitted_model, load_quarantine_or_empty
 from core.config import ModelConfig
 from core.db import session_scope
@@ -220,6 +224,7 @@ def main() -> None:
     args = parser.parse_args()
 
     frozen_cfg_path = Path(args.frozen_config)
+    ensure_period_allowed_4b(args.period, frozen_config=frozen_cfg_path)
     ensure_period_allowed(args.period, frozen_config=frozen_cfg_path)
 
     cfg = ModelConfig(**json.loads(args.config))

@@ -27,7 +27,11 @@ from scipy.optimize import minimize
 from sqlalchemy import select
 
 from core.backtest.metrics import score_records
-from core.backtest.periods import FROZEN_CONFIG_4B_PATH, ensure_period_allowed
+from core.backtest.periods import (
+    FROZEN_CONFIG_4B_PATH,
+    ensure_period_allowed,
+    ensure_period_allowed_4b,
+)
 from core.db import session_scope
 from core.orm import ClosingOdds, PrematchOdds
 
@@ -57,6 +61,7 @@ def main() -> None:
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
     frozen_cfg_path = Path(args.frozen_config)
+    ensure_period_allowed_4b(args.period, frozen_config=frozen_cfg_path)
     ensure_period_allowed(args.period, frozen_config=frozen_cfg_path)
 
     records = json.loads(Path(args.records).read_text())

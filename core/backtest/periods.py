@@ -58,6 +58,20 @@ def ensure_period_allowed(period: str,
         )
 
 
+def ensure_period_allowed_4b(period: str,
+                             frozen_config: Path = FROZEN_CONFIG_4B_PATH) -> None:
+    """Refuse test-period scoring for Phase 4b unless canonical FROZEN_CONFIG_4b.json exists."""
+    if period == "test" and (
+            frozen_config.name != "FROZEN_CONFIG_4b.json" or
+            not frozen_config.is_file() or
+            frozen_config.resolve() != FROZEN_CONFIG_4B_PATH.resolve()):
+        raise TestPeriodLockedError(
+            f"the test period for phase 4b is locked: requires canonical "
+            f"{FROZEN_CONFIG_4B_PATH}, got {frozen_config}"
+        )
+
+
+
 def season_range(period: str) -> tuple[int, int]:
     seasons = PERIODS[period]
     return min(seasons), max(seasons)

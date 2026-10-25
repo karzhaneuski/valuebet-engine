@@ -105,6 +105,8 @@ def cmd_backfill(args: argparse.Namespace) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, default=str))
     print(f"report saved: {out}")
+    if report.get("understat_errors"):
+        sys.exit(f"backfill completed with {len(report['understat_errors'])} understat error(s)")
 
 
 class LineupsLoader(Protocol):

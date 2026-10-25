@@ -517,6 +517,8 @@ def test_c2_backfill_catches_understat_error_and_records_report(monkeypatch, tmp
     import argparse
     import json
 
+    import pytest
+
     from core.ingest import __main__ as ingest_main
 
     url = make_db(tmp_path)
@@ -563,7 +565,9 @@ def test_c2_backfill_catches_understat_error_and_records_report(monkeypatch, tmp
     monkeypatch.setattr("core.ingest.__main__.Path", fake_path)
 
     args = argparse.Namespace(seasons=[2026], lineups_since=None, lineups_only=False)
-    ingest_main.cmd_backfill(args)
+    with pytest.raises(SystemExit) as exc_info:
+        ingest_main.cmd_backfill(args)
+    assert "understat error" in str(exc_info.value)
 
     assert report_path.exists()
     report = json.loads(report_path.read_text())
@@ -573,3 +577,26 @@ def test_c2_backfill_catches_understat_error_and_records_report(monkeypatch, tmp
         for err in report["understat_errors"]
     )
     assert len(report["understat"]) == 4
+
+
+def test_c2_understat_schedule_non_network_error_not_retried(tmp_path) -> None:
+    import pytest
+
+    url = make_db(tmp_path)
+    config = load_config().model_copy(deep=True)
+    config.ingest.retry_attempts = 3
+    config.ingest.retry_backoff_s = 0.0
+
+    attempts = {"count": 0}
+
+    class LogicErrorReader:
+        def read_schedule(self):
+            attempts["count"] += 1
+            raise ValueError("corrupt schema / invalid format")
+
+    loader = UnderstatLoader(url, config, reader_factory=lambda lg, se: LogicErrorReader())
+    with pytest.raises(ValueError) as exc_info:
+        loader.schedule_rows("premier_league", 2026)
+    assert "corrupt schema" in str(exc_info.value)
+    # Crucial: non-network error must fail immediately on attempt 1 without retry
+    assert attempts["count"] == 1

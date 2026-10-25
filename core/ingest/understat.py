@@ -34,6 +34,30 @@ logger = get_logger("ingest.understat")
 LINEUP_SLEEP_S = 1.0
 
 
+def is_network_error(exc: BaseException) -> bool:
+    """True if exc represents a transient network/connection/timeout issue."""
+    if isinstance(exc, (TimeoutError, ConnectionError, OSError)):
+        return True
+    msg = str(exc).lower()
+    net_keywords = (
+        "dial tcp",
+        "i/o timeout",
+        "timeout",
+        "timed out",
+        "connection refused",
+        "connection reset",
+        "temporary failure",
+        "network is unreachable",
+        "remote end closed",
+        "tls",
+        "handshake",
+    )
+    if any(k in msg for k in net_keywords):
+        return True
+    exc_type = type(exc).__name__.lower()
+    return any(k in exc_type for k in ("timeout", "connection", "network", "http", "tls"))
+
+
 @dataclass
 class UnderstatRow:
     league_slug: str
@@ -132,6 +156,8 @@ class UnderstatLoader:
                     ))
                 return rows
             except Exception as exc:
+                if not is_network_error(exc):
+                    raise
                 last_error = f"{type(exc).__name__}: {exc}"[:300]
                 if attempt == attempts:
                     logger.error("understat.schedule.exhausted",
