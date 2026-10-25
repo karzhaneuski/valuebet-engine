@@ -28,4 +28,13 @@ metrics forbidden until FROZEN_CONFIG.json exists.
   Brier O/U2.5 0.2393, BTTS 0.2447. Reports: part1_baseline.md +
   part1_reliability.png; records .cache/bt_records/baseline.json.
   Grid cost estimate: one config ~30s -> full 16-cell xi*w grid ~8 min.
-- [NEXT] part 2: xi*w grid, then prior_sigma, then model options.
+- 2.1a xi*w grid (16 configs, reports/backtest/grid_xiw.jsonl): best
+  xi=0.002 w=0.5 (LL 2.9112); top-6 within 0.004; w=1.0 clearly worst
+  (2.9218-2.9399), bin 1-5 worsens with w monotonic.
+- 2.1b prior_sigma (grid_sigma.jsonl): sigma 0.75 marginally best
+  (2.9113 at w0.3 / 2.9114 at w0.5) - differences ~0.000x, essentially
+  flat over 0.25-0.75.
+- 2.1c options (grid_options.jsonl): [RUNNING] xgscale / levelgoals /
+  commonrho / decay on xi0.002 w0.5.
+- Selection (2.2): scripts/backtest_select.py - paired week-clustered
+  bootstrap of dLL; ties -> simpler config.
