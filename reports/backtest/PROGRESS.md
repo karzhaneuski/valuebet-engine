@@ -154,6 +154,26 @@ metrics forbidden until FROZEN_CONFIG.json exists.
     - Benchmark Pinnacle correct_score (decisions B6.3) in SPEC §4, §5, and PROMPTS Phase 5;
     - Relative links in Changelog v2 (docs/decisions.md without file:/// or broken anchors).
 
-- All items in Step 0, Part A, Part B, Part C, and Part D completed.
+## Final Review Pass (Phase 4b fixes)
+- S1 (Blocking):
+  - Fixed single source rho for market matrix: rho = 0.
+  - Justification from committed validation match arrays (seasons 2023, 2024; n=3504, 76 calendar weeks): market draw rho vs rho=0 delta is -0.0013 [-0.0032, +0.0007] (indistinguishable from zero -> rule: "when indistinguishable, choose the simpler option").
+  - Final scheme: lambda_total from devigged O/U 2.5, home share from 1X2 via OLS, rho = 0, kappa_high = 0.20 on diagonal >= 2:2.
+  - Removed all "либо ... либо" from SPEC §4, decisions B6.1, and PROMPTS.md Phase 5 task. (Commit: cefe798)
+- Should Fix 1:
+  - Updated SPEC Changelog v2 and §8: corrected validation benchmark numbers from "2.8943 vs 2.9148 / 2.9168" to 2.8894 (market matrix with kappa) vs 2.9112 (pure model); changed "на тесте" to "на валидации вне выборки". (Commit: cefe798)
+- Should Fix 2:
+  - Updated PROMPTS.md Phase 7: removed "детектор аномалий формирует кандидатов"; candidates are formed exclusively by prefilter B6.4; discrepancy with model is strictly an anomaly flag ("check lineups/data"). (Commit: da49f06)
+- Should Fix 3:
+  - In PROMPTS.md Phase 7 (justified over Phase 5 because Phase 7 builds scheduler, live TOA polling, pacing, and degradation execution): added explicit task for sport-level snapshot markets=totals,h2h with expected_cost=2, storing 1X2 from TOA in OddsSnapshot, reading active_tiers, tier_markets, and degradation ladder from config, test for credit calculation and degradation transitions. (Commit: da49f06)
+- Should Fix 4:
+  - In SPEC §6 and PROMPTS.md Phase 6: defined shadow LLM multipliers as applying directly to lambda_home and lambda_away of the single market matrix; clarified that "Base vs Shadow" compares two versions of the single market matrix (unadjusted vs adjusted). (Commit: da49f06)
+- NITs:
+  - Pruned DegradationStep in core/config.py to 3 active steps (cap_correct_score_5_week, disable_t3_h2h, t3_slot_to_day), removing obsolete disable_t48 and disable_t24 — config must not allow disabling T-24. (Commit: 15a34f4)
+  - Removed totals_edge, totals_edge_threshold: 0.06 and "старт 6% для тоталов" from config.yaml, core/config.py, tests/test_config.py, and PROMPTS.md Phase 11 (totals are reference-only). (Commit: 15a34f4)
+  - Refined is_network_error in core/ingest/understat.py to reject FileNotFoundError, PermissionError, directory errors, and 4xx client errors, matching only timeouts, connection errors, and 5xx / 429 status codes; added unit tests in tests/test_ingest_review.py. (Commit: 15a34f4)
+  - Compressed all 11 per-match JSON files in reports/backtest/ with gzip to .json.gz (~7.7 MB -> ~1.2 MB); updated scripts/backtest_hybrid.py (load_json_artifact, save_json_artifact) to transparently support .json.gz and .json. (Commit: 15a34f4)
+
+- All items in Step 0, Part A, Part B, Part C, Part D, Review Round 2, and Final Review Pass completed.
 - Full verification table and owner commands documented in `reports/backtest/SUMMARY_4b.md`.
-- All checks green: ruff (0 errors), mypy (0 errors across 54 files), pytest (211 tests passed).
+- All checks green: ruff (0 errors), mypy (0 errors across 54 files), strict mypy (0 errors across 8 files), pytest (213 tests passed).
