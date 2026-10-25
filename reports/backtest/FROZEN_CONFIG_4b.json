@@ -1,0 +1,27 @@
+{
+ "chosen_variant": {
+  "matrix": "proxy_score_matrix(lambda_total, home_share, rho)",
+  "lambda_total_source": "prematch Avg over/under 2.5, de-vigged (market_lambda_from_totals)",
+  "home_share_source": "model expected goals",
+  "rho_source": "model (fitted per league)",
+  "draw_kappa_high": 0.2
+ },
+ "base_model": {
+  "xi": 0.002,
+  "weight_xg": 0.5,
+  "prior_sigma": 0.5,
+  "frozen_ref": "reports/backtest/FROZEN_CONFIG.json"
+ },
+ "validation": {
+  "log_loss_model": 2.9112,
+  "log_loss_hybrid": 2.9054,
+  "delta": -0.0058,
+  "delta_ci95": [
+   -0.0106,
+   -0.001
+  ]
+ },
+ "commit_at_freeze": "97a785b5b60481ccc978058d9913767d295ca68c",
+ "frozen_at": "2026-10-25T07:30:03+01:00",
+ "note": "committed BEFORE the single second-look test run; the test period was already used by phases 3 and 4 - results are labelled second look"
+}

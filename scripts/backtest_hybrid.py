@@ -124,6 +124,9 @@ def main() -> None:
                              "matrix instead of the model's fitted rho")
     parser.add_argument("--draw-kappa-high", type=float, default=0.0,
                         help="B3 option (c): inflate only 2:2/3:3/...")
+    parser.add_argument("--multiscore", action="store_true",
+                        help="multiscore calibration for the hybrid "
+                             "matrices (top-1, top-3, fixed set, 2-4)")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
     ensure_period_allowed(args.period)
@@ -195,6 +198,32 @@ def main() -> None:
         "delta_ci95": [lo, hi],
         "hybrid_cells": cell_table(hybrid_mats, goals),
     }
+    if args.multiscore:
+        fixed = {(1, 0), (2, 0), (2, 1)}
+        series: dict[str, tuple[list[float], list[float]]] = defaultdict(
+            lambda: ([], []))
+        for m, (gh, ga) in zip(hybrid_mats, goals, strict=True):
+            flat = sorted(((float(m[i, j]), (i, j))
+                           for i in range(m.shape[0])
+                           for j in range(m.shape[0])), reverse=True)
+            top3 = flat[:3]
+            tg = np.add.outer(np.arange(m.shape[0]),
+                              np.arange(m.shape[0]))
+            for name, p, hit in (
+                    ("top1_exact", top3[0][0], (gh, ga) == top3[0][1]),
+                    ("top3_multiscore", sum(x for x, _ in top3),
+                     (gh, ga) in {s2 for _, s2 in top3}),
+                    ("fixed_set_1_0_2_0_2_1",
+                     sum(m[i, j] for i, j in fixed), (gh, ga) in fixed),
+                    ("goals_range_2_4",
+                     float(m[(tg >= 2) & (tg <= 4)].sum()),
+                     2 <= gh + ga <= 4)):
+                series[name][0].append(p)
+                series[name][1].append(1.0 if hit else 0.0)
+        out["multiscore"] = {
+            name: {"n": len(ps), "mean_p": float(np.mean(ps)),
+                   "observed": float(np.mean(ys))}
+            for name, (ps, ys) in series.items()}
     Path(args.out).write_text(json.dumps(out, indent=1))
     print(f"[{args.period}/{args.source}] n={used} LL model {ll_m:.4f} "
           f"hybrid {ll_h:.4f} delta {delta:+.4f} CI95 [{lo:+.4f}, {hi:+.4f}]")
