@@ -21,4 +21,11 @@ metrics forbidden until FROZEN_CONFIG.json exists.
   of the played PSG-Rennes 10363 (verified on a copy).
 
 ## Part 1 (this branch)
-- [IN PROGRESS] core/backtest module.
+- 1.1 (commit d2a1cd3): core/backtest (periods + test lock, walk-forward
+  runner with model cache, metrics) + tests (lock, leak, cache).
+- 1.2 baseline (validation): 30.0s wall clock, 354 refit groups, 3504
+  matches; log loss 2.9148; bins 0/1-5/6-15/>15 = 2.599/3.014/2.853/2.918;
+  Brier O/U2.5 0.2393, BTTS 0.2447. Reports: part1_baseline.md +
+  part1_reliability.png; records .cache/bt_records/baseline.json.
+  Grid cost estimate: one config ~30s -> full 16-cell xi*w grid ~8 min.
+- [NEXT] part 2: xi*w grid, then prior_sigma, then model options.

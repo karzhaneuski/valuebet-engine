@@ -23,6 +23,7 @@ from sqlalchemy.orm import aliased, selectinload
 
 from core.config import ModelConfig
 from core.db import session_scope
+from core.model.dataset import load_quarantined_match_ids
 from core.model.dixon_coles import FittedModel, config_hash, fit_league
 from core.orm import Match, MatchStat, Team
 
@@ -35,6 +36,14 @@ WEEK = dt.timedelta(days=7)
 # history-depth bins (matches of the SHALLOWER team in the last 400 days)
 DEPTH_WINDOW_DAYS = 400
 DEPTH_BINS = (("0", 0, 0), ("1-5", 1, 5), ("6-15", 6, 15), (">15", 16, 10**9))
+
+
+def load_quarantine_or_empty(
+        path: Path = DEFAULT_BACKFILL_REPORT) -> frozenset[int]:
+    """B5-quarantined match ids from the ingest report (empty if absent)."""
+    if not path.exists():
+        return frozenset()
+    return frozenset(load_quarantined_match_ids(path))
 
 
 def week_starts(start: dt.datetime, end: dt.datetime,
