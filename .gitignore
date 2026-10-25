@@ -20,6 +20,7 @@ build/
 # Note: reports/ (including *.png plots) stays tracked on purpose.
 .cache/
 data/raw/
+data/manual/
 *.db
 *.sqlite
 *.sqlite3

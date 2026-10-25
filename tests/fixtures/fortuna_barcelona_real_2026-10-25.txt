@@ -1,0 +1,66 @@
+2026-10-25 Barcelona - Real Madrid
+Mecz: dokładny wynik
+1:0 22.00
+2:0 16.00
+3:0 18.00
+4:0 26.00
+2:1 10.00
+3:1 11.00
+3:2 13.00
+4:1 16.00
+4:2 20.00
+4:3 35.00
+0:0 45.00
+1:1 13.00
+2:2 12.00
+3:3 24.00
+4:4 80.00
+0:1 35.00
+0:2 45.00
+0:3 80.00
+0:4 100.00
+1:2 17.00
+1:3 30.00
+2:3 22.00
+1:4 70.00
+2:4 50.00
+3:4 60.00
+inny 4.60
+
+Mecz: multiwynik
+1:0 2:0 3:0 6.60
+2:1 3:1 4:1 4.30
+3:2 4:2 4:3 5:1 5.80
+4:0 5:0 6:0 16.00
+Remis4.60
+0:1 0:2 0:3 18.00
+1:2 1:3 1:4 10.00
+2:3 2:4 3:4 1:5 13.00
+0:4 0:5 0:61 00.00
+1.drużyna wygra dowolnym innym wynikiem 9.20
+2.drużyna wygra dowolnym innym wynikiem 45.00
+
+Mecz: liczba goli
+mniej niż 1.5 11.00 więcej niż 1.5 1.06
+mniej niż 2.5 4.70 więcej niż 2.5 1.21
+mniej niż 3 3.95 więcej niż 3 1.27
+mniej niż 3.5 2.60 więcej niż 3.5 1.53
+mniej niż 4 2.10 więcej niż 4 1.77
+mniej niż 4.5 1.72 więcej niż 4.5 2.17
+mniej niż 5 1.45 więcej niż 5 2.85
+mniej niż 5.5 1.34 więcej niż 5.5 3.40
+mniej niż 6 1.18 więcej niż 6 5.20
+mniej niż 6.5 1.15 więcej niż 6.5 5.80
+mniej niż 7 1.07 więcej niż 7 9.60
+
+Mecz: Barcelona - liczba goli
+- 0.5 8.40+ 0.5 1.04
+- 1.5 3.45+ 1.5 1.26
+- 2.5 1.89+ 2.5 1.81
+- 3.5 1.34+ 3.5 3.00
+- 4.5 1.12+ 4.5 5.40
+Mecz: Real M. - liczba goli
+- 0.5 4.20+ 0.5 1.19
+- 1.5 1.80+ 1.5 1.91
+- 2.5 1.23+ 2.5 3.75
+- 3.5 1.05+ 3.5 7.60
