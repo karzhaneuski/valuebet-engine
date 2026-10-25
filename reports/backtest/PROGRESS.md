@@ -122,6 +122,14 @@ metrics forbidden until FROZEN_CONFIG.json exists.
 - S3:
   - Updated decisions B3: documented cross-season transfer intervals for both market share (2024->2023 -0.0023 [-0.0044, -0.0002], 2023->2024 -0.0003 [-0.0034, +0.0029]) and model share (2024->2023 -0.0018 [-0.0035, -0.0001], 2023->2024 +0.0001 [-0.0028, +0.0031]); removed "transfers stably" and "test delta"; noted non-positive direction and a priori theoretical justification.
 
+- Б1 (Blocking):
+  - Recalculated 30-day TOA credit budget from measured 28-day no-break calls in reports/recon/odds_budget.json across 6 sports (T-48: 64, T-24: 68, T-3 slot: 91 -> 239/30d calls at 1 market). Linear pricing: markets x regions = 2 credits/call for totals+h2h.
+  - Demonstrated that totals+h2h on all tiers costs 486.43 credits/30d (477.86 sport + 8.57 UCL /scores), overflowing 450 hard stop.
+  - Adopted default policy: T-48 OFF, T-24 ON (totals+h2h, 145.71 credits), T-3 ON by slot (totals+h2h, 195.00 credits), UCL /scores (8.57 credits), Pinnacle correct_score <= 10 matches/week (42.86 credits) -> total 392.14 ≈ 393 credits/30d (headroom 57.86 credits to 450 hard stop).
+  - Defined degradation ladder: (a) correct_score -> 5/wk (370.71 credits); (b) disable T-3 h2h (273.21 credits, home share from T-24); (c) T-3 slot -> day (248.57 credits); (d) T-3 never disabled.
+  - Implemented offline calculator scripts/calc_odds_budget.py and saved committed artifact reports/recon/odds_budget_30d.json.
+  - Updated core/config.py (active_tiers, tier_markets, pinnacle_correct_score_max_weekly, new degradation_ladder), config.yaml, tests/test_config.py, SPEC §3, decisions.md (B6.5), and PROMPTS.md Phase 7 with review checklist.
+
 - All items in Step 0, Part A, Part B, Part C, and Part D completed.
 - Full verification table and owner commands documented in `reports/backtest/SUMMARY_4b.md`.
-- All checks green: ruff (0 errors), mypy (0 errors across 54 files), pytest (209 tests passed).
+- All checks green: ruff (0 errors), mypy (0 errors across 54 files), pytest (211 tests passed).

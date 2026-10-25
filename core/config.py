@@ -116,29 +116,41 @@ class PostponementConfig(BaseModel):
 
 
 DegradationStep = Literal[
+    "cap_correct_score_5_week",
+    "disable_t3_h2h",
+    "t3_slot_to_day",
+    # Legacy / alias compatibility
     "cap_additional_markets_top5_week",
     "disable_t48",
     "disable_t24",
-    "t3_slot_to_day",
 ]
 
 
 def _default_ladder() -> list[DegradationStep]:
-    return ["cap_additional_markets_top5_week", "disable_t48",
-            "disable_t24", "t3_slot_to_day"]
+    # Review B1: (a) correct_score -> 5/wk; (b) disable T-3 h2h; (c) T-3 slot -> day
+    return ["cap_correct_score_5_week", "disable_t3_h2h", "t3_slot_to_day"]
 
 
 class OddsPolicyConfig(BaseModel):
-    """Snapshot policy (d) with per-slot T-3 as default (decisions, S1)."""
+    """Snapshot policy (d) with per-slot T-3 as default (decisions, S1, review B1)."""
 
     tier_windows: OddsTierWindows = Field(default_factory=OddsTierWindows)
+    # T-48 OFF by default (review B1)
+    active_tiers: list[str] = Field(default_factory=lambda: ["t24", "t3"])
+    tier_markets: dict[str, list[str]] = Field(
+        default_factory=lambda: {
+            "t24": ["totals", "h2h"],
+            "t3": ["totals", "h2h"],
+        }
+    )
+    pinnacle_correct_score_max_weekly: int = 10  # Phase 4b B1 budget cap
     t3_granularity: Literal["slot", "day"] = "slot"  # day = degradation only
     max_firing_delay_min: int = 15        # fire <= lower bound + this
     retry_on_error: int = 1
     t1_bet_market: bool = False           # optional T-1 candidate snapshot
     monthly_quota: int = 500              # TOA free tier
     hard_stop_credits: int = 450          # of monthly_quota
-    # degradation ladder at the stop (decisions, final round S3); the order
+    # degradation ladder at the stop (decisions, final round S3, review B1); the order
     # is fixed, T-3 is never disabled
     degradation_ladder: list[DegradationStep] = Field(
         default_factory=_default_ladder)

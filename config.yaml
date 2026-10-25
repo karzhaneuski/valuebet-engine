@@ -71,6 +71,11 @@ risk_flags:
 
 odds_policy:
   tier_windows: { t48: [40, 56], t24: [18, 30], t3: [1, 4] }   # hours
+  active_tiers: [t24, t3]       # T-48 disabled by default (Phase 4b B1 budget)
+  tier_markets:
+    t24: [totals, h2h]
+    t3: [totals, h2h]
+  pinnacle_correct_score_max_weekly: 10
   t3_granularity: slot          # day = degradation step only (decisions S1)
   max_firing_delay_min: 15
   retry_on_error: 1
@@ -78,9 +83,8 @@ odds_policy:
   monthly_quota: 500
   hard_stop_credits: 450
   degradation_ladder:
-    - cap_additional_markets_top5_week
-    - disable_t48
-    - disable_t24
+    - cap_correct_score_5_week
+    - disable_t3_h2h
     - t3_slot_to_day
   pacing: { enabled: true, safety_margin_credits: 25 }
   t4_recheck: true

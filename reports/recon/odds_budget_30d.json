@@ -1,0 +1,114 @@
+{
+  "source": {
+    "measured_file": "reports/recon/odds_budget.json",
+    "policy": "policies.d_snapshots.no_break_28d",
+    "measured_calls_28d": {
+      "t48": 64,
+      "t24": 68,
+      "t3_slot": 91,
+      "t3_day": 68,
+      "total_calls_1market": 223
+    },
+    "scaled_calls_30d": {
+      "t48": 68.57,
+      "t24": 72.86,
+      "t3_slot": 97.5,
+      "t3_day": 72.86
+    },
+    "scores_ucl_30d_credits": 8.57
+  },
+  "all_tiers_on_infeasible_overflow": {
+    "description": "All tiers (T-48, T-24, T-3 slot) with totals+h2h (2 credits/call)",
+    "sport_calls_30d": 238.93,
+    "sport_credits_30d": 477.86,
+    "scores_credits_30d": 8.57,
+    "total_credits_30d": 486.43,
+    "hard_stop_ceiling": 450,
+    "overflow_credits": 36.43,
+    "note": "Exceeds 450 hard stop without any candidate correct_score calls."
+  },
+  "default_adopted_policy": {
+    "description": "T-48 OFF, T-24 totals+h2h, T-3 slot totals+h2h, CS <= 10/wk",
+    "t48_status": "OFF",
+    "t24_markets": [
+      "totals",
+      "h2h"
+    ],
+    "t24_credits_30d": 145.71,
+    "t3_granularity": "slot",
+    "t3_markets": [
+      "totals",
+      "h2h"
+    ],
+    "t3_credits_30d": 195.0,
+    "scores_credits_30d": 8.57,
+    "pinnacle_correct_score_weekly_cap": 10,
+    "correct_score_credits_30d": 42.86,
+    "total_credits_30d": 392.14,
+    "hard_stop_ceiling": 450,
+    "monthly_quota": 500,
+    "headroom_to_450": 57.86
+  },
+  "candidate_variations": {
+    "cs_0_per_week": {
+      "pinnacle_correct_score_weekly": 0,
+      "correct_score_credits_30d": 0.0,
+      "total_credits_30d": 349.29,
+      "fits_hard_stop_450": true,
+      "headroom_to_450": 100.71
+    },
+    "cs_5_per_week": {
+      "pinnacle_correct_score_weekly": 5,
+      "correct_score_credits_30d": 21.43,
+      "total_credits_30d": 370.71,
+      "fits_hard_stop_450": true,
+      "headroom_to_450": 79.29
+    },
+    "cs_10_per_week": {
+      "pinnacle_correct_score_weekly": 10,
+      "correct_score_credits_30d": 42.86,
+      "total_credits_30d": 392.14,
+      "fits_hard_stop_450": true,
+      "headroom_to_450": 57.86
+    },
+    "cs_15_per_week": {
+      "pinnacle_correct_score_weekly": 15,
+      "correct_score_credits_30d": 64.29,
+      "total_credits_30d": 413.57,
+      "fits_hard_stop_450": true,
+      "headroom_to_450": 36.43
+    }
+  },
+  "degradation_ladder": [
+    {
+      "step": "default",
+      "description": "T-48 OFF, T-24 (totals+h2h), T-3 slot (totals+h2h), CS <= 10/wk",
+      "total_credits_30d": 392.14,
+      "headroom_to_450": 57.86
+    },
+    {
+      "step": "a_cap_correct_score_5_week",
+      "description": "Cap candidate Pinnacle correct_score to 5/week",
+      "total_credits_30d": 370.71,
+      "headroom_to_450": 79.29
+    },
+    {
+      "step": "b_disable_t3_h2h",
+      "description": "Disable h2h on T-3 (totals only, home share taken from T-24)",
+      "total_credits_30d": 273.21,
+      "headroom_to_450": 176.79
+    },
+    {
+      "step": "c_t3_slot_to_day",
+      "description": "Switch T-3 from kickoff slots to day slots (1 call/day)",
+      "total_credits_30d": 248.57,
+      "headroom_to_450": 201.43
+    },
+    {
+      "step": "d_t3_never_disabled",
+      "description": "T-3 is never disabled (floor maintained)",
+      "total_credits_30d": 248.57,
+      "headroom_to_450": 201.43
+    }
+  ]
+}

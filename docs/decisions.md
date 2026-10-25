@@ -708,12 +708,24 @@ FROZEN_CONFIG_4b; the window was already used by phases 3/4):
    rule selects candidate matches by divergence between model share and
    market share |share_model - share_1x2| or divergence on totals,
    capped at top 15 matches/week, without purchasing event-level odds.
-5. Live odds source and credit budget: sport-level /odds polls
+5. Live odds source and credit budget (review B1): sport-level /odds polls
    `markets=totals,h2h` (2 markets × 1 region eu = 2 credits/snapshot).
-   5 leagues × 3 snapshots (T-48, T-24, T-3) × 2 credits = 30 credits/round,
-   ~120 credits/month. Adding candidate event-level correct_score (15/week ×
-   4 × 1 = 60) and UCL /scores (8 credits) yields ~188 credits/month,
-   well below the 450 hard-stop ceiling.
+   Measured 28-day no-break calls (reports/recon/odds_budget.json) across
+   6 sports: T-48: 64, T-24: 68, T-3 (by slots): 91 calls (= 239/30d at 1 credit).
+   Enabling totals+h2h on all tiers yields (64+68+91) × 2 × 30/28 = 477.86 credits +
+   UCL /scores (8.57) = 486.43 ≈ 487 credits/30d, which overflows the 450 hard stop!
+   Adopted default scheme (scripts/calc_odds_budget.py -> reports/recon/odds_budget_30d.json):
+   - T-48: OFF (0 calls);
+   - T-24: ON with totals+h2h (2 credits) -> 145.71 credits/30d;
+   - T-3 (by slots): ON with totals+h2h (2 credits) -> 195.00 credits/30d;
+   - UCL /scores: 8.57 credits/30d (≈ 9);
+   - Pinnacle candidate correct_score: <= 10 matches/week -> 42.86 credits/30d;
+   - Total default: 392.14 ≈ 393 credits/30d (headroom 57.86 to 450 stop).
+   Degradation ladder under quota/pacing pressure:
+   (a) cap correct_score to 5/week -> 370.71 ≈ 371 credits/30d;
+   (b) disable h2h on T-3 (totals only, home share taken from T-24) -> 273.21 ≈ 273 credits/30d;
+   (c) switch T-3 from slots to days (68 calls instead of 91, totals only) -> 248.57 ≈ 249 credits/30d;
+   (d) T-3 is NEVER disabled. All snapshot timings use T-3 (Phase 0 decision), not T-2.
 6. 1X2 odds role: 1X2 is used STRICTLY AS INPUT to construct the fair
    matrix. Bets on 1X2 are NEVER issued (SPEC §1).
 7. Quality arbiter for phase 7: CLV measured against our own exact-score
