@@ -784,7 +784,7 @@ reports/backtest/4b_hybrid_market_1x2.json, reports/backtest/4b_hybrid_all_marke
    - Every prefilter decision (accepted/rejected + reason) is logged to `prefilter_decisions` table with idempotency on `(match_id, decision_date)`.
 6. **Persistence & Idempotency (`core/value/persistence.py`, Migration `48fd4f90f079`)**:
    - `recommendations` table extended with `matrix_source` (VARCHAR(40)) and `input_hash` (VARCHAR(64)).
-   - Unique constraint `uq_recommendations_idempotency` on `(match_id, market, outcome, variant, input_hash)`. Re-evaluating the same match with identical input state updates odds/edge without duplicating rows.
+   - Initial migration `48fd4f90f079` introduced unique constraint `uq_recommendations_idempotency` on `(match_id, market, outcome, variant, input_hash)`. This was subsequently dropped and replaced in migration `e5f1b2c3d4e5` by partial unique index `uq_recommendations_active` (see item 9) to enable recommendation lifecycle transitions (`active` -> `superseded` / `withdrawn`) without uniqueness collisions across historical versions.
    - 'other' outcome is persisted with `market="exact_score"` and `outcome="other"` to satisfy `reco_market` enum.
    - CLV fields (`clv`, `clv_source`) left empty for Phase 7.
 7. **CLI (`core/value/__main__.py`)**:
@@ -795,7 +795,7 @@ reports/backtest/4b_hybrid_market_1x2.json, reports/backtest/4b_hybrid_all_marke
    - $p_{\text{fair}}(\text{inny}) = 1 - \sum M[0..4, 0..4]$ is derived entirely from the fair matrix and does NOT depend on user input.
    - Any outcome outside $0..4$ (e.g. `5:0`) raises `FortunaParseError` ("Счёт 5:0 вне сетки Fortuna 0..4; такие исходы входят в 'inny'").
    - `inny` and grid margin are evaluated ONLY when all 25 scores are present in the batch. If incomplete ($N < 25$), rejected with `"Неполная сетка Fortuna (N из 25): inny не оценивается"`.
-   - On the validation set ($N = 3,462$, `scripts/verify_inny_bias.py`), `inny` exhibits empirical bias $z = -2.25$ (predicted $p_{\text{fair}} = 0.0474$ vs actual frequency $0.0393$, $\Delta = -0.0081$, binomial $\text{SE} = 0.00361$, $p = 0.024$). Earlier drafts reported 5.7% vs 4.6% from a smaller preliminary sample; 4.74% vs 3.93% is the canonical figure across the entire validation dataset. `inny` is marked `recommended = False` with reason `"Только для справки: эмпирическое смещение z=-2.25"` and is strictly reference-only.
+   - On the validation set ($N = 3,462$, `scripts/verify_inny_bias.py`), `inny` exhibits empirical bias $z = -2.28$ (predicted $p_{\text{fair}} = 0.0474$ vs actual frequency $0.0393$, $\Delta = -0.0081$, Poisson binomial $\text{SE} = \frac{\sqrt{\sum p_i(1-p_i)}}{N} = 0.00356$, $p = 0.023$). Earlier drafts reported 5.7% vs 4.6% from a smaller preliminary sample; 4.74% vs 3.93% is the canonical figure across the entire validation dataset. `inny` is marked `recommended = False` with reason `"Только для справки: эмпирическое смещение z=-2.28"` and is strictly reference-only.
 9. **Recommendation Lifecycle & Status (`core/orm.py`, Migration `e5f1b2c3d4e5`)**:
    - `Recommendation` carries `selection_key: str` (e.g. `score:2:1`, `range:2:4`, `multi:1:0,2:0`, `score:other`) and `status: sa.Enum('active', 'superseded', 'withdrawn', name='reco_status')`.
    - Partial unique index `uq_recommendations_active` on `(match_id, market, selection_key, variant) WHERE status = 'active'`.
@@ -819,5 +819,15 @@ reports/backtest/4b_hybrid_market_1x2.json, reports/backtest/4b_hybrid_all_marke
 12. **Key Players & Standby Model Implementation**:
    - Dynamic standby model fits historical matches prior to match kickoff with `result_lag_minutes`.
    - Key players are identified via `match_lineups` SQL query for players starting in $\ge 70\%$ of the last 8 team matches. Automated external news scraping is deferred to Phase 6.
+13. **Departures from SPEC §5, Additional Operational Guards & Phase 7 Tasks**:
+   - **Standby Model is Reference-Only ($\alpha = 0$)**: While SPEC §5 originally conceived combining the statistical model with market prices or adjusting the home goal share via model rates, Phase 5 establishes that the fair matrix is constructed purely from sharp market lines (devigged O/U 2.5 and 1X2). The Dixon-Coles model functions solely as a zero-alpha fallback when market odds are missing, and when market odds are present, model home share divergence $|s_{\text{market}} - s_{\text{model}}| > 0.15$ only emits a diagnostic warning (`⚠️ Аномалия модели: проверь составы/данные`) without altering matrix probabilities or candidate ranking.
+   - **Additional Threshold Guards**:
+     - `implausible_edge_exact_score: 0.40`, `implausible_edge_multiscore: 0.25`, `implausible_edge_goals_range: 0.25`
+     - `exact_score_min_p: 0.04`, `exact_score_max_odds: 21.0`
+     - `multiscore_min_p: 0.06`, `multiscore_max_odds: 15.0`
+     - `goals_range_min_p: 0.15`, `goals_range_max_odds: 8.0`
+     *Rationale*: In manual odds entry workflows, human transcription errors (e.g. typing `21.0` instead of `2.10`) can create astronomical false edges. These hard limits protect bankroll against input typos, prune low-probability tail cells ($p < 4\%$) where Poisson assumptions degrade, and enforce liquidity caps.
+   - **Phase 7 CLV Tracking Task**:
+     `CHECK clv_source IN ('fair_market_matrix', 'pinnacle_correct_score')`: In Phase 7 CLV evaluation, `clv_source` must accommodate both closing market-implied matrix and direct closing correct_score snapshots.
 
 **Reason**: Phase 5 requirements; SPEC §4, §5, §7; docs/decisions.md B6.1–B6.5.

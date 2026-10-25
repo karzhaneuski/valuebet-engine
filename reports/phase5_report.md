@@ -18,15 +18,15 @@ All 7 steps (Steps 0–6) are complete, fully tested, and committed on branch `p
 | **3. Парсер Fortuna** | `core/value/fortuna_input.py`: парсер точного счёта (`2:1 9.50`), другого счёта (`inny wynik`, `other`), мультисчёта (`1:0, 2:0, 2:1 @ 3.40`), диапазона голов (`2-4 gole @ 1.80`), справочных тоталов/1X2; детектор конфликтов; валидация 25 счетов сетки Fortuna (0..4), оценка `inny` только при полной сетке; расчёт маржи. | `0295765`, `3a21b36` | `tests/test_fortuna_input.py` (28 тестов): синтаксический мусор, дубликаты, маржа, сетка |
 | **4. Value Engine** | `core/value/engine.py`: расчёт edge, пороги (точное $\ge 12\%$, мультисчёт $\ge 8\%$, odds $\le 21$, $p \ge 4\%$), ¼ Келли с потолком 2%, флаги риска (отсутствие ключевого игрока $\times 1.5$, исключение при $\ge 2$), детектор аномалии модели, вывод таблицы на русском; `inny` строго справочный (прогноз 4.74% vs факт 3.93%, $z=-2.25$, `scripts/verify_inny_bias.py`). | `107ac62`, `3a21b36` | `tests/test_engine.py` (11 тестов): пороги, отказ по длинным odds / малой $p$, Келли, таблица |
 | **5. Префильтр кандидатов** | `core/value/prefilter.py`: отбор матчей для ручного ввода котировок по сетке Fortuna (`--has-fortuna-grid`), массе высоких ничьих $\sum_{i \ge 2} M_{i,i}$, ротации лиг (round-robin с лимитом 3 на лигу) и недельному лимиту $\le 10$ с учётом ранее отобранных; запись в `prefilter_decisions`. | `caef20d`, `3a21b36` | `tests/test_prefilter.py` (10 тестов); прогон на 79 матчах в `/tmp/p5.db` |
-| **6. Хранение и CLI** | Миграции `48fd4f90f079` и `e5f1b2c3d4e5` (`selection_key`, `status: active/superseded/withdrawn`); `core/value/persistence.py`: жизненный цикл рекомендаций; запрет сохранения после commence time; CLI `core.value` (`evaluate`, `candidates`). | `0f2504d`, `3a21b36` | `tests/test_persistence_cli.py`, `tests/test_migrations.py`; 267 тестов green |
-| **7. Исследования маржи** | `scripts/fortuna_margin_study.py` (M0–M3), `scripts/soft_vs_sharp_totals.py` (M4), `scripts/verify_inny_bias.py`: замер реальной маржи Fortuna (32.7% на точном счёте), доказательство барьера zero-value, бэктест софта на тоталах (реализуемые сценарии 1 и 3, look-ahead статус сценария 2, line shopping MaxC), верификация смещения inny. | `21d7b4d`, `187d567` | `reports/fortuna_margin_study.md`, `reports/soft_vs_sharp_totals.md` |
+| **6. Хранение и CLI** | Миграции `48fd4f90f079` и `e5f1b2c3d4e5` (`selection_key`, `status: active/superseded/withdrawn`); `core/value/persistence.py`: жизненный цикл рекомендаций; запрет сохранения после commence time; CLI `core.value` (`evaluate`, `candidates`). | `0f2504d`, `3a21b36`, `2a3f2a5` | `tests/test_persistence_cli.py`, `tests/test_migrations.py`; 277 тестов green (3 skipped) |
+| **7. Исследования маржи** | `scripts/fortuna_margin_study.py` (M0–M3), `scripts/soft_vs_sharp_totals.py` (M4), `scripts/verify_inny_bias.py`: замер реальной маржи Fortuna (32.7% на точном счёте), доказательство барьера zero-value, бэктест софта на тоталах (реализуемые сценарии 1 и 3, look-ahead статус сценария 2, line shopping MaxC), верификация смещения inny ($z = -2.28$). | `21d7b4d`, `187d567`, `6233e63` | `reports/fortuna_margin_study.md`, `reports/soft_vs_sharp_totals.md` |
 
 ---
 
 ## Detailed Step Breakdown & Findings
 
 ### Step 1: Fair Market Matrix
-- **Implementation**: [`core/value/fair_matrix.py`](file:///Users/karzhaneuski/projects/valuebet-engine/core/value/fair_matrix.py)
+- **Implementation**: [`core/value/fair_matrix.py`](core/value/fair_matrix.py)
 - **Numerical Validation**:
   Compared against `scripts/backtest_hybrid.py` for synthetic match ($O/U=1.85/2.05$, $1X2=1.95/3.60/4.20$):
   - $\lambda_{\text{total}} = 2.679633391807$
@@ -37,7 +37,7 @@ All 7 steps (Steps 0–6) are complete, fully tested, and committed on branch `p
   If line 2.5 is unavailable, the engine falls back to the nearest available half-line ($x.5$) with line recorded in metadata. If neither 1X2 nor totals exist, `status="no_market"`.
 
 ### Step 2: Pinnacle correct_score Benchmark
-- **Implementation**: [`core/value/pinnacle_benchmark.py`](file:///Users/karzhaneuski/projects/valuebet-engine/core/value/pinnacle_benchmark.py)
+- **Implementation**: [`core/value/pinnacle_benchmark.py`](core/value/pinnacle_benchmark.py)
 - **Actual DB Evaluation (Match 1973: Aston Villa vs Manchester City)**:
   - Loaded all 32 Pinnacle correct_score rows from `odds_snapshots`.
   - Overround: 1.266 (Pinnacle exact score margin ~26.6%).
@@ -48,7 +48,7 @@ All 7 steps (Steps 0–6) are complete, fully tested, and committed on branch `p
   - **Honest Finding**: Live h2h was not polled in historic TOA snapshots (sport-level polling with `markets=totals,h2h` is scheduled for Phase 7).
 
 ### Step 3: Fortuna Manual Odds Parser
-- **Implementation**: [`core/value/fortuna_input.py`](file:///Users/karzhaneuski/projects/valuebet-engine/core/value/fortuna_input.py)
+- **Implementation**: [`core/value/fortuna_input.py`](core/value/fortuna_input.py)
 - **Features Tested**:
   - Exact scores: `2:1 9.50`, `2-1 @ 9,50`, `2:1 - 9.5`
   - Any other score: `inny wynik`, `pozostałe`, `other`, `любой другой`
@@ -56,10 +56,10 @@ All 7 steps (Steps 0–6) are complete, fully tested, and committed on branch `p
   - Goals ranges: `2-4 gole @ 1.80`, `2–4 bramki 1,80`, `2-4 гола`
   - Reference totals & 1X2: `over 2.5 1.95`, `1 @ 2.05`
   - Conflicting duplicate odds raise `FortunaParseError` with line numbers; identical lines are deduplicated.
-  - Calculated bookmaker margin on exact score grid: 15.4%.
+  - Calculated bookmaker margin on exact score grid: 32.7% (measured across real Fortuna fixtures; partial batches without 25 cells do not compute margin).
 
 ### Step 4: Value Engine
-- **Implementation**: [`core/value/engine.py`](file:///Users/karzhaneuski/projects/valuebet-engine/core/value/engine.py)
+- **Implementation**: [`core/value/engine.py`](core/value/engine.py)
 - **Thresholds**:
   - Exact score / other score: $\text{edge} \ge 12\%$, $p_{\text{fair}} \ge 4\%$, $\text{odds} \le 21.0$.
   - Multiscore / goals range: $\text{edge} \ge 8\%$.
@@ -73,7 +73,7 @@ All 7 steps (Steps 0–6) are complete, fully tested, and committed on branch `p
   - Model weight is strictly $\alpha = 0$ (does not boost bet priority).
 
 ### Step 5: Candidate Prefilter
-- **Implementation**: [`core/value/prefilter.py`](file:///Users/karzhaneuski/projects/valuebet-engine/core/value/prefilter.py)
+- **Implementation**: [`core/value/prefilter.py`](core/value/prefilter.py)
 - **Selection Criteria**:
   1. Fortuna grid availability (`has_fortuna_grid != False`).
   2. Mass of high draws in the fair market matrix $\sum_{i \ge 2} M_{i,i}$ (zone of $\kappa_{\text{high}}$ mispricing).
@@ -100,8 +100,8 @@ Pinnacle market: O/U 2.5: 1.56 / 2.56; 1X2: 1.63 / 4.38 / 5.30.
 ```
 ==============================================================================================
 Матч: Manchester United - Fulham
-Источник рынка: market_pinnacle (pinnacle) | Время снимка: 2024-08-16 19:00 UTC
-Маржа Fortuna: не определена | Хеш входа: 6e67ab2ca4c7777d...
+Источник рынка: market_pinnacle (pinnacle) | Время снимка: неизвестно (football-data)
+Маржа Fortuna: не определена (неполная сетка) | Хеш входа: ebd9b60e26817814...
 ----------------------------------------------------------------------------------------------
 Исход                  Fortuna  p_fair Справедл.     Edge  Реком.  ¼ Келли Причина отказа
 ----------------------------------------------------------------------------------------------
@@ -114,23 +114,23 @@ Pinnacle market: O/U 2.5: 1.56 / 2.56; 1X2: 1.63 / 4.38 / 5.30.
 1:0, 2:0, 2:1             3.40   27.2%      3.68    -7.7%     НЕТ        —   Ниже порога edge (< 8.0%)
 1:1, 2:2, 3:3             4.80   17.2%      5.81   -17.3%     НЕТ        —   Ниже порога edge (< 8.0%)
 2-4 гола                  1.85   61.1%      1.64   +13.1%      ДА     2.0%   
-Любой другой счёт        15.00   50.4%      1.99  +655.6%      ДА     2.0%   
+Любой другой счёт        15.00       —         —        —     НЕТ        —   Неполная сетка Fortuna (6 из 25): inny не оценивается
 Тотал больше 2.5          1.58   62.7%      1.60    -1.0%     НЕТ        —   Справочный рынок
 Исход 1                   1.62   59.5%      1.68    -3.6%     НЕТ        —   Справочный рынок
 ----------------------------------------------------------------------------------------------
-Итого рекомендаций: 2
+Итого рекомендаций: 1
 ==============================================================================================
-[OK] Записано 2 рекомендаций в таблицу 'recommendations' (матч ID 1141).
+[OK] Записано 1 рекомендаций в таблицу 'recommendations' (матч ID 1141).
 ```
-*Idempotency check: re-running this command updated existing records without creating duplicates (verified: exactly 2 rows in `recommendations`).*
+*Idempotency check: re-running this command updated existing records without creating duplicates (verified: exactly 1 row in `recommendations`).*
 
 ### Match 2: Valencia vs Barcelona (La Liga, 2024-08-17)
 Pinnacle market: O/U 2.5: 1.85 / 2.05; 1X2: 4.89 / 3.85 / 1.75.
 ```
 ==============================================================================================
 Матч: Valencia - Barcelona
-Источник рынка: market_pinnacle (pinnacle) | Время снимка: 2024-08-17 19:30 UTC
-Маржа Fortuna: не определена | Хеш входа: 6a84cf915d8625a5...
+Источник рынка: market_pinnacle (pinnacle) | Время снимка: неизвестно (football-data)
+Маржа Fortuna: не определена (неполная сетка) | Хеш входа: a2d543be4d5ab0c1...
 ----------------------------------------------------------------------------------------------
 Исход                  Fortuna  p_fair Справедл.     Edge  Реком.  ¼ Келли Причина отказа
 ----------------------------------------------------------------------------------------------
@@ -155,8 +155,8 @@ Pinnacle market: O/U 2.5: 1.65 / 2.36; 1X2: 7.84 / 4.94 / 1.42.
 ```
 ==============================================================================================
 Матч: Le Havre - Paris Saint Germain
-Источник рынка: market_pinnacle (pinnacle) | Время снимка: 2024-08-16 18:45 UTC
-Маржа Fortuna: не определена | Хеш входа: aa8dfba66f6c5ec8...
+Источник рынка: market_pinnacle (pinnacle) | Время снимка: неизвестно (football-data)
+Маржа Fortuna: не определена (неполная сетка) | Хеш входа: c2abad1180b1dad3...
 ----------------------------------------------------------------------------------------------
 Исход                  Fortuna  p_fair Справедл.     Edge  Реком.  ¼ Келли Причина отказа
 ----------------------------------------------------------------------------------------------
@@ -221,5 +221,29 @@ uv run alembic upgrade head
 ```
 
 This applies two migrations:
-1. `48fd4f90f079_recommendations_matrix_provenance.py`: adds `matrix_source`, `input_hash`, and idempotency unique constraint `uq_recommendations_idempotency`.
-2. `e5f1b2c3d4e5_recommendation_lifecycle_status_and_key.py`: adds `selection_key`, `status` (`active`, `superseded`, `withdrawn`), and partial unique index `uq_recommendations_active`.
+1. `48fd4f90f079_recommendations_matrix_provenance.py`: adds `matrix_source` and `input_hash`.
+2. `e5f1b2c3d4e5_recommendation_lifecycle_status_and_key.py`: adds `selection_key`, `status` (`active`, `superseded`, `withdrawn`), and partial unique index `uq_recommendations_active` (dropping initial constraint `uq_recommendations_idempotency`).
+
+---
+
+## Test Verification Output (`uv run pytest`)
+
+```
+=============================== test session starts ===============================
+platform darwin -- Python 3.12.9, pytest-8.3.4, pluggy-1.5.0
+rootdir: /Users/karzhaneuski/projects/valuebet-engine
+configfile: pyproject.toml
+collected 280 items
+
+........................................................................ [ 25%]
+........................................................................ [ 51%]
+........................................................................ [ 77%]
+....................................s........................ss.         [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/karzhaneuski/projects/valuebet-engine/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+277 passed, 3 skipped, 1 warning in 31.03s
+```

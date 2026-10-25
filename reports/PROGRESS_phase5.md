@@ -81,7 +81,7 @@ Continuation point: this file + `git log phase-5-fair-pricing`. Rules: DB copy o
 ## Step 6: Persistence and CLI (core.value)
 - Database schema migration (`48fd4f90f079_recommendations_matrix_provenance.py`):
   - Added `matrix_source` (VARCHAR(40)) and `input_hash` (VARCHAR(64)) to `recommendations` table.
-  - Added unique constraint `uq_recommendations_idempotency` on `(match_id, market, outcome, variant, input_hash)`.
+  - Added unique constraint `uq_recommendations_idempotency` on `(match_id, market, outcome, variant, input_hash)` (subsequently dropped in migration `e5f1b2c3d4e5` in favor of partial index `uq_recommendations_active`).
   - Applied cleanly to `/tmp/p5.db`. Verified `tests/test_migrations.py` passing (alembic check, up/down cycle).
 - Created `core/value/persistence.py`:
   - `save_recommendations_to_db`: records value recommendations with `variant="base"`, `final_odds_source="fortuna_manual"`, `matrix_source`, `input_hash`, `p_model` (p_fair), `p_market_devig`, `edge`, `kelly_quarter_capped`, and `flags`. Idempotency key `(match_id, market, outcome, variant, input_hash)` guarantees re-evaluation does not create duplicate rows. Leaves `clv` and `clv_source` empty for Phase 7.
@@ -171,10 +171,48 @@ Continuation point: this file + `git log phase-5-fair-pricing`. Rules: DB copy o
   - Documented migrations `48fd4f90f079` and `e5f1b2c3d4e5`.
 
 ---
-## Status: Phase 5 Fully Completed
-All 267 unit and integration tests passing (`uv run pytest`).
-All linting and type checks green (`uv run ruff check .`, `uv run mypy`, `uv run mypy --strict core/model core/backtest core/value`).
-All reviewer items (3 BLOCKING, 5 SHOULD FIX, M0–M5) verified and documented.
+## Step 8: Final Review Round Fixes (4 BLOCKING, SHOULD FIX 5–13, NITs)
+
+### 1. BLOCKING Issues Fixed
+- **BLOCKING 1: Test DB Isolation & No Leakage Guarantee** (commit `64583a6`):
+  - Refactored `tests/test_standby_model.py` and `tests/test_pinnacle_benchmark.py` to use synthetic SQLite fixtures (`tmp_path`).
+  - Gated real DB tests behind `@pytest.mark.skipif("VALUEBET_REAL_DB" not in os.environ)`.
+  - Added synthetic test `test_standby_model_no_leakage_and_lag_buffer` ensuring matches in `[as_of - 150min, as_of)` and post-`as_of` are excluded from training.
+  - Defused time bomb in `tests/test_persistence_cli.py::test_cli_evaluate_and_candidates` with dynamic `now + N days`.
+- **BLOCKING 2: Integer & Quarter Totals Handling** (commit `e0e57c0`):
+  - Integer totals (`mniej/więcej niż 3 / 4 / 5`) calculate push probability from fair matrix: $p_{\text{fair, eff}} = \frac{P}{1.0 - P(\text{push})}$.
+  - Quarter totals (`2.25`, `2.75`) cleanly rejected with `rejection_reason = "Четвертная линия тотала не поддерживается"`, `p_fair = 0.0`, `recommended = False`.
+  - Verified 3 real fixtures in `tests/fixtures/` execute through `evaluate_fortuna_prices` and CLI with exit code 0.
+- **BLOCKING 3: Lifecycle Withdrawal Guarantee** (commit `2a3f2a5`):
+  - CLI `evaluate --save` always calls `save_recommendations_to_db` even when 0 outcomes pass, transitioning previous active recommendations to `withdrawn`.
+  - Test verifies initial `odds` and `created_at_utc` remain immutable across transitions.
+- **BLOCKING 4: Prefilter Idempotency** (commit `2a3f2a5`):
+  - Prefilter excludes `decision_date == today` when calculating `accepted_this_week`, preventing same-day reruns from demoting previously accepted candidates.
+  - Tested: 3 consecutive runs produce identical decisions, respecting weekly and league caps.
+
+### 2. SHOULD FIX & NIT Items
+- **SHOULD FIX 6, 13 & NITs** (commit `6233e63`):
+  - `scripts/fortuna_margin_study.py`: sharp benchmark provenance noted, unrepresentative disclaimer added, Nice multiwynik up to 1.179 noted, line length formatted.
+  - `scripts/soft_vs_sharp_totals.py`: 95% bootstrap CI for AvgC and MaxC, MaxC practical unfeasibility disclaimer, dynamic conclusions.
+  - `scripts/verify_inny_bias.py`: Poisson binomial SE $\text{SE} = \frac{\sqrt{\sum p_i(1-p_i)}}{N} = 0.00356$, $z = -2.28$ printed dynamically.
+- **SHOULD FIX 7, 8, 12 & NITs** (commit `e0e57c0`):
+  - Team totals side matching with abbreviation support ("Real M." matches away "Real Madrid", not "Barcelona").
+  - Multiwynik `home_other` / `away_other` partitioned via `np.tril` / `np.triu` ($\sum = 1.0 \pm 10^{-9}$).
+  - Parser raises `FortunaParseError(line_num, ...)` on glued score/odds (`2:19.50`); parses score on one line and odds on next (`2:1\n9.50`).
+  - Sliced `inny` dynamically via `config.fortuna.cs_grid_max_goals + 1`.
+- **SHOULD FIX 10, 11 & NITs** (commit `2a3f2a5`):
+  - User absences in CLI checked against `get_key_players_for_team` ($\ge 70\%$ starts); non-key absences logged without edge multiplier.
+  - Past match protection falls back to `date_utc` when `commence_time_utc` is NULL and blocks saving.
+  - Existing rows in migration `e5f1b2c3d4e5` populated with `selection_key`.
+- **SHOULD FIX 5, 9 & NITs**:
+  - `docs/decisions.md`: reconciled `uq_recommendations_idempotency` vs `uq_recommendations_active`, documented departures from SPEC §5 (standby model reference-only, additional threshold guards), noted Phase 7 CLV task.
+  - `reports/phase5_report.md`: updated CLI demo outputs, removed inaccurate inny line and 15.4% margin, cleaned links to repo-relative, recorded real pytest output (`277 passed, 3 skipped, 1 warning`).
+
+---
+## Status: Review Round Complete & Verified
+- All 277 synthetic and unit tests passing (`277 passed, 3 skipped, 1 warning in 31.03s`).
+- All linting and type checks green (`uv run ruff check .`, `uv run mypy`, `uv run mypy --strict core/model core/backtest core/value`).
+- All 4 BLOCKING, 9 SHOULD FIX, and 6 NIT reviewer items resolved.
 
 
 
