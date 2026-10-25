@@ -53,6 +53,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 # Cyrillic user-facing text, Polish betting terminology, and typographic dashes
 "core/value/*" = ["RUF001", "RUF002", "RUF003"]
 "tests/test_fortuna_input.py" = ["RUF001", "RUF002", "RUF003"]
+"scripts/*" = ["RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
 python_version = "3.12"
