@@ -1,9 +1,43 @@
 {
  "period": "validation",
  "source": "prematch",
+ "bookmaker": "Avg",
+ "share": "model",
+ "all_market": false,
  "draw_kappa": 0.0,
  "draw_kappa_high": 0.0,
  "rho_override": null,
+ "used": 3504,
+ "missing_odds": 0,
+ "log_loss_model": 2.9112127019126666,
+ "log_loss_hybrid": 2.9067255973027044,
+ "delta_hybrid_minus_model": -0.004487104609962156,
+ "delta_ci95": [
+  -0.00879963392410642,
+  -8.278303668686956e-05
+ ],
+ "by_season": {
+  "2023": {
+   "n": 1752,
+   "log_loss_model": 2.9195855993262607,
+   "log_loss_hybrid": 2.917040240036831,
+   "delta": -0.0025453592894297827,
+   "delta_ci95": [
+    -0.009851402737149097,
+    0.003932154140104787
+   ]
+  },
+  "2024": {
+   "n": 1752,
+   "log_loss_model": 2.902839804499073,
+   "log_loss_hybrid": 2.896410954568578,
+   "delta": -0.006428849930494973,
+   "delta_ci95": [
+    -0.011979889655211557,
+    -0.0009231454027380592
+   ]
+  }
+ },
  "model_cells": [
   {
    "cell": "0:0",
@@ -101,15 +135,6 @@
    "observed": 0.010559360730593607,
    "z": -0.33473958686889466
   }
- ],
- "used": 3504,
- "missing_odds": 0,
- "log_loss_model": 2.9112127019126666,
- "log_loss_hybrid": 2.9067255973027044,
- "delta_hybrid_minus_model": -0.004487104609962156,
- "delta_ci95": [
-  -0.00879963392410642,
-  -8.278303668686956e-05
  ],
  "hybrid_cells": [
   {

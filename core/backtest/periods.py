@@ -22,6 +22,7 @@ VALIDATION_SEASONS = frozenset({2023, 2024})
 TEST_SEASONS = frozenset({2025, 2026})
 
 FROZEN_CONFIG_PATH = Path("reports/backtest/FROZEN_CONFIG.json")
+FROZEN_CONFIG_4B_PATH = Path("reports/backtest/FROZEN_CONFIG_4b.json")
 
 PERIODS = {
     "warmup": WARMUP_SEASONS,

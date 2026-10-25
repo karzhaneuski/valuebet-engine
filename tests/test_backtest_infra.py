@@ -240,3 +240,41 @@ def test_date_lock_refuses_windows_reaching_into_test(tmp_path, db_url) -> None:
                         leagues=("premier_league",))
     finally:
         runner_mod.ensure_window_allowed = original
+
+
+def test_phase4b_scripts_test_lock(tmp_path) -> None:
+    """S2: backtest_hybrid and backtest_mixture require frozen config for test period."""
+    import subprocess
+    import sys
+
+    from core.backtest.periods import (
+        FROZEN_CONFIG_4B_PATH,
+        TestPeriodLockedError,
+        ensure_period_allowed,
+    )
+
+    absent = tmp_path / "nonexistent.json"
+    with pytest.raises(TestPeriodLockedError):
+        ensure_period_allowed("test", frozen_config=absent)
+
+    # Valid with existing 4b frozen config
+    assert FROZEN_CONFIG_4B_PATH.exists()
+    ensure_period_allowed("test", frozen_config=FROZEN_CONFIG_4B_PATH)
+
+    # CLI test lock check on both scripts
+    dummy_records = tmp_path / "records.json"
+    dummy_records.write_text("[]")
+    for mod in ("scripts.backtest_hybrid", "scripts.backtest_mixture"):
+        res = subprocess.run(
+            [sys.executable, "-m", mod,
+             "--records", str(dummy_records),
+             "--period", "test",
+             "--frozen-config", str(absent),
+             "--config", "{}",
+             "--out", str(tmp_path / "out.json")],
+            capture_output=True,
+            text=True,
+        )
+        assert res.returncode != 0
+        assert "TestPeriodLockedError" in res.stderr
+

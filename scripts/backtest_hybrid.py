@@ -1,19 +1,19 @@
-"""Phase 4b B2/B3: hybrid matrix - market total level + model shape.
+"""Phase 4b B2/B3 & review updates: hybrid and market score matrices.
 
-For each saved walk-forward record the hybrid matrix is
-proxy_score_matrix(lambda_total from the de-vigged MARKET over 2.5
-probability, home share from the model's expected goals, rho from the
-model). Metrics on the VALIDATION records only (test is one-shot in
-B5): exact-score log loss vs the pure model with a paired calendar-week
-bootstrap CI, plus 0:0..3:3 cell z-tables for model / hybrid (B3 uses
-the same machinery for the draw correction).
+Supports:
+- --share model (B2 baseline: market totals level + model attack/defence share)
+- --share market_1x2 (market totals + 1X2 devigged implied home share)
+- --all-market (fit lam_home, lam_away, rho to O/U 2.5 + 1X2 without model)
+- --draw-kappa and --draw-kappa-high (B3 draw corrections)
+- --frozen-config (S2 lock gate for test period)
+- --cross-fit (evaluates cross-season alpha and kappa fitting)
+- Breakdown by season with calendar-week clustered bootstrap CI95
 
 Usage:
     DATABASE_URL=sqlite:////tmp/bt4b.db uv run python -m scripts.backtest_hybrid \
         --records .cache/bt_records/xiw_xi0.002_w0.5.json --period validation \
         --source prematch --config '{"xi":0.002,"weight_xg":0.5}' \
-        [--draw-kappa 0.0] [--hybrid-rho-override None] \
-        --out reports/backtest/4b_hybrid_prematch.json
+        --share market_1x2 --out reports/backtest/4b_hybrid_market_1x2.json
 """
 
 from __future__ import annotations
@@ -23,14 +23,16 @@ import json
 import math
 import os
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime as dt
 from pathlib import Path
 
 import numpy as np
+from scipy.optimize import brentq, least_squares, minimize_scalar
 from sqlalchemy import select
 
 from core.backtest.metrics import score_records
-from core.backtest.periods import ensure_period_allowed
+from core.backtest.periods import FROZEN_CONFIG_4B_PATH, ensure_period_allowed
 from core.backtest.runner import fitted_model, load_quarantine_or_empty
 from core.config import ModelConfig
 from core.db import session_scope
@@ -38,30 +40,46 @@ from core.model.markets import market_lambda_from_totals, proxy_score_matrix
 from core.orm import ClosingOdds, PrematchOdds
 
 
-def load_odds(db_url: str, source: str) -> dict[int, tuple[float, float]]:
+@dataclass
+class MatchOdds:
+    over: float
+    under: float
+    home: float | None = None
+    draw: float | None = None
+    away: float | None = None
+
+
+def load_odds(db_url: str, source: str, bookmaker: str | None = None) -> dict[int, MatchOdds]:
     table = PrematchOdds if source == "prematch" else ClosingOdds
-    book = "Avg" if source == "prematch" else "AvgC"
+    book = ("Avg" if source == "prematch" else "AvgC") if bookmaker is None else bookmaker
     with session_scope(db_url) as s:
-        return {c.match_id: (float(c.over_price), float(c.under_price))
-                for c in s.scalars(select(table).where(table.bookmaker
-                                                      == book))
-                if c.over_price and c.under_price}
+        out: dict[int, MatchOdds] = {}
+        for c in s.scalars(select(table).where(table.bookmaker == book)):
+            if c.over_price and c.under_price:
+                out[c.match_id] = MatchOdds(
+                    over=float(c.over_price),
+                    under=float(c.under_price),
+                    home=float(c.home_price) if c.home_price else None,
+                    draw=float(c.draw_price) if c.draw_price else None,
+                    away=float(c.away_price) if c.away_price else None,
+                )
+        return out
 
 
-def devig(pair: tuple[float, float]) -> float:
-    o, u = 1.0 / pair[0], 1.0 / pair[1]
+def devig_totals(over: float, under: float) -> float:
+    o, u = 1.0 / over, 1.0 / under
     return o / (o + u)
+
+
+def devig_1x2(home: float, draw: float, away: float) -> tuple[float, float, float]:
+    ih, id_, ia = 1.0 / home, 1.0 / draw, 1.0 / away
+    s = ih + id_ + ia
+    return ih / s, id_ / s, ia / s
 
 
 def draw_inflate(m: np.ndarray, kappa: float,
                  high_only: bool = False) -> np.ndarray:
-    """B3 draw corrections, renormalised.
-
-    kappa: flat inflation of the whole diagonal (option a).
-    high_only: inflate ONLY the high draws (2:2, 3:3, ...) - the flat
-    version cures the 2:2 deficit but creates a 0:0 surplus (the model
-    already OVERprices 0:0), so the correction must skip 0:0/1:1.
-    """
+    """B3 draw corrections, renormalised."""
     if kappa == 0.0:
         return m
     out = m.copy()
@@ -80,7 +98,7 @@ def z_stat(p_mean: float, obs: float, n: int) -> float:
 
 
 def cell_table(matrices: list[np.ndarray], goals: list[tuple[int, int]]
-               ) -> list[dict]:
+               ) -> list[dict[str, object]]:
     acc: dict[tuple[int, int], list[float]] = defaultdict(list)
     hits: dict[tuple[int, int], int] = defaultdict(int)
     for m, (gh, ga) in zip(matrices, goals, strict=True):
@@ -101,7 +119,8 @@ def week_cluster_boot(diff_terms: list[float], weeks: list[str],
                       n: int = 2000, seed: int = 7) -> tuple[float, float]:
     arr = np.asarray(diff_terms)
     wk = np.asarray(weeks)
-    groups = [arr[wk == w] for w in np.unique(wk)]
+    uniq = np.unique(wk)
+    groups = [arr[wk == w] for w in uniq]
     rng = np.random.default_rng(seed)
     means = np.empty(n)
     for i in range(n):
@@ -111,44 +130,125 @@ def week_cluster_boot(diff_terms: list[float], weeks: list[str],
     return float(lo), float(hi)
 
 
+def fit_1x2_share(lam_total: float, ph: float, pa: float, rho: float,
+                  s_fallback: float = 0.5) -> float:
+    """Solve for home goal share s such that P(H)/(P(H)+P(A)) = ph/(ph+pa)."""
+    target = ph / (ph + pa)
+
+    def f(s: float) -> float:
+        m = proxy_score_matrix(lam_total, s, rho=rho)
+        sh = float(np.tril(m, -1).sum())
+        sa = float(np.triu(m, 1).sum())
+        return (sh / (sh + sa)) - target
+
+    try:
+        return float(brentq(f, 0.01, 0.99, xtol=1e-6))
+    except Exception:
+        return s_fallback
+
+
+def fit_all_market(p_over: float, ph: float, pd: float,
+                   rho_override: float | None = None,
+                   rho_start: float = 0.0) -> tuple[float, float, float]:
+    """Fit lam_home, lam_away, rho to match O/U 2.5 and 1X2 without the model."""
+    lam_tot0 = market_lambda_from_totals(p_over, 2.5)
+    s0 = ph / (ph + (1.0 - ph - pd))
+
+    if rho_override is not None:
+        fixed_rho = float(rho_override)
+        pa = 1.0 - ph - pd
+        target_ratio = ph / (ph + pa)
+
+        def f_ratio(s: float) -> float:
+            m = proxy_score_matrix(lam_tot0, s, rho=fixed_rho)
+            sh = float(np.tril(m, -1).sum())
+            sa = float(np.triu(m, 1).sum())
+            return (sh / (sh + sa)) - target_ratio
+
+        try:
+            s_opt = float(brentq(f_ratio, 0.01, 0.99, xtol=1e-6))
+        except Exception:
+            s_opt = s0
+        return lam_tot0 * s_opt, lam_tot0 * (1.0 - s_opt), fixed_rho
+
+    x0 = [lam_tot0 * s0, lam_tot0 * (1.0 - s0), rho_start]
+
+    def residuals(x: list[float] | np.ndarray) -> list[float]:
+        lh, la, r = x
+        try:
+            m = proxy_score_matrix(lh + la, lh / (lh + la), rho=float(r))
+        except Exception:
+            return [10.0, 10.0, 10.0]
+        n = m.shape[0]
+        totals = np.add.outer(np.arange(n), np.arange(n))
+        return [
+            float(m[totals > 2.5].sum()) - p_over,
+            float(np.tril(m, -1).sum()) - ph,
+            float(np.diag(m).sum()) - pd,
+        ]
+
+    res = least_squares(residuals, x0, bounds=([0.05, 0.05, -0.15], [6.0, 6.0, 0.15]),
+                        xtol=1e-5, ftol=1e-5)
+    return float(res.x[0]), float(res.x[1]), float(res.x[2])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--records", required=True)
     parser.add_argument("--period", default="validation")
     parser.add_argument("--source", choices=("prematch", "closing"),
                         default="prematch")
+    parser.add_argument("--bookmaker", default=None,
+                        help="Specific bookmaker e.g. P or PC (default Avg/AvgC)")
     parser.add_argument("--config", required=True)
+    parser.add_argument("--share", choices=("model", "market_1x2"), default="model",
+                        help="Source of home goal share: statistical model or 1X2 market")
+    parser.add_argument("--all-market", action="store_true",
+                        help="Fit lam_home, lam_away, rho entirely to O/U 2.5 + 1X2")
     parser.add_argument("--draw-kappa", type=float, default=0.0)
-    parser.add_argument("--rho-override", type=float, default=None,
-                        help="B3 option (b): fixed rho for the hybrid "
-                             "matrix instead of the model's fitted rho")
     parser.add_argument("--draw-kappa-high", type=float, default=0.0,
                         help="B3 option (c): inflate only 2:2/3:3/...")
+    parser.add_argument("--rho-override", type=float, default=None,
+                        help="Fixed rho override for the matrix instead of model/fitted rho")
     parser.add_argument("--multiscore", action="store_true",
-                        help="multiscore calibration for the hybrid "
-                             "matrices (top-1, top-3, fixed set, 2-4)")
+                        help="Multiscore calibration for the hybrid matrices")
+    parser.add_argument("--cross-fit", action="store_true",
+                        help="Evaluate cross-season alpha blending and kappa fitting")
+    parser.add_argument("--frozen-config", default=str(FROZEN_CONFIG_4B_PATH),
+                        help="Path to frozen config for test period lock (S2)")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
-    ensure_period_allowed(args.period)
+
+    frozen_cfg_path = Path(args.frozen_config)
+    ensure_period_allowed(args.period, frozen_config=frozen_cfg_path)
 
     cfg = ModelConfig(**json.loads(args.config))
     db_url = os.environ["DATABASE_URL"]
-    records = json.loads(Path(args.records).read_text())
-    for r in records:
+    raw_records = json.loads(Path(args.records).read_text())
+    for r in raw_records:
         r.setdefault("p_score", r.pop("log_p", None))
-    records = score_records(records, args.period)
-    odds = load_odds(db_url, args.source)
+    records = score_records(raw_records, args.period, frozen_config=frozen_cfg_path)
+    odds = load_odds(db_url, args.source, bookmaker=args.bookmaker)
     quarantine = load_quarantine_or_empty()
 
-    models: dict[tuple, object] = {}
+    models: dict[tuple[str, str], object] = {}
     ll_model, ll_hybrid = [], []
     weeks, goals, hybrid_mats, pure_mats = [], [], [], []
+    seasons = []
+    shares_model, shares_1x2 = [], []
     used = missing = 0
+
     for r in records:
-        pair = odds.get(r["match_id"])
-        if not pair or min(pair) <= 1.0:
+        o = odds.get(r["match_id"])
+        if not o or o.over <= 1.0 or o.under <= 1.0:
             missing += 1
             continue
+        if (args.share == "market_1x2" or args.all_market) and (
+                o.home is None or o.draw is None or o.away is None or
+                o.home <= 1.0 or o.draw <= 1.0 or o.away <= 1.0):
+            missing += 1
+            continue
+
         as_of = dt.fromisoformat(r["as_of"])
         key = (r["league"], r["as_of"])
         model = models.get(key)
@@ -156,48 +256,94 @@ def main() -> None:
             model, _ = fitted_model(db_url, r["league"], as_of, cfg,
                                     Path(".cache/bt_models"), quarantine)
             models[key] = model
+
         try:
-            lam_total = market_lambda_from_totals(devig(pair), 2.5)
+            p_over = devig_totals(o.over, o.under)
             eh, ea = model.expected_goals(r["home"], r["away"])
-            share = eh / (eh + ea)
-            rho = model.rho if args.rho_override is None \
-                else args.rho_override
-            m = proxy_score_matrix(lam_total, share, rho=rho)
+            s_mod = eh / (eh + ea)
+
+            if args.all_market:
+                assert o.home is not None and o.draw is not None and o.away is not None
+                ph, pd, pa = devig_1x2(o.home, o.draw, o.away)
+                lh, la, rho_fit = fit_all_market(p_over, ph, pd,
+                                                 rho_override=args.rho_override,
+                                                 rho_start=model.rho)
+                m = proxy_score_matrix(lh + la, lh / (lh + la), rho=rho_fit)
+            elif args.share == "market_1x2":
+                assert o.home is not None and o.draw is not None and o.away is not None
+                ph, pd, pa = devig_1x2(o.home, o.draw, o.away)
+                lam_total = market_lambda_from_totals(p_over, 2.5)
+                rho = model.rho if args.rho_override is None else args.rho_override
+                s_1x2 = fit_1x2_share(lam_total, ph, pa, rho=rho, s_fallback=s_mod)
+                m = proxy_score_matrix(lam_total, s_1x2, rho=rho)
+                shares_model.append(s_mod)
+                shares_1x2.append(s_1x2)
+            else:
+                lam_total = market_lambda_from_totals(p_over, 2.5)
+                rho = model.rho if args.rho_override is None else args.rho_override
+                m = proxy_score_matrix(lam_total, s_mod, rho=rho)
+
         except (ValueError, KeyError):
             missing += 1
             continue
+
         m = draw_inflate(m, args.draw_kappa)
         m = draw_inflate(m, args.draw_kappa_high, high_only=True)
         gh, ga = r["home_goals"], r["away_goals"]
         ll_model.append(-math.log(max(r["p_score"], 1e-300)))
         ll_hybrid.append(-math.log(max(float(m[gh, ga]), 1e-300)))
-        y, w, _ = dt.fromisoformat(r["kickoff"]).isocalendar()
-        weeks.append(f"{y}-W{w:02d}")
+        y_kick, w_kick, _ = dt.fromisoformat(r["kickoff"]).isocalendar()
+        weeks.append(f"{y_kick}-W{w_kick:02d}")
         goals.append((gh, ga))
         hybrid_mats.append(m)
         pure_mats.append(model.score_matrix(r["home"], r["away"]))
+        seasons.append(r["season"])
         used += 1
 
     ll_m = float(np.mean(ll_model))
     ll_h = float(np.mean(ll_hybrid))
     delta = ll_h - ll_m
-    lo, hi = week_cluster_boot((np.asarray(ll_hybrid) - np.asarray(ll_model)
-                               ).tolist(), weeks)
-    out = {
-        "period": args.period, "source": args.source,
+    diff_list = (np.asarray(ll_hybrid) - np.asarray(ll_model)).tolist()
+    lo, hi = week_cluster_boot(diff_list, weeks)
+
+    # Breakdown by season
+    by_season: dict[str, dict[str, object]] = {}
+    seasons_arr = np.asarray(seasons)
+    for sn in sorted(set(seasons)):
+        mask = (seasons_arr == sn)
+        ll_m_sn = float(np.mean(np.asarray(ll_model)[mask]))
+        ll_h_sn = float(np.mean(np.asarray(ll_hybrid)[mask]))
+        diff_sn = (np.asarray(ll_hybrid)[mask] - np.asarray(ll_model)[mask]).tolist()
+        weeks_sn = np.asarray(weeks)[mask].tolist()
+        lo_sn, hi_sn = week_cluster_boot(diff_sn, weeks_sn)
+        by_season[str(sn)] = {
+            "n": int(mask.sum()),
+            "log_loss_model": ll_m_sn,
+            "log_loss_hybrid": ll_h_sn,
+            "delta": ll_h_sn - ll_m_sn,
+            "delta_ci95": [lo_sn, hi_sn],
+        }
+
+    out: dict[str, object] = {
+        "period": args.period,
+        "source": args.source,
+        "bookmaker": args.bookmaker or ("Avg" if args.source == "prematch" else "AvgC"),
+        "share": args.share,
+        "all_market": args.all_market,
         "draw_kappa": args.draw_kappa,
         "draw_kappa_high": args.draw_kappa_high,
-        "per_match_ll_model": ll_model,
-        "per_match_ll_hybrid": ll_hybrid,
-        "per_match_weeks": weeks,
         "rho_override": args.rho_override,
-        "model_cells": cell_table(pure_mats, goals),
-        "used": used, "missing_odds": missing,
-        "log_loss_model": ll_m, "log_loss_hybrid": ll_h,
+        "used": used,
+        "missing_odds": missing,
+        "log_loss_model": ll_m,
+        "log_loss_hybrid": ll_h,
         "delta_hybrid_minus_model": delta,
         "delta_ci95": [lo, hi],
+        "by_season": by_season,
+        "model_cells": cell_table(pure_mats, goals),
         "hybrid_cells": cell_table(hybrid_mats, goals),
     }
+
     if args.multiscore:
         fixed = {(1, 0), (2, 0), (2, 1)}
         series: dict[str, tuple[list[float], list[float]]] = defaultdict(
@@ -209,7 +355,7 @@ def main() -> None:
             top3 = flat[:3]
             tg = np.add.outer(np.arange(m.shape[0]),
                               np.arange(m.shape[0]))
-            for name, p, hit in (
+            for name, p_val, hit in (
                     ("top1_exact", top3[0][0], (gh, ga) == top3[0][1]),
                     ("top3_multiscore", sum(x for x, _ in top3),
                      (gh, ga) in {s2 for _, s2 in top3}),
@@ -218,21 +364,91 @@ def main() -> None:
                     ("goals_range_2_4",
                      float(m[(tg >= 2) & (tg <= 4)].sum()),
                      2 <= gh + ga <= 4)):
-                series[name][0].append(p)
+                series[name][0].append(p_val)
                 series[name][1].append(1.0 if hit else 0.0)
         out["multiscore"] = {
             name: {"n": len(ps), "mean_p": float(np.mean(ps)),
                    "observed": float(np.mean(ys))}
             for name, (ps, ys) in series.items()}
+
+    if args.cross_fit and len(set(seasons)) >= 2:
+        # Cross-season fitting for alpha and kappa
+        uniq_sn = sorted(set(seasons))
+        cf_res: dict[str, object] = {}
+
+        # Alpha cross-fit (if share comparisons are available)
+        if shares_model and shares_1x2:
+            s_mod_arr = np.array(shares_model)
+            s_1x2_arr = np.array(shares_1x2)
+            alpha_cv = {}
+            for tr_s, te_s in [(uniq_sn[0], uniq_sn[1]), (uniq_sn[1], uniq_sn[0])]:
+                tr = (seasons_arr == tr_s)
+                tr_idx = np.where(tr)[0]
+
+                def loss_alpha(a: float, tr_mask: np.ndarray = tr,
+                               idx_arr: np.ndarray = tr_idx) -> float:
+                    a_val = float(a)
+                    s_b = a_val * s_mod_arr[tr_mask] + (1.0 - a_val) * s_1x2_arr[tr_mask]
+                    cur = []
+                    for k, idx in enumerate(idx_arr):
+                        r_k = records[idx]
+                        o_k = odds[r_k["match_id"]]
+                        p_ov = devig_totals(o_k.over, o_k.under)
+                        l_tot = market_lambda_from_totals(p_ov, 2.5)
+                        m_k = proxy_score_matrix(l_tot, s_b[k], rho=cfg.xi)
+                        prob_score = max(float(m_k[r_k["home_goals"], r_k["away_goals"]]), 1e-300)
+                        cur.append(-math.log(prob_score))
+                    return float(np.mean(cur))
+
+                res_a = minimize_scalar(loss_alpha, bounds=(0.0, 1.0), method="bounded")
+                alpha_cv[f"{tr_s}_to_{te_s}"] = float(res_a.x)
+            cf_res["alpha_by_direction"] = alpha_cv
+
+        # Kappa cross-fit
+        kappa_cv = {}
+        for tr_s, te_s in [(uniq_sn[0], uniq_sn[1]), (uniq_sn[1], uniq_sn[0])]:
+            tr = (seasons_arr == tr_s)
+            te = (seasons_arr == te_s)
+            tr_idx = np.where(tr)[0]
+            te_idx = np.where(te)[0]
+
+            def loss_kappa(k: float, idx_arr: np.ndarray = tr_idx) -> float:
+                k_val = float(k)
+                cur = []
+                for idx in idx_arr:
+                    m_inf = draw_inflate(hybrid_mats[idx], k_val, high_only=True)
+                    gh_k, ga_k = goals[idx]
+                    cur.append(-math.log(max(float(m_inf[gh_k, ga_k]), 1e-300)))
+                return float(np.mean(cur))
+
+            res_k = minimize_scalar(loss_kappa, bounds=(0.0, 0.6), method="bounded")
+            k_opt = float(res_k.x)
+            ll_k0 = [
+                -math.log(max(float(hybrid_mats[i][goals[i][0], goals[i][1]]), 1e-300))
+                for i in te_idx
+            ]
+            ll_kopt = [
+                -math.log(max(float(
+                    draw_inflate(hybrid_mats[i], k_opt, high_only=True)[goals[i][0], goals[i][1]]
+                ), 1e-300))
+                for i in te_idx
+            ]
+            kappa_cv[f"{tr_s}_to_{te_s}"] = {
+                "k_opt": k_opt,
+                "test_season": te_s,
+                "test_ll_k0": float(np.mean(ll_k0)),
+                "test_ll_kopt": float(np.mean(ll_kopt)),
+                "delta": float(np.mean(ll_kopt) - np.mean(ll_k0)),
+            }
+        cf_res["kappa_by_direction"] = kappa_cv
+        out["cross_fit"] = cf_res
+
     Path(args.out).write_text(json.dumps(out, indent=1))
-    print(f"[{args.period}/{args.source}] n={used} LL model {ll_m:.4f} "
+    print(f"[{args.period}/{args.source}/{args.share}] n={used} LL model {ll_m:.4f} "
           f"hybrid {ll_h:.4f} delta {delta:+.4f} CI95 [{lo:+.4f}, {hi:+.4f}]")
-    big = [(c["cell"], round(c["z"], 1)) for c in out["hybrid_cells"]
-           if abs(c["z"]) > 2]
+    big = [(c["cell"], round(float(c["z"]), 1)) for c in out["hybrid_cells"]
+           if abs(float(c["z"])) > 2]
     print("hybrid cells |z|>2:", big if big else "none")
-    mbig = [(c["cell"], round(c["z"], 1)) for c in out["model_cells"]
-            if abs(c["z"]) > 2]
-    print("model  cells |z|>2:", mbig if mbig else "none")
 
 
 if __name__ == "__main__":
