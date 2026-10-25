@@ -135,6 +135,24 @@ metrics forbidden until FROZEN_CONFIG.json exists.
   - Added clv_source values ("fair_market_matrix", "pinnacle_correct_score") to core/orm.py and tests/test_orm.py.
   - Documented that realized ROI is informational only (requires ~12,000 bets for +-5% CI on average ~9 odds).
   - Added "снимок строго до начала матча, не после" and CLV definition to PROMPTS.md Phase 7 and its review checklist, and aligned SPEC §7 and decisions.md B6.7.
+- S2:
+  - Removed ranking candidates by |share_model - share_1x2| in decisions B6.4, SPEC §5, and PROMPTS Phase 5/6 (model has alpha=0, model share carries no signal).
+  - Defined explicit prefilter criteria: Fortuna grid availability, mass of high draws in market matrix (where kappa_high operates), league rotation, quota limit (<= 10 matches/week). Discrepancy with model is strictly an anomaly flag ("check lineups/data") without boosting bet priority.
+- S4:
+  - In SPEC §8 and Changelog v2: removed "используется только для финального подтверждения" (test period after 4b is exhausted, forward testing only).
+  - Clarified gain of market matrix: -0.016 vs hybrid with model share (-0.0157 [-0.0205, -0.0113]), and -0.020 / -0.022 vs pure Dixon-Coles (2.8943 vs 2.9148 / 2.9168).
+  - Clarified distinction between O/U logit mixture weight (0.14-0.25, OOS equal to market) and exact score goal shares (alpha = 0.0000).
+- S5:
+  - Aligned SPEC §1 ("Покрытие"), PROMPTS Phase 11, and config.yaml (ucl: experimental): UCL evaluated on market exact-score / multiscore matrix (market odds present in TOA) flagged experimental; totals are reference-only.
+- S6:
+  - Restored v1 requirements in SPEC v2:
+    - Fallback model training strictly on matches before forecast date with result_lag (2 hours);
+    - Fallback path for Hermes via REST-skill if MCP is unavailable;
+    - Periodic notifications via Hermes scheduler (GET /notifications?since=);
+    - Dashboard page "Base vs Shadow" (comparing fair market matrix with shadow LLM multiplier variant);
+    - Link to docs/data-sources.md;
+    - Benchmark Pinnacle correct_score (decisions B6.3) in SPEC §4, §5, and PROMPTS Phase 5;
+    - Relative links in Changelog v2 (docs/decisions.md without file:/// or broken anchors).
 
 - All items in Step 0, Part A, Part B, Part C, and Part D completed.
 - Full verification table and owner commands documented in `reports/backtest/SUMMARY_4b.md`.

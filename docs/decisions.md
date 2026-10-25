@@ -697,17 +697,22 @@ FROZEN_CONFIG_4b; the window was already used by phases 3/4):
    both directions (OOS delta +0.0000). The requirement to "exactly reproduce
    both O/U and 1X2" is dropped because the system is overdetermined (2-3
    parameters, 3 equations). The model serves as: (a) standby reserve if market
-   odds are missing, and (b) anomaly flag when |share_model - share_1x2|
-   is large.
+   odds are missing, and (b) anomaly flag ("check lineups/data") when
+   discrepancy with market is large, without increasing bet priority.
 2. Value definition: value = discrepancy between Fortuna's exact-score and
    multiscore prices and the fair market matrix.
-3. Benchmark for phase 5: fair matrix derived from Pinnacle event-level
+3. Benchmark for phase 5 (B6.3): fair matrix derived from Pinnacle event-level
    correct_score grid (TOA) devigged.
-4. Prefilter (phase-0 decisions S2) redefined: the earlier
-   |P_hybrid - P_proxy| is degenerate (proxy = hybrid). The new ranking
-   rule selects candidate matches by divergence between model share and
-   market share |share_model - share_1x2| or divergence on totals,
-   capped at top 15 matches/week, without purchasing event-level odds.
+4. Prefilter (phase-0 decisions S2, review S2): ranking by
+   |share_model - share_1x2| removed (model weight α = 0.0000, model share carries
+   no signal). Selection criteria for purchasing event-level Pinnacle correct_score
+   and requesting manual Fortuna odds entry:
+   (a) presence of Fortuna exact-score grid (user marks/confirms);
+   (b) mass of high draws in the fair market matrix (where κ_high operates);
+   (c) rotation across leagues;
+   (d) budget limit (<= 10 matches/week).
+   Discrepancy between model and market is EXCLUSIVELY an anomaly flag
+   "check lineups/data", without increasing bet priority.
 5. Live odds source and credit budget (review B1): sport-level /odds polls
    `markets=totals,h2h` (2 markets × 1 region eu = 2 credits/snapshot).
    Measured 28-day no-break calls (reports/recon/odds_budget.json) across

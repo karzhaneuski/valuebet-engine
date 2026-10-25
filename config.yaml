@@ -45,7 +45,7 @@ leagues:
     toa_sport_key: soccer_uefa_champs_league
     api_football_id: 2
     ucl: true
-    experimental: true           # totals only, higher edge (SPEC §1, phase 11)
+    experimental: true           # market exact-score/multiscore matrix (SPEC §1, phase 11)
     totals_edge_threshold: 0.06
     totals_lines_available: [2.5, 2.75, 3.0, 3.25, 3.5, 4.0, 4.5]
 
