@@ -58,6 +58,21 @@ class ModelConfig(BaseModel):
     # a result only becomes usable for training this long after kickoff
     # (review S1): 90 min play + stoppages/reporting buffer
     result_lag_minutes: int = 150
+    # --- phase-4 model options (decisions 2026-10-25 S2/S3), all off by
+    # default; each affects the fit and is covered by config_hash
+    # rescale understat xG by sum(goals)/sum(xG) over the training data
+    # (strictly up to as_of) before mixing
+    xg_goals_scaling: bool = False
+    # estimate the scoring level (mu0, gamma) from GOALS while team
+    # strengths still use the mixed target; the score matrix then uses
+    # the goals level (predictions are about goals)
+    level_from_goals: bool = False
+    # one rho shared across leagues (computed by the backtest runner in
+    # a two-pass fit, enforced through fixed_params)
+    common_rho: bool = False
+    # league-level params (mu0, gamma, rho) estimated with a slower time
+    # decay: xi * multiplier in the first pass, then fixed (two-pass)
+    league_decay_multiplier: float = 1.0
 
 
 class ThresholdsConfig(BaseModel):

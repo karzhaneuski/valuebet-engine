@@ -609,3 +609,120 @@ def test_config_hash_is_stable_and_sensitive() -> None:
     assert config_hash(base) == config_hash(ModelConfig())
     assert config_hash(base) != config_hash(ModelConfig(xi=0.006))
     assert config_hash(base) != config_hash(ModelConfig(weight_xg=0.6))
+
+
+# --- phase-4 model options (part 2.1c) --------------------------------------
+
+
+def _biased_xg_matches(rounds: int = 40, seed: int = 21, bias: float = 1.15):
+    """Goals from the true DC model, xG systematically `bias` x higher."""
+    rng = np.random.default_rng(seed)
+    model = true_model()
+    matches: list[TrainingMatch] = []
+    mid = 0
+    for _ in range(rounds):
+        for i, h in enumerate(TEAMS):
+            for a in TEAMS[i + 1:]:
+                for home, away in ((h, a), (a, h)):
+                    m = model.score_matrix(home, away)
+                    k = int(rng.choice(m.size, p=m.ravel()))
+                    gh, ga = divmod(k, m.shape[1])
+                    lam, mu = model._rates(home, away)
+                    mid += 1
+                    matches.append(TrainingMatch(
+                        match_id=mid,
+                        kickoff=AS_OF - dt.timedelta(
+                            days=float(rng.uniform(5, 300))),
+                        season=2020, home=home, away=away,
+                        home_goals=gh, away_goals=ga,
+                        home_xg=float(rng.poisson(lam * bias)),
+                        away_xg=float(rng.poisson(mu * bias))))
+    return matches
+
+
+def _mean_expected(model: FittedModel, pairs) -> float:
+    return float(np.mean([model.expected_goals(h, a)[0]
+                          + model.expected_goals(a, h)[0]
+                          for h, a in pairs]))
+
+
+def _mean_predicted_total(model: FittedModel) -> float:
+    """Mean predicted goals per match over all ordered pairings."""
+    pairs = [(h, a) for h in TEAMS for a in TEAMS if h != a]
+    return float(np.mean([sum(model.expected_goals(h, a))
+                          for h, a in pairs]))
+
+
+def test_xg_goals_scaling_pulls_level_back_to_goals() -> None:
+    matches = _biased_xg_matches(rounds=30, seed=21, bias=1.15)
+    actual = float(np.mean([m.home_goals + m.away_goals for m in matches]))
+    base = fit_dixon_coles(matches, league="s", as_of=AS_OF,
+                           team_universe=set(TEAMS),
+                           config=ModelConfig(xi=0.0, weight_xg=0.5))
+    scaled = fit_dixon_coles(
+        matches, league="s", as_of=AS_OF, team_universe=set(TEAMS),
+        config=ModelConfig(xi=0.0, weight_xg=0.5, xg_goals_scaling=True))
+    pred_base = _mean_predicted_total(base)
+    pred_scaled = _mean_predicted_total(scaled)
+    # biased xG inflates the unscaled level; scaling pulls it to goals
+    assert pred_scaled < pred_base
+    assert abs(pred_scaled - actual) < abs(pred_base - actual)
+
+
+def test_level_from_goals_predicts_goals_not_mixture() -> None:
+    matches = _biased_xg_matches(rounds=30, seed=21, bias=1.2)
+    actual = float(np.mean([m.home_goals + m.away_goals for m in matches]))
+    model = fit_dixon_coles(
+        matches, league="s", as_of=AS_OF, team_universe=set(TEAMS),
+        config=ModelConfig(xi=0.0, weight_xg=0.5, level_from_goals=True))
+    assert model.intercept_mixed is not None
+    assert model.intercept_mixed > model.intercept  # mixture above goals
+    pred = _mean_predicted_total(model)
+    assert abs(pred - actual) < 0.10, (pred, actual)
+
+
+def test_fixed_params_pin_the_scalars() -> None:
+    matches = generate_matches(rounds=20, seed=17)
+    model = fit_dixon_coles(
+        matches, league="s", as_of=AS_OF, team_universe=set(TEAMS),
+        config=ModelConfig(xi=0.0),
+        fixed_params={"rho": 0.05, "gamma": 0.20})
+    assert model.rho == pytest.approx(0.05, abs=1e-12)
+    assert model.home_advantage == pytest.approx(0.20, abs=1e-12)
+    assert model.converged
+    # unknown names are rejected
+    with pytest.raises(ValueError, match="unknown fixed params"):
+        fit_dixon_coles(matches, league="s", as_of=AS_OF,
+                        team_universe=set(TEAMS), config=ModelConfig(xi=0.0),
+                        fixed_params={"mu0": 0.1, "bogus": 1.0})
+
+
+def test_two_level_gradient_matches_finite_differences() -> None:
+    rng = np.random.default_rng(5)
+    n_teams, n_matches = 5, 120
+    home_idx = rng.integers(0, n_teams, n_matches)
+    away_idx = np.array([(h + 1 + rng.integers(0, n_teams - 1)) % n_teams
+                         for h in home_idx])
+    yh = rng.gamma(3.0, 0.5, n_matches)
+    ya = rng.gamma(2.5, 0.5, n_matches)
+    gh = rng.integers(0, 4, n_matches)
+    ga = rng.integers(0, 4, n_matches)
+    names = ("mu0", "gamma", "mu0g", "gammag", "rho")
+    ctx = _FitContext(
+        home_idx=home_idx, away_idx=away_idx, yh=yh, ya=ya, gh=gh, ga=ga,
+        time_w=np.ones(n_matches), ll_const=_gammaln(yh) + _gammaln(ya),
+        m_attack=np.zeros(n_teams), m_defence=np.zeros(n_teams),
+        prior_sigma=0.5, n_teams=n_teams, two_level=True,
+        scalar_names=names)
+    x = rng.normal(0, 0.1, 2 * n_teams - 2 + len(names))
+    x[-1] = 0.04
+    _, g = _neg_loglik(x, ctx)
+    eps = 1e-6
+    g_fd = np.zeros_like(x)
+    for i in range(x.size):
+        xp, xm = x.copy(), x.copy()
+        xp[i] += eps
+        xm[i] -= eps
+        g_fd[i] = (_neg_loglik(xp, ctx)[0] - _neg_loglik(xm, ctx)[0]) \
+            / (2 * eps)
+    assert_allclose(g, g_fd, rtol=1e-5, atol=1e-6)

@@ -38,6 +38,7 @@ import datetime as dt
 import hashlib
 import json
 import math
+from collections import defaultdict
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -75,6 +76,10 @@ def config_hash(config: ModelConfig) -> str:
             "prior_sigma": config.prior_sigma,
             "result_lag_minutes": config.result_lag_minutes,
             "rho_bounds": list(RHO_BOUNDS),
+            "xg_goals_scaling": config.xg_goals_scaling,
+            "level_from_goals": config.level_from_goals,
+            "common_rho": config.common_rho,
+            "league_decay_multiplier": config.league_decay_multiplier,
         },
         sort_keys=True,
     )
@@ -92,11 +97,20 @@ class _FitContext:
     gh: npt.NDArray[np.int64]              # observed integer scores
     ga: npt.NDArray[np.int64]
     time_w: npt.NDArray[np.float64]        # exp(-xi * days), all in (0, 1]
-    ll_const: npt.NDArray[np.float64]      # lgamma(yh+1) + lgamma(ya+1)
+    ll_const: npt.NDArray[np.float64]      # lgamma(yh+1)+lgamma(ya+1)
     m_attack: npt.NDArray[np.float64]      # Gaussian prior means (review B1)
     m_defence: npt.NDArray[np.float64]
     prior_sigma: float                     # 0 disables the prior term
     n_teams: int
+    # level_from_goals option: a second (goals-only) level feeds tau and
+    # the score matrix; team strengths still use the mixed target
+    two_level: bool = False
+    # free scalar parameter names in the packed vector, e.g.
+    # ["mu0", "gamma", "rho"] (+ ["mu0g", "gammag"] when two_level);
+    # scalar_values carries the FULL set (fixed pins included, free
+    # entries are placeholders overwritten from x at each evaluation)
+    scalar_names: tuple[str, ...] = ("mu0", "gamma", "rho")
+    scalar_values: dict[str, float] | None = None
 
 
 class _RejectedPoint(Exception):
@@ -108,16 +122,23 @@ def _neg_loglik(
 ) -> tuple[float, npt.NDArray[np.float64]]:
     """Weighted negative quasi-log-likelihood and its analytic gradient.
 
-    Parameter layout: [attack_0..attack_{n-2}, defence_0..defence_{n-2},
-    mu0, gamma, rho]; the last attack and defence are the negative sums
-    of the free ones, pinning sum(attack) = 0 and sum(defence) = 0.
+    Packed layout: [attack_0..attack_{n-2}, defence_0..defence_{n-2},
+    then one slot per ``ctx.scalar_names``]; the last attack and defence
+    are the negative sums of the free ones (sum(attack)=sum(defence)=0).
+
+    With ``two_level`` the mixed target still drives team strengths
+    (rates lam/mu with mu0+gamma) while the OBSERVED GOALS get their own
+    level (mu0g+gammag, rates lam_g/mu_g); tau and the score matrix use
+    the goals level - predictions are about goals, and xG converts
+    slightly above goals (decisions S2).
     """
     n = ctx.n_teams
     att_free = x[: n - 1]
     def_free = x[n - 1 : 2 * n - 2]
-    mu0 = float(x[2 * n - 2])
-    gamma = float(x[2 * n - 1])
-    rho = float(x[2 * n])
+    scalars = dict(ctx.scalar_values) if ctx.scalar_values else {}
+    scalars.update({name: float(v) for name, v in
+                    zip(ctx.scalar_names, x[2 * n - 2 :], strict=True)})
+    mu0, gamma, rho = scalars["mu0"], scalars["gamma"], scalars["rho"]
 
     attack = np.empty(n, dtype=np.float64)
     attack[: n - 1] = att_free
@@ -125,34 +146,65 @@ def _neg_loglik(
     defence = np.empty(n, dtype=np.float64)
     defence[: n - 1] = def_free
     defence[n - 1] = -def_free.sum()
-
-    # mu0 is the league scoring level (both sides); gamma is the home
-    # advantage and enters the home rate only (Dixon & Coles 1997)
-    log_lam = attack[ctx.home_idx] + defence[ctx.away_idx] + mu0 + gamma
-    log_mu = attack[ctx.away_idx] + defence[ctx.home_idx] + mu0
-    lam = np.exp(log_lam)
-    mu = np.exp(log_mu)
     tw = ctx.time_w
 
-    ll = float(np.sum(tw * (ctx.yh * log_lam - lam + ctx.ya * log_mu - mu)))
+    def rates(mu0v: float, gammav: float) -> tuple[
+            npt.NDArray[np.float64], npt.NDArray[np.float64],
+            npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+        log_lam = attack[ctx.home_idx] + defence[ctx.away_idx] + mu0v + gammav
+        log_mu = attack[ctx.away_idx] + defence[ctx.home_idx] + mu0v
+        return log_lam, log_mu, np.exp(log_lam), np.exp(log_mu)
+
+    log_lam, log_mu, lam, mu = rates(mu0, gamma)
+    ll = float(np.sum(tw * (ctx.yh * log_lam - lam
+                            + ctx.ya * log_mu - mu)))
+
+    g_attack = np.zeros(n, dtype=np.float64)
+    g_defence = np.zeros(n, dtype=np.float64)
+    # gradients for ALL physical scalar names; only the free ones are
+    # packed into the returned vector below (fixed params are constants)
+    g_scalars: dict[str, float] = defaultdict(float)
+
+    def add_poisson(
+        yh_arr: npt.NDArray[np.float64], ya_arr: npt.NDArray[np.float64],
+        lam_arr: npt.NDArray[np.float64], mu_arr: npt.NDArray[np.float64],
+        mu0_name: str, gamma_name: str,
+    ) -> None:
+        """One quasi-Poisson block: residual (y - rate) feeds attack of
+        the scoring side, defence of the conceding side, its level and
+        home advantage."""
+        nonlocal ll
+        ll += float(np.sum(tw * (yh_arr * np.log(lam_arr) - lam_arr
+                                 + ya_arr * np.log(mu_arr) - mu_arr)))
+        r_h = tw * (yh_arr - lam_arr)
+        r_a = tw * (ya_arr - mu_arr)
+        np.add.at(g_attack, ctx.home_idx, r_h)
+        np.add.at(g_defence, ctx.away_idx, r_h)
+        np.add.at(g_attack, ctx.away_idx, r_a)
+        np.add.at(g_defence, ctx.home_idx, r_a)
+        g_scalars[mu0_name] += float(r_h.sum() + r_a.sum())
+        g_scalars[gamma_name] += float(r_h.sum())
+
+    # mixed block already computed above -> feed gradients directly
+    r_h = tw * (ctx.yh - lam)
+    r_a = tw * (ctx.ya - mu)
+    np.add.at(g_attack, ctx.home_idx, r_h)
+    np.add.at(g_defence, ctx.away_idx, r_h)
+    np.add.at(g_attack, ctx.away_idx, r_a)
+    np.add.at(g_defence, ctx.home_idx, r_a)
+    g_scalars["mu0"] += float(r_h.sum() + r_a.sum())
+    g_scalars["gamma"] += float(r_h.sum())
     ll -= float(np.sum(tw * ctx.ll_const))
 
-    # d/dθ of (y log λ - λ) with dλ/dθ = λ  ->  residual (y - λ);
-    # r_home feeds attack[home], defence[away], gamma, mu0;
-    # r_away feeds attack[away], defence[home], mu0
-    r_home = tw * (ctx.yh - lam)
-    r_away = tw * (ctx.ya - mu)
-    g_attack = (
-        np.bincount(ctx.home_idx, weights=r_home, minlength=n)
-        + np.bincount(ctx.away_idx, weights=r_away, minlength=n)
-    )
-    g_defence = (
-        np.bincount(ctx.away_idx, weights=r_home, minlength=n)
-        + np.bincount(ctx.home_idx, weights=r_away, minlength=n)
-    )
-    g_mu0 = float(r_home.sum() + r_away.sum())
-    g_gamma = float(r_home.sum())
-    g_rho = 0.0
+    # tau on the OBSERVED integer score (Dixon & Coles 1997); with
+    # two_level it hangs off the goals-level rates
+    tau_lam, tau_mu = (rates(scalars["mu0g"], scalars["gammag"])[2:]
+                       if ctx.two_level else (lam, mu))
+    tau_mu0_name = "mu0g" if ctx.two_level else "mu0"
+    tau_gamma_name = "gammag" if ctx.two_level else "gamma"
+    if ctx.two_level:
+        add_poisson(ctx.gh.astype(np.float64), ctx.ga.astype(np.float64),
+                    tau_lam, tau_mu, "mu0g", "gammag")
 
     def add_tau(
         mask: npt.NDArray[np.bool_],
@@ -161,12 +213,7 @@ def _neg_loglik(
         dtau_dmu: npt.NDArray[np.float64] | float | None,
         dtau_drho: npt.NDArray[np.float64] | float,
     ) -> None:
-        """Accumulate log(tau) and chain its derivatives into the gradient.
-
-        Derivative arguments are per-match arrays or scalars (broadcast);
-        None means the cell's tau does not depend on that rate at all.
-        """
-        nonlocal ll, g_gamma, g_mu0, g_rho
+        nonlocal ll
         if not mask.any():
             return
         if isinstance(tau, np.ndarray):
@@ -180,40 +227,38 @@ def _neg_loglik(
         if dtau_dlam is not None:
             dl = dtau_dlam[mask] if isinstance(dtau_dlam, np.ndarray) \
                 else dtau_dlam
-            coef_l = w * (dl / t) * lam[mask]
+            coef_l = w * (dl / t) * tau_lam[mask]
             np.add.at(g_attack, ctx.home_idx[mask], coef_l)
             np.add.at(g_defence, ctx.away_idx[mask], coef_l)
-            g_gamma += float(coef_l.sum())  # gamma enters the home rate only
-            g_mu0 += float(coef_l.sum())
+            g_scalars[tau_gamma_name] += float(coef_l.sum())
+            g_scalars[tau_mu0_name] += float(coef_l.sum())
         if dtau_dmu is not None:
             dm = dtau_dmu[mask] if isinstance(dtau_dmu, np.ndarray) \
                 else dtau_dmu
-            coef_m = w * (dm / t) * mu[mask]
+            coef_m = w * (dm / t) * tau_mu[mask]
             np.add.at(g_attack, ctx.away_idx[mask], coef_m)
             np.add.at(g_defence, ctx.home_idx[mask], coef_m)
-            g_mu0 += float(coef_m.sum())
+            g_scalars[tau_mu0_name] += float(coef_m.sum())
         drho = dtau_drho[mask] if isinstance(dtau_drho, np.ndarray) \
             else dtau_drho
-        g_rho += float(np.sum(w * (drho / t)))
+        g_scalars["rho"] += float(np.sum(w * (drho / t)))
 
     try:
-        # (gh, ga) cell -> tau and its derivatives (Dixon & Coles 1997):
         # tau(0,0)=1-lam*mu*rho, tau(0,1)=1+lam*rho, tau(1,0)=1+mu*rho,
-        # tau(1,1)=1-rho
-        add_tau((ctx.gh == 0) & (ctx.ga == 0), 1.0 - lam * mu * rho,
-                -rho * mu, -rho * lam, -lam * mu)
-        add_tau((ctx.gh == 0) & (ctx.ga == 1), 1.0 + lam * rho,
-                rho, None, lam)
-        add_tau((ctx.gh == 1) & (ctx.ga == 0), 1.0 + mu * rho,
-                None, rho, mu)
+        # tau(1,1)=1-rho (Dixon & Coles 1997)
+        add_tau((ctx.gh == 0) & (ctx.ga == 0), 1.0 - tau_lam * tau_mu * rho,
+                -rho * tau_mu, -rho * tau_lam, -tau_lam * tau_mu)
+        add_tau((ctx.gh == 0) & (ctx.ga == 1), 1.0 + tau_lam * rho,
+                rho, None, tau_lam)
+        add_tau((ctx.gh == 1) & (ctx.ga == 0), 1.0 + tau_mu * rho,
+                None, rho, tau_mu)
         add_tau((ctx.gh == 1) & (ctx.ga == 1), 1.0 - rho,
                 None, None, -1.0)
     except _RejectedPoint:
         return _BAD_POINT, np.zeros_like(x)
 
     # Gaussian prior on team parameters (review B1): the objective is
-    # -ll + sum[(a-m_a)^2 + (d-m_d)^2] / (2 sigma^2); its weight per team
-    # is fixed, so it fades RELATIVE to the growing data information
+    # -ll + sum[(a-m_a)^2 + (d-m_d)^2] / (2 sigma^2)
     pen = 0.0
     if ctx.prior_sigma > 0.0:
         da = attack - ctx.m_attack
@@ -224,13 +269,11 @@ def _neg_loglik(
         g_attack -= da * inv_var
         g_defence -= dd * inv_var
 
-    grad = np.empty(2 * n + 1, dtype=np.float64)
+    grad = np.empty(2 * n - 2 + len(ctx.scalar_names), dtype=np.float64)
     grad[: n - 1] = g_attack[: n - 1] - g_attack[n - 1]
     grad[n - 1 : 2 * n - 2] = g_defence[: n - 1] - g_defence[n - 1]
-    grad[2 * n - 2] = g_mu0
-    grad[2 * n - 1] = g_gamma
-    grad[2 * n] = g_rho
-    # the accumulated gradient is d(ll - pen)/dx; the objective is -(that)
+    for k, name in enumerate(ctx.scalar_names):
+        grad[2 * n - 2 + k] = g_scalars[name]  # free names only
     return -(ll - pen), -grad
 
 
@@ -318,9 +361,9 @@ class FittedModel:
     n_matches: int
     attacks: dict[str, float]
     defences: dict[str, float]
-    home_advantage: float          # gamma: home-rate bonus, log-goals
+    home_advantage: float          # goals-level home bonus (matrix level)
     rho: float
-    intercept: float               # mu0: league scoring level, log-goals
+    intercept: float               # goals-level mu0 (matrix level)
     converged: bool
     config_hash: str
     prior_teams: frozenset[str] = frozenset()
@@ -328,6 +371,10 @@ class FittedModel:
     loglik: float = 0.0                 # data-only (prior penalty stripped)
     max_score: int = 10
     suspicious_params: bool = False     # circuit breaker (review B1)
+    # mixed-target level when level_from_goals is on (else None);
+    # the score matrix always uses the goals-level fields above
+    intercept_mixed: float | None = None
+    home_advantage_mixed: float | None = None
 
     def _rates(self, home: str, away: str) -> tuple[float, float]:
         if home not in self.attacks or away not in self.attacks:
@@ -396,6 +443,8 @@ class FittedModel:
             "home_advantage": self.home_advantage,
             "rho": self.rho,
             "intercept": self.intercept,
+            "intercept_mixed": self.intercept_mixed,
+            "home_advantage_mixed": self.home_advantage_mixed,
             "converged": self.converged,
             "config_hash": self.config_hash,
             "iterations": self.iterations,
@@ -420,6 +469,8 @@ class FittedModel:
             home_advantage=data["home_advantage"],
             rho=data["rho"],
             intercept=data.get("intercept", 0.0),
+            intercept_mixed=data.get("intercept_mixed"),
+            home_advantage_mixed=data.get("home_advantage_mixed"),
             converged=data["converged"],
             config_hash=data["config_hash"],
             prior_teams=priors,
@@ -456,10 +507,14 @@ def fit_dixon_coles(
     as_of: dt.datetime,
     team_universe: Collection[str],
     config: ModelConfig,
+    fixed_params: dict[str, float] | None = None,
 ) -> FittedModel:
     """Fit one league from raw training matches (pure, no DB access).
 
     Synthetic-data tests call this directly with generated matches.
+    ``fixed_params`` pins scalar parameters (any of mu0/gamma/rho, or
+    mu0g/gammag with level_from_goals) - used by the phase-4 two-pass
+    options (common rho, slower league decay).
     """
     if as_of.tzinfo is None:
         raise ValueError("as_of must be timezone-aware")
@@ -498,14 +553,25 @@ def fit_dixon_coles(
     if np.any(gh < 0) or np.any(ga < 0):
         raise ValueError("negative goals in training data")
 
-    yh = np.array(
-        [m.home_goals if m.home_xg is None
-         else w * m.home_goals + (1.0 - w) * m.home_xg
-         for m in matches], dtype=np.float64)
-    ya = np.array(
-        [m.away_goals if m.away_xg is None
-         else w * m.away_goals + (1.0 - w) * m.away_xg
-         for m in matches], dtype=np.float64)
+    xg_h = np.array([np.nan if m.home_xg is None else float(m.home_xg)
+                     for m in matches], dtype=np.float64)
+    xg_a = np.array([np.nan if m.away_xg is None else float(m.away_xg)
+                     for m in matches], dtype=np.float64)
+    if config.xg_goals_scaling:
+        # option (phase 4 / decisions S2): rescale understat xG by
+        # sum(goals)/sum(xG) over the TRAINING data only (no leak):
+        # xG converts slightly above goals, which otherwise lifts the
+        # fitted scoring level by (1-w)*(ratio-1)
+        both = ~np.isnan(xg_h) & ~np.isnan(xg_a)
+        if both.any():
+            ratio = float((gh[both].sum() + ga[both].sum())
+                          / (xg_h[both].sum() + xg_a[both].sum()))
+            xg_h = np.where(both, xg_h * ratio, xg_h)
+            xg_a = np.where(both, xg_a * ratio, xg_a)
+    yh = np.where(np.isnan(xg_h), gh.astype(np.float64),
+                  w * gh + (1.0 - w) * xg_h)
+    ya = np.where(np.isnan(xg_a), ga.astype(np.float64),
+                  w * ga + (1.0 - w) * xg_a)
 
     days = np.array(
         [(as_of - m.kickoff).total_seconds() / 86400.0 for m in matches],
@@ -522,13 +588,37 @@ def fit_dixon_coles(
     m_attack = np.where(established, 0.0, prior_att)
     m_defence = np.where(established, 0.0, prior_def)
 
+    league_rate = 0.5 * (yh.sum() + ya.sum()) / len(matches)
+    start_vals = {"mu0": math.log(league_rate + 0.5),
+                  "gamma": config.home_advantage_prior,
+                  "mu0g": math.log(league_rate + 0.5),
+                  "gammag": config.home_advantage_prior,
+                  "rho": 0.0}
+    two_level = config.level_from_goals
+    all_scalars: tuple[str, ...] = (("mu0", "gamma", "mu0g", "gammag", "rho")
+                                    if two_level else ("mu0", "gamma", "rho"))
+    fixed = dict(fixed_params or {})
+    unknown = set(fixed) - set(all_scalars)
+    if unknown:
+        raise ValueError(f"unknown fixed params {sorted(unknown)}; "
+                         f"available: {list(all_scalars)}")
+    free_names = tuple(nm for nm in all_scalars if nm not in fixed)
+    ll_const = _gammaln(yh) + _gammaln(ya)
+    if two_level:
+        # the goals block adds its own quasi-poisson normaliser
+        ll_const = ll_const + _gammaln(gh.astype(np.float64)) \
+            + _gammaln(ga.astype(np.float64))
     ctx = _FitContext(
         home_idx=home_idx, away_idx=away_idx, yh=yh, ya=ya, gh=gh, ga=ga,
         time_w=time_w,
-        ll_const=_gammaln(yh) + _gammaln(ya),
+        ll_const=ll_const,
         m_attack=m_attack, m_defence=m_defence,
         prior_sigma=config.prior_sigma,
         n_teams=n,
+        two_level=two_level,
+        scalar_names=free_names,
+        scalar_values={nm: fixed[nm] if nm in fixed else start_vals[nm]
+                       for nm in all_scalars},
     )
 
     # start from closed-form-ish rates: log per-team scored/conceded
@@ -546,18 +636,19 @@ def fit_dixon_coles(
         conceded[away_idx[k]] += yh[k]
         games[home_idx[k]] += 1.0
         games[away_idx[k]] += 1.0
-    league_rate = 0.5 * (yh.sum() + ya.sum()) / len(matches)
     att0 = np.log((scored + 0.5) / games) - math.log(league_rate + 0.5)
     def0 = np.log((conceded + 0.5) / games) - math.log(league_rate + 0.5)
     att0 -= att0.mean()
     def0 -= def0.mean()
 
-    x0 = np.zeros(2 * n + 1, dtype=np.float64)
+    x0 = np.zeros(2 * n - 2 + len(free_names), dtype=np.float64)
     x0[: n - 1] = att0[: n - 1]     # last attack/defence are derived
     x0[n - 1 : 2 * n - 2] = def0[: n - 1]
-    x0[2 * n - 2] = math.log(league_rate + 0.5)   # mu0 start: level
-    x0[2 * n - 1] = config.home_advantage_prior   # gamma start; rho starts 0
-    bounds = [(None, None)] * (2 * n) + [RHO_BOUNDS]
+    for k, nm in enumerate(free_names):
+        x0[2 * n - 2 + k] = start_vals[nm]
+    bounds: list[tuple[float | None, float | None]] = [(None, None)] * (2 * n - 2)
+    bounds += [RHO_BOUNDS if nm == "rho" else (None, None)
+               for nm in free_names]
 
     res = minimize(
         _neg_loglik, x0, args=(ctx,), method="L-BFGS-B", jac=True,
@@ -572,6 +663,12 @@ def fit_dixon_coles(
         log.warning("dc_fit_did_not_converge", league=league,
                     status=res.status, message=res.message)
 
+    fitted_scalars = dict(fixed)
+    fitted_scalars.update(
+        {nm: float(v) for nm, v in zip(free_names, res.x[2 * n - 2 :],
+                                       strict=True)})
+    for nm in all_scalars:
+        fitted_scalars.setdefault(nm, start_vals[nm])
     attack = np.empty(n, dtype=np.float64)
     attack[: n - 1] = res.x[: n - 1]
     attack[n - 1] = -res.x[: n - 1].sum()
@@ -604,8 +701,10 @@ def fit_dixon_coles(
         loglik = -float(res.fun)
 
     suspicious = _params_look_suspicious(
-        league, attacks, defences, mu0=float(res.x[2 * n - 2]),
-        gamma=float(res.x[2 * n - 1]), matches=matches)
+        league, attacks, defences,
+        mu0=fitted_scalars["mu0g"] if two_level else fitted_scalars["mu0"],
+        gamma=fitted_scalars["gammag"] if two_level
+        else fitted_scalars["gamma"], matches=matches)
 
     return FittedModel(
         league=league,
@@ -615,9 +714,13 @@ def fit_dixon_coles(
         n_matches=len(matches),
         attacks=attacks,
         defences=defences,
-        home_advantage=float(res.x[2 * n - 1]),
-        rho=float(res.x[2 * n]),
-        intercept=float(res.x[2 * n - 2]),
+        home_advantage=fitted_scalars["gammag"] if two_level
+                       else fitted_scalars["gamma"],
+        rho=fitted_scalars["rho"],
+        intercept=fitted_scalars["mu0g"] if two_level
+                  else fitted_scalars["mu0"],
+        intercept_mixed=fitted_scalars["mu0"] if two_level else None,
+        home_advantage_mixed=fitted_scalars["gamma"] if two_level else None,
         converged=converged,
         config_hash=config_hash(config),
         prior_teams=prior_teams,
@@ -675,6 +778,7 @@ def fit_league(
     as_of: dt.datetime,
     config: ModelConfig,
     excluded_match_ids: Collection[int] = frozenset(),
+    fixed_params: dict[str, float] | None = None,
 ) -> tuple[FittedModel, LoadStats]:
     """Load training data from the DB and fit one league.
 
@@ -688,5 +792,6 @@ def fit_league(
     model = fit_dixon_coles(
         data.matches, league=league, as_of=as_of,
         team_universe=data.team_universe, config=config,
+        fixed_params=fixed_params,
     )
     return model, data.stats

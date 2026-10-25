@@ -177,3 +177,17 @@ def test_cache_invalidates_on_config_change(db_url, tmp_path) -> None:
     assert cached2 is False
     assert len(list(cache.iterdir())) == 2
     assert m2.to_json() != m1.to_json()
+
+
+def test_week_models_common_rho_single_value(db_url, tmp_path) -> None:
+    from core.backtest.runner import week_models
+
+    config = ModelConfig(xi=0.005, weight_xg=0.5, common_rho=True)
+    models = week_models(db_url, ("premier_league",), AS_OF,
+                         config, tmp_path / "cache", frozenset())
+    m = models["premier_league"]
+    # single league: the common rho is its own pass-A rho (weighted mean
+    # of one model), and pass B pins it exactly
+    assert -1.0 < m.rho < 1.0
+    # pass A and pass B produce distinct cache entries
+    assert len(list((tmp_path / "cache").iterdir())) == 2

@@ -13,6 +13,7 @@ Training data always goes through core/model/dataset with the result lag
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 from collections.abc import Iterator, Sequence
 from pathlib import Path
@@ -63,13 +64,18 @@ def fitted_model(db_url: str, league: str, as_of: dt.datetime,
                  config: ModelConfig,
                  cache_dir: Path | None = None,
                  excluded_match_ids: frozenset[int] = frozenset(),
+                 fixed_params: dict[str, float] | None = None,
                  ) -> tuple[FittedModel, bool]:
     """Fit one (league, as_of); ``cached`` tells whether it came from disk.
 
-    Cache key = league + as_of + config_hash, so any config change
-    invalidates the entry by construction.
+    Cache key = league + as_of + config_hash + hash(fixed_params), so
+    any config change invalidates the entry by construction.
     """
     chash = config_hash(config)
+    if fixed_params:
+        digest = hashlib.sha1(
+            repr(sorted(fixed_params.items())).encode()).hexdigest()[:10]
+        chash = f"{chash}_f{digest}"
     path = None
     if cache_dir is not None:
         path = _cache_path(cache_dir, league, as_of, chash)
@@ -80,11 +86,53 @@ def fitted_model(db_url: str, league: str, as_of: dt.datetime,
                 log.warning("backtest.cache.corrupt", path=str(path),
                             error=str(exc))
     model, _ = fit_league(db_url, league, as_of, config,
-                          excluded_match_ids=excluded_match_ids)
+                          excluded_match_ids=excluded_match_ids,
+                          fixed_params=fixed_params)
     if path is not None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(model.to_json())
     return model, False
+
+
+def week_models(db_url: str, leagues: Sequence[str], as_of: dt.datetime,
+                config: ModelConfig, cache_dir: Path | None,
+                excluded: frozenset[int],
+                ) -> dict[str, FittedModel]:
+    """Models for one walk-forward week, applying the phase-4 two-pass
+    options (common rho / slower league decay, decisions S3).
+
+    Pass A fits every league (for league decay with xi * multiplier);
+    pass B refits with the league-level scalars pinned: a shared
+    rho (common_rho) or each league's own mu0/gamma/rho (decay).
+    """
+    decay = config.league_decay_multiplier != 1.0
+    if not (config.common_rho or decay):
+        return {lg: fitted_model(db_url, lg, as_of, config, cache_dir,
+                                 excluded)[0] for lg in leagues}
+    cfg_a = config.model_copy(
+        update={"xi": config.xi * config.league_decay_multiplier})         if decay else config
+    pass_a = {lg: fitted_model(db_url, lg, as_of, cfg_a, cache_dir,
+                               excluded)[0] for lg in leagues}
+    fixed_per_league: dict[str, dict[str, float]] = {}
+    if config.common_rho:
+        total = sum(m.n_matches for m in pass_a.values())
+        rho_bar = sum(m.rho * m.n_matches for m in pass_a.values()) / total
+        for lg in leagues:
+            fixed_per_league[lg] = {"rho": float(rho_bar)}
+    if decay:
+        for lg, m in pass_a.items():
+            fixed_per_league.setdefault(lg, {})
+            fixed_per_league[lg].update({
+                "mu0": m.intercept_mixed
+                if m.intercept_mixed is not None else m.intercept,
+                "gamma": m.home_advantage_mixed
+                if m.home_advantage_mixed is not None else m.home_advantage,
+                "rho": m.rho if not config.common_rho
+                else fixed_per_league[lg]["rho"],
+            })
+    return {lg: fitted_model(db_url, lg, as_of, config, cache_dir,
+                             excluded, fixed_params=fixed)[0]
+            for lg, fixed in fixed_per_league.items()}
 
 
 def team_depths(db_url: str, league: str, as_of: dt.datetime,
@@ -158,9 +206,9 @@ def predictions(db_url: str, config: ModelConfig,
 
     records: list[dict] = []
     for as_of in week_starts(start, end):
-        for league in leagues:
-            model, cached = fitted_model(db_url, league, as_of, config,
-                                         cache_dir, excluded_match_ids)
+        models = week_models(db_url, leagues, as_of, config, cache_dir,
+                             excluded_match_ids)
+        for league, model in models.items():
             depths = team_depths(db_url, league, as_of)
             for m, home, away, gh, ga in finished_week_matches(
                     db_url, league, as_of, as_of + WEEK):
@@ -180,6 +228,5 @@ def predictions(db_url: str, config: ModelConfig,
                     "p_btts": btts(matrix, yes=True),
                     "depth_bin": depth_bin(min(depths.get(home, 0),
                                                depths.get(away, 0))),
-                    "cached": cached,
                 })
     return records
