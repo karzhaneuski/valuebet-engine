@@ -129,6 +129,12 @@ metrics forbidden until FROZEN_CONFIG.json exists.
   - Defined degradation ladder: (a) correct_score -> 5/wk (370.71 credits); (b) disable T-3 h2h (273.21 credits, home share from T-24); (c) T-3 slot -> day (248.57 credits); (d) T-3 never disabled.
   - Implemented offline calculator scripts/calc_odds_budget.py and saved committed artifact reports/recon/odds_budget_30d.json.
   - Updated core/config.py (active_tiers, tier_markets, pinnacle_correct_score_max_weekly, new degradation_ladder), config.yaml, tests/test_config.py, SPEC §3, decisions.md (B6.5), and PROMPTS.md Phase 7 with review checklist.
+- Б2 (Blocking):
+  - Defined CLV arbiter formula: CLV_fair = odds_fortuna * p_fair - 1, where p_fair is the outcome probability from the fair market matrix constructed from the LAST snapshot of totals+h2h strictly BEFORE match kickoff (not after).
+  - Secondary benchmark for candidate matches with purchased correct_score: against last pre-kickoff devigged Pinnacle correct_score.
+  - Added clv_source values ("fair_market_matrix", "pinnacle_correct_score") to core/orm.py and tests/test_orm.py.
+  - Documented that realized ROI is informational only (requires ~12,000 bets for +-5% CI on average ~9 odds).
+  - Added "снимок строго до начала матча, не после" and CLV definition to PROMPTS.md Phase 7 and its review checklist, and aligned SPEC §7 and decisions.md B6.7.
 
 - All items in Step 0, Part A, Part B, Part C, and Part D completed.
 - Full verification table and owner commands documented in `reports/backtest/SUMMARY_4b.md`.

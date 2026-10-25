@@ -728,9 +728,15 @@ FROZEN_CONFIG_4b; the window was already used by phases 3/4):
    (d) T-3 is NEVER disabled. All snapshot timings use T-3 (Phase 0 decision), not T-2.
 6. 1X2 odds role: 1X2 is used STRICTLY AS INPUT to construct the fair
    matrix. Bets on 1X2 are NEVER issued (SPEC §1).
-7. Quality arbiter for phase 7: CLV measured against our own exact-score
-   price snapshots before kickoff. Realised ROI is informational only
-   (at average odds ~9, a ±5% CI requires ~12,000 bets).
+7. Quality arbiter for phase 7 (review B2):
+   CLV_fair = odds_fortuna (entered by user at recommendation time) × p_fair − 1,
+   where p_fair is the outcome probability from the fair market matrix constructed
+   from the LAST snapshot of totals+h2h strictly BEFORE match kickoff (never post-kickoff).
+   Secondarily, for candidate matches where event-level Pinnacle correct_score was
+   purchased: CLV_pinnacle against the last pre-kickoff devigged Pinnacle correct_score.
+   Every CLV record stores clv_source ("fair_market_matrix" or "pinnacle_correct_score").
+   Phase 7 review checklist: snapshot strictly before match start, not after.
+   Realised ROI is informational only (at average odds ~9, a ±5% CI requires ~12,000 bets).
 8. Test period lock: after phase 4b, the test period (from 2025-07-01) is
    exhausted. backtest_hybrid and backtest_mixture enforce
    FROZEN_CONFIG_4b.json. Subsequent evaluation will occur exclusively
