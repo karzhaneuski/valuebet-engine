@@ -1,0 +1,16 @@
+[
+ {
+  "period": "validation (2023-24)",
+  "matches_with_avgc": 3504,
+  "mean_avgc_margin": 0.04788639123066032,
+  "maxc_forks": 1104,
+  "fork_share": 0.3150684931506849
+ },
+ {
+  "period": "test (2025-26)",
+  "matches_with_avgc": 2097,
+  "mean_avgc_margin": 0.06531450674274138,
+  "maxc_forks": 32,
+  "fork_share": 0.015259895088221268
+ }
+]
