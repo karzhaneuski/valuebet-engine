@@ -68,6 +68,36 @@ def get_model_home_share_and_model(
         return None, None
 
 
+def has_team_lineups(
+    session: Session,
+    team_id: int,
+    before_date: dt.date,
+    last_n: int = 8,
+) -> bool:
+    """Check if match_lineups table has any data for team in last N finished matches."""
+    stmt_matches = (
+        select(Match.id)
+        .where(
+            (Match.home_team_id == team_id) | (Match.away_team_id == team_id),
+            Match.date_utc < before_date,
+            Match.status == "finished",
+        )
+        .order_by(Match.date_utc.desc())
+        .limit(last_n)
+    )
+    match_ids = list(session.scalars(stmt_matches).all())
+    if not match_ids:
+        return False
+
+    cnt = session.scalar(
+        select(func.count(MatchLineup.id)).where(
+            MatchLineup.match_id.in_(match_ids),
+            MatchLineup.team_id == team_id,
+        )
+    )
+    return (cnt or 0) > 0
+
+
 def get_key_players_for_team(
     session: Session,
     team_id: int,

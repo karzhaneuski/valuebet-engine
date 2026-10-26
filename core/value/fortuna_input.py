@@ -33,7 +33,7 @@ from typing import Literal
 logger = logging.getLogger(__name__)
 
 FortunaMarketType = Literal[
-    "exact_score", "other", "multiscore", "goals_range", "totals", "team_totals", "h2h"
+    "exact_score", "other", "multiscore", "goals_range", "totals", "team_totals", "h2h", "btts"
 ]
 
 ExactScoreSelection = tuple[int, int]
@@ -41,6 +41,7 @@ GoalsRangeSelection = tuple[int, int]
 TotalsSelection = tuple[Literal["over", "under"], float]
 TeamTotalsSelection = tuple[str, Literal["over", "under"], float]
 H2HSelection = Literal["1", "X", "2"]
+BTTSSelection = Literal["yes", "no"]
 MultiscoreSpecial = Literal["multi:remis", "multi:home_other", "multi:away_other"]
 MultiscoreSelection = frozenset[tuple[int, int]] | MultiscoreSpecial
 FortunaSelection = (
@@ -51,6 +52,7 @@ FortunaSelection = (
     | TotalsSelection
     | TeamTotalsSelection
     | H2HSelection
+    | BTTSSelection
 )
 
 RANGE_KEYWORDS = (
@@ -119,6 +121,8 @@ class FortunaPrice:
             return f"team_totals:{self.selection[0]}:{self.selection[1]}:{line_str}"
         if self.market == "h2h":
             return f"h2h:{self.selection}"
+        if self.market == "btts":
+            return f"btts:{self.selection}"
         return f"{self.market}:{self.selection}"
 
 

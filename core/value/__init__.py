@@ -8,6 +8,8 @@ from core.value.engine import (
     calculate_kelly_quarter_capped,
     check_model_anomaly,
     evaluate_fortuna_prices,
+    match_key_player,
+    normalize_player_name,
 )
 from core.value.fair_matrix import (
     FairMatrix,
@@ -50,6 +52,7 @@ from core.value.prefilter import (
 from core.value.standby_model import (
     get_key_players_for_team,
     get_model_home_share_and_model,
+    has_team_lineups,
 )
 
 __all__ = [
@@ -81,9 +84,12 @@ __all__ = [
     "fit_1x2_share",
     "get_key_players_for_team",
     "get_model_home_share_and_model",
+    "has_team_lineups",
     "load_market_inputs_for_match",
     "load_pinnacle_correct_score_from_db",
     "log_prefilter_decisions_to_db",
+    "match_key_player",
+    "normalize_player_name",
     "parse_fortuna_line",
     "parse_fortuna_text",
     "parse_score_outcome",

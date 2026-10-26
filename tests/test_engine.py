@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from core.value.engine import (
+    EvaluatedOutcome,
     calculate_kelly_quarter_capped,
     check_model_anomaly,
     evaluate_fortuna_prices,
@@ -218,7 +219,10 @@ def test_evaluation_summary_table_output(sample_fair_matrix: FairMatrix) -> None
     assert "Маржа Fortuna:" in table
     assert "Аномалия модели" in table
     assert "Исход" in table and "Fortuna" in table and "p_fair" in table and "Edge" in table
-    assert "Итого рекомендаций:" in table
+    assert "Итого исходов с ценой выше справедливой:" in table
+    assert "¼ Келли" not in table
+    assert "Выше спр." in table
+    assert "Реком." not in table
 
 
 def test_inny_incomplete_vs_complete_grid(sample_fair_matrix: FairMatrix) -> None:
@@ -401,7 +405,7 @@ def test_team_totals_side_matching(sample_fair_matrix: FairMatrix) -> None:
 
     # Unknown team is rejected as unmatchable
     assert out_unkn.p_fair == 0.0
-    assert "Не удалось однозначно сопоставить команду" in out_unkn.rejection_reason  # noqa: RUF001
+    assert "Не удалось однозначно сопоставить команду" in out_unkn.rejection_reason
 
 
 def test_multiwynik_11_groups_exact_partition(sample_fair_matrix: FairMatrix) -> None:
@@ -456,3 +460,62 @@ def test_evaluate_all_three_real_fixtures(sample_fair_matrix: FairMatrix) -> Non
         assert len(res.outcomes) == len(prices)
         assert res.fortuna_overround is not None
         assert 0.28 < res.fortuna_overround < 0.38
+
+
+def test_normalize_player_name_and_strict_matching() -> None:
+    from core.value.engine import match_key_player, normalize_player_name
+
+    # Normalization strips accents, lowercases, collapses whitespace
+    assert normalize_player_name("  Kévin   De Bruyne  ") == "kevin de bruyne"
+    assert normalize_player_name("Marvin   Schwäbe") == "marvin schwabe"
+
+    key_set = {"Kevin De Bruyne", "Erling Haaland", "Rodri"}
+
+    # Exact matches with different casing/accents
+    is_key, reason = match_key_player("Kévin De Bruyne", key_set, has_lineups=True)
+    assert is_key is True
+    assert reason == "ключевой"
+
+    # Loose substring does NOT match!
+    # "Al" must NOT match anything
+    is_key, reason = match_key_player("Al", key_set, has_lineups=True)
+    assert is_key is False
+    assert reason == "не ключевой"
+
+    # "Rodrigo" must NOT match "Rodri"
+    is_key, reason = match_key_player("Rodrigo", key_set, has_lineups=True)
+    assert is_key is False
+    assert reason == "не ключевой"
+
+    # Missing lineups: returns (False, "нет данных о составе")
+    is_key, reason = match_key_player("Kevin De Bruyne", key_set, has_lineups=False)
+    assert is_key is False
+    assert reason == "нет данных о составе"
+
+    is_key, reason = match_key_player("Kevin De Bruyne", None, has_lineups=True)
+    assert is_key is False
+    assert reason == "нет данных о составе"
+
+
+def test_price_above_fair_concept_and_btts(sample_fair_matrix: FairMatrix) -> None:
+    # Check EvaluatedOutcome synchronizes price_above_fair and recommended
+    out = EvaluatedOutcome(
+        market="exact_score",
+        selection_display="1:0",
+        selection_key="1:0",
+        odds_fortuna=10.0,
+        p_fair=0.15,
+        fair_odds=6.67,
+        edge=0.50,
+        price_above_fair=True,
+    )
+    assert out.price_above_fair is True
+    assert out.recommended is True
+
+    # Check BTTS market evaluation
+    p_btts_yes = FortunaPrice("btts", "yes", 1.90, "BTTS Yes", 1)
+    p_btts_no = FortunaPrice("btts", "no", 1.95, "BTTS No", 2)
+    res = evaluate_fortuna_prices(sample_fair_matrix, [p_btts_yes, p_btts_no])
+    assert len(res.outcomes) == 2
+    assert res.outcomes[0].p_fair + res.outcomes[1].p_fair == pytest.approx(1.0, abs=1e-6)
+    assert res.outcomes[0].rejection_reason == "Справочный рынок"

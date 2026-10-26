@@ -14,13 +14,16 @@ import os
 import sys
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.config import load_config
 from core.db import get_engine
 from core.orm import Match, PrefilterDecision
-from core.value.engine import evaluate_fortuna_prices
+from core.value.engine import (
+    evaluate_fortuna_prices,
+    match_key_player,
+)
 from core.value.fair_matrix import build_fair_matrix
 from core.value.fortuna_input import parse_fortuna_text
 from core.value.persistence import (
@@ -30,13 +33,16 @@ from core.value.persistence import (
 )
 from core.value.prefilter import (
     CandidateMatch,
+    PrefilterDecisionRecord,
     PrefilterReport,
+    compute_high_draws_mass,
     filter_candidates,
     log_prefilter_decisions_to_db,
 )
 from core.value.standby_model import (
     get_key_players_for_team,
     get_model_home_share_and_model,
+    has_team_lineups,
 )
 
 
@@ -146,25 +152,46 @@ def _cmd_evaluate(args: argparse.Namespace, session: Session) -> int:
         else []
     )
 
-    kp_h = get_key_players_for_team(
-        session=session,
-        team_id=match.home_team_id,
-        before_date=match.date_utc,
-        last_n=cfg.risk_flags.key_player_last_n,
-        min_starts_share=cfg.risk_flags.key_player_min_starts_share,
+    has_lineups_h = has_team_lineups(
+        session, match.home_team_id, match.date_utc, cfg.risk_flags.key_player_last_n
     )
-    kp_a = get_key_players_for_team(
-        session=session,
-        team_id=match.away_team_id,
-        before_date=match.date_utc,
-        last_n=cfg.risk_flags.key_player_last_n,
-        min_starts_share=cfg.risk_flags.key_player_min_starts_share,
+    kp_h = (
+        get_key_players_for_team(
+            session=session,
+            team_id=match.home_team_id,
+            before_date=match.date_utc,
+            last_n=cfg.risk_flags.key_player_last_n,
+            min_starts_share=cfg.risk_flags.key_player_min_starts_share,
+        )
+        if has_lineups_h
+        else None
+    )
+
+    has_lineups_a = has_team_lineups(
+        session, match.away_team_id, match.date_utc, cfg.risk_flags.key_player_last_n
+    )
+    kp_a = (
+        get_key_players_for_team(
+            session=session,
+            team_id=match.away_team_id,
+            before_date=match.date_utc,
+            last_n=cfg.risk_flags.key_player_last_n,
+            min_starts_share=cfg.risk_flags.key_player_min_starts_share,
+        )
+        if has_lineups_a
+        else None
     )
 
     abs_h: list[str] = []
     for p in raw_abs_h:
-        if not kp_h or any(p.lower() in k.lower() or k.lower() in p.lower() for k in kp_h):
+        is_key, status_desc = match_key_player(p, kp_h, has_lineups=has_lineups_h)
+        if is_key:
             abs_h.append(p)
+        elif status_desc == "нет данных о составе":
+            print(
+                f"[ИНФО] Нет данных о составе для команды {h_team} -> игрок '{p}' "
+                "не может быть подтверждён как ключевой (множитель риска не применяется)."
+            )
         else:
             print(
                 f"[ИНФО] Игрок '{p}' не является ключевым для {h_team} "
@@ -174,8 +201,14 @@ def _cmd_evaluate(args: argparse.Namespace, session: Session) -> int:
 
     abs_a: list[str] = []
     for p in raw_abs_a:
-        if not kp_a or any(p.lower() in k.lower() or k.lower() in p.lower() for k in kp_a):
+        is_key, status_desc = match_key_player(p, kp_a, has_lineups=has_lineups_a)
+        if is_key:
             abs_a.append(p)
+        elif status_desc == "нет данных о составе":
+            print(
+                f"[ИНФО] Нет данных о составе для команды {a_team} -> игрок '{p}' "
+                "не может быть подтверждён как ключевой (множитель риска не применяется)."
+            )
         else:
             print(
                 f"[ИНФО] Игрок '{p}' не является ключевым для {a_team} "
@@ -204,11 +237,15 @@ def _cmd_evaluate(args: argparse.Namespace, session: Session) -> int:
         now_utc = dt.datetime.now(dt.UTC)
         is_past = False
         if match.commence_time_utc:
-            is_past = now_utc >= match.commence_time_utc
+            is_past = (now_utc >= match.commence_time_utc) or (
+                match.status in ("finished", "live", "in_play")
+            )
             time_str = match.commence_time_utc.isoformat()
         else:
-            is_past = now_utc.date() > match.date_utc
-            time_str = str(match.date_utc)
+            is_past = (now_utc.date() > match.date_utc) or (
+                match.status in ("finished", "live", "in_play")
+            )
+            time_str = f"{match.date_utc} (status={match.status})"
 
         if is_past:
             sys.stderr.write(
@@ -283,9 +320,9 @@ def _cmd_candidates(args: argparse.Namespace, session: Session) -> int:
         week_monday = dt.date.fromisocalendar(iso_year, iso_week, 1)
         week_sunday = week_monday + dt.timedelta(days=6)
 
-        # Count decisions for matches in this ISO week ALREADY accepted on prior dates (< today)
-        accepted_this_week = session.scalar(
-            select(func.count(func.distinct(PrefilterDecision.match_id)))
+        # Query decisions for matches in this ISO week ALREADY accepted on prior dates (< today)
+        stmt_prior = (
+            select(PrefilterDecision)
             .join(Match, Match.id == PrefilterDecision.match_id)
             .where(
                 Match.date_utc >= week_monday,
@@ -293,8 +330,15 @@ def _cmd_candidates(args: argparse.Namespace, session: Session) -> int:
                 PrefilterDecision.decision_date < today,
                 PrefilterDecision.accepted.is_(True),
             )
-        ) or 0
+            .order_by(PrefilterDecision.decision_date.desc())
+        )
+        prior_decisions = list(session.scalars(stmt_prior).all())
+        prior_accepted_map: dict[int, PrefilterDecision] = {}
+        for pd in prior_decisions:
+            if pd.match_id not in prior_accepted_map:
+                prior_accepted_map[pd.match_id] = pd
 
+        accepted_this_week = len(prior_accepted_map)
         effective_weekly_cap = max(0, args.cap - accepted_this_week)
         if accepted_this_week > 0:
             print(
@@ -303,7 +347,10 @@ def _cmd_candidates(args: argparse.Namespace, session: Session) -> int:
                 f"(из {args.cap}).\n"
             )
 
-        candidate_items: list[CandidateMatch] = []
+        carried_over_records: list[PrefilterDecisionRecord] = []
+        new_candidate_items: list[CandidateMatch] = []
+        prior_by_league: dict[str, int] = {}
+
         for m in week_matches:
             h_name = m.home_team.name if m.home_team else f"Team_{m.home_team_id}"
             a_name = m.away_team.name if m.away_team else f"Team_{m.away_team_id}"
@@ -313,25 +360,47 @@ def _cmd_candidates(args: argparse.Namespace, session: Session) -> int:
             m_inputs = load_market_inputs_for_match(session, m.id)
             fair_mat = build_fair_matrix(m_inputs)
 
-            candidate_items.append(
-                CandidateMatch(
-                    match_id=m.id,
-                    match_name=m_name,
-                    league=m.league,
-                    kickoff=kickoff,
-                    fair_matrix=fair_mat,
-                    has_fortuna_grid=args.has_fortuna_grid,
+            if m.id in prior_accepted_map:
+                pd = prior_accepted_map[m.id]
+                h_mass = compute_high_draws_mass(fair_mat)
+                p_btts = fair_mat.btts()
+                prior_by_league[m.league] = prior_by_league.get(m.league, 0) + 1
+                carried_over_records.append(
+                    PrefilterDecisionRecord(
+                        match_id=m.id,
+                        match_name=m_name,
+                        league=m.league,
+                        kickoff=kickoff,
+                        high_draws_mass=h_mass,
+                        accepted=True,
+                        reason=f"Ранее отобран (перенос решения от {pd.decision_date})",
+                        rank=len(carried_over_records) + 1,
+                        p_fair_btts=p_btts,
+                    )
                 )
-            )
+            else:
+                new_candidate_items.append(
+                    CandidateMatch(
+                        match_id=m.id,
+                        match_name=m_name,
+                        league=m.league,
+                        kickoff=kickoff,
+                        fair_matrix=fair_mat,
+                        has_fortuna_grid=args.has_fortuna_grid,
+                    )
+                )
 
         week_report = filter_candidates(
-            candidate_items,
+            new_candidate_items,
             weekly_cap=effective_weekly_cap,
             max_per_league=args.max_per_league,
         )
-        combined_items.extend(week_report.items)
-        total_eval += week_report.total_evaluated
-        total_acc += week_report.total_accepted
+        combined_week_items = carried_over_records + week_report.items
+        combined_items.extend(combined_week_items)
+        total_eval += len(carried_over_records) + week_report.total_evaluated
+        total_acc += len(carried_over_records) + week_report.total_accepted
+        for lg, cnt in prior_by_league.items():
+            league_breakdown[lg] = league_breakdown.get(lg, 0) + cnt
         for lg, cnt in week_report.accepted_by_league.items():
             league_breakdown[lg] = league_breakdown.get(lg, 0) + cnt
 

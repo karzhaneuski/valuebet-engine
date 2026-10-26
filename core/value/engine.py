@@ -16,6 +16,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import re
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Literal
@@ -32,6 +33,36 @@ from core.value.fortuna_input import (
 logger = logging.getLogger(__name__)
 
 
+def normalize_player_name(name: str) -> str:
+    """Normalize player name for strict matching: NFKD strip accents, lowercase,
+    collapse whitespace.
+    """
+    nfkd = unicodedata.normalize("NFKD", name.strip().lower())
+    stripped = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return " ".join(stripped.split())
+
+
+def match_key_player(
+    player_name: str,
+    key_players: set[str] | None,
+    has_lineups: bool = True,
+) -> tuple[bool, str]:
+    """Strict whole-name normalized matching against key players set.
+
+    Returns (is_key, reason):
+    - If has_lineups is False or key_players is None: (False, "нет данных о составе")
+    - If match found: (True, "ключевой")
+    - If no match found: (False, "не ключевой")
+    """
+    if not has_lineups or key_players is None:
+        return False, "нет данных о составе"
+    norm_p = normalize_player_name(player_name)
+    norm_keys = {normalize_player_name(k) for k in key_players}
+    if norm_p in norm_keys:
+        return True, "ключевой"
+    return False, "не ключевой"
+
+
 @dataclass(frozen=True)
 class EvaluatedOutcome:
     """Evaluation result for a single Fortuna odds entry."""
@@ -43,12 +74,19 @@ class EvaluatedOutcome:
     p_fair: float
     fair_odds: float
     edge: float
-    recommended: bool
-    rejection_reason: str
-    stake_flat: float
-    kelly_quarter_capped: float
+    price_above_fair: bool = False
+    rejection_reason: str = ""
+    stake_flat: float = 0.0
+    kelly_quarter_capped: float = 0.0
     flags: list[str] = field(default_factory=list)
     raw_price: FortunaPrice | None = None
+    recommended: bool = False
+
+    def __post_init__(self) -> None:
+        if self.price_above_fair and not self.recommended:
+            object.__setattr__(self, "recommended", True)
+        elif self.recommended and not self.price_above_fair:
+            object.__setattr__(self, "price_above_fair", True)
 
 
 @dataclass
@@ -65,10 +103,11 @@ class EvaluationResult:
     risk_flags: list[str] = field(default_factory=list)
     model_anomaly: bool = False
     is_excluded: bool = False
+    price_above_fair_count: int = 0
     recommendations_count: int = 0
 
     def format_table(self) -> str:
-        """Format Russian summary table for CLI output."""
+        """Format Russian summary table for CLI output without recommendation / Kelly terms."""
         sep_double = "=" * 94
         sep_single = "-" * 94
 
@@ -102,13 +141,13 @@ class EvaluationResult:
         lines.append(sep_single)
         header = (
             f"{'Исход':<22} {'Fortuna':>7} {'p_fair':>7} {'Справедл.':>9} "
-            f"{'Edge':>8} {'Реком.':>7} {'¼ Келли':>8} {'Причина отказа'}"
+            f"{'Edge':>8} {'Выше спр.':>9}  {'Примечание / оговорки'}"
         )
         lines.append(header)
         lines.append(sep_single)
 
         for out in self.outcomes:
-            rec_str = "ДА" if out.recommended else "НЕТ"
+            above_str = "ДА" if out.price_above_fair else "НЕТ"
             pf_str = f"{out.p_fair:.1%}" if out.p_fair > 0 else "—"
             fair_odds_str = (
                 f"{out.fair_odds:.2f}"
@@ -116,8 +155,7 @@ class EvaluationResult:
                 else "—"
             )
             edge_str = f"{out.edge:+.1%}" if out.p_fair > 0 else "—"
-            k_str = f"{out.kelly_quarter_capped:.1%}" if out.recommended else "—"
-            reason = out.rejection_reason if not out.recommended else ""
+            reason = out.rejection_reason if not out.price_above_fair else ""
 
             row = (
                 f"{out.selection_display:<22} "
@@ -125,14 +163,15 @@ class EvaluationResult:
                 f"{pf_str:>7} "
                 f"{fair_odds_str:>9} "
                 f"{edge_str:>8} "
-                f"{rec_str:>7} "
-                f"{k_str:>8} "
-                f"  {reason}"
+                f"{above_str:>9}  "
+                f"{reason}"
             )
             lines.append(row)
 
         lines.append(sep_single)
-        lines.append(f"Итого рекомендаций: {self.recommendations_count}")
+        lines.append(
+            f"Итого исходов с ценой выше справедливой: {self.price_above_fair_count}"
+        )
         lines.append(sep_double)
         return "\n".join(lines)
 
@@ -517,6 +556,9 @@ def evaluate_fortuna_prices(
                 p_fair = fair_matrix.p_draw_devig
             elif item.selection == "2":
                 p_fair = fair_matrix.p_away_devig
+        elif item.market == "btts":
+            yes = str(item.selection).lower() in ("yes", "tak", "true", "1")
+            p_fair = fair_matrix.btts(yes=yes)
 
         edge = p_fair * item.odds + p_push * 1.0 - 1.0
         fair_odds = (1.0 - p_push) / p_fair if p_fair > 1e-9 else 9999.0
@@ -532,7 +574,7 @@ def evaluate_fortuna_prices(
         elif fair_matrix.status == "fallback":
             recommended = False
             reason = "Резервная модель (справочно)"
-        elif item.market in ("totals", "team_totals", "h2h"):
+        elif item.market in ("totals", "team_totals", "h2h", "btts"):
             recommended = False
             reason = item_reason_override or "Справочный рынок"
         elif item.market == "other":
@@ -613,12 +655,13 @@ def evaluate_fortuna_prices(
                 p_fair=p_fair,
                 fair_odds=fair_odds,
                 edge=edge,
-                recommended=recommended,
+                price_above_fair=recommended,
                 rejection_reason=reason,
                 stake_flat=1.0 if recommended else 0.0,
                 kelly_quarter_capped=kelly,
                 flags=outcome_flags,
                 raw_price=item,
+                recommended=recommended,
             )
         )
 
@@ -633,5 +676,6 @@ def evaluate_fortuna_prices(
         risk_flags=flags,
         model_anomaly=is_anomaly,
         is_excluded=is_excluded,
+        price_above_fair_count=reco_count,
         recommendations_count=reco_count,
     )

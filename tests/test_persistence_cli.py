@@ -735,3 +735,71 @@ def test_cli_candidates_idempotency_same_day_reruns(
         }
         assert decisions3[10] is True
         assert decisions3[20] is True
+
+    # Run 4: rerun on NEXT day (Thursday) in same ISO week:
+    # Must carry over accepted=True and NOT flip match 10 to rejected due to budget limit!
+    next_day = today + dt.timedelta(days=1)
+    code4 = main([
+        "candidates",
+        "--days", "14",
+        "--from-date", str(next_day),
+        "--cap", "1",  # Even with cap=1 where match 10 already consumes the cap!
+        "--save",
+    ])
+    assert code4 == 0
+
+    with Session(engine) as session:
+        # Check decision row created for next_day
+        q_next = (
+            select(PrefilterDecision)
+            .where(PrefilterDecision.decision_date == next_day)
+        )
+        decisions_next = {d.match_id: d.accepted for d in session.scalars(q_next).all()}
+        assert decisions_next[10] is True
+
+
+def test_cli_evaluate_save_past_match_null_commence_today_finished(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """When commence_time_utc is NULL but match date is today and status is finished,
+    save must be blocked.
+    """
+    db_file = tmp_path / "today_finished.db"
+    db_url = f"sqlite:///{db_file}"
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    engine = create_engine(db_url)
+    Base.metadata.create_all(engine)
+
+    today = dt.date.today()
+
+    with Session(engine) as session:
+        t1 = Team(id=1, name="Arsenal", league="premier_league")
+        t2 = Team(id=2, name="Chelsea", league="premier_league")
+        session.add_all([t1, t2])
+        session.flush()
+
+        m = Match(
+            id=303,
+            league="premier_league",
+            season=2026,
+            date_utc=today,
+            commence_time_utc=None,  # NULL commence time!
+            kickoff_source="understat_placeholder",
+            status="finished",  # Already finished!
+            home_team_id=1,
+            away_team_id=2,
+        )
+        session.add(m)
+        session.commit()
+
+    inp = tmp_path / "input.txt"
+    inp.write_text("1:0 @ 7.50\n", encoding="utf-8")
+
+    code = main([
+        "evaluate",
+        "--match-id", "303",
+        "--input", str(inp),
+        "--save",
+    ])
+    # Must exit with code 1 due to match already finished
+    assert code == 1
