@@ -82,13 +82,13 @@
 
 ## Part D: Phase 8 — API & MCP (`phase-8-api-mcp`)
 
-- [ ] D1. Create branch `phase-8-api-mcp` from `phase-7-tracking`.
-- [ ] D2. FastAPI (`api/`): Endpoints for matches, fair prices, fortuna eval, user bets, performance, health.
-- [ ] D3. Bearer token auth via `API_SECRET_TOKEN` (all endpoints except `/health`).
-- [ ] D4. MCP Server (`mcp_server/`) on official Python SDK `mcp` with tools for Hermes Agent.
-- [ ] D5. Documentation `docs/hermes-setup.md`.
-- [ ] D6. Unit tests (`tests/test_api.py`, `tests/test_mcp.py`).
-- [ ] D7. Self-review report `reports/self_review_phase8.md`.
+- [x] D1. Create branch `phase-8-api-mcp` from `phase-7-tracking`.
+- [x] D2. FastAPI (`api/`): Endpoints for matches, fair prices, fortuna eval, user bets, performance, health.
+- [x] D3. Bearer token auth via `API_SECRET_TOKEN` (all endpoints except `/health`).
+- [x] D4. MCP Server (`mcp_server/`) on official Python SDK `mcp` with tools for Hermes Agent.
+- [x] D5. Documentation `docs/hermes-setup.md`.
+- [x] D6. Unit tests (`tests/test_api.py`, `tests/test_mcp.py`).
+- [x] D7. Self-review report `reports/self_review_phase8.md`.
 - [ ] D8. Push & verify green CI.
 
 ---

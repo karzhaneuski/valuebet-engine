@@ -1,22 +1,12 @@
-"""MCP server stub for Hermes. Phase 1: health-check only.
+"""MCP server entry point for Hermes Agent.
 
-Real MCP tools (get_value_bets, evaluate_manual_odds, get_match_analysis,
-get_performance, get_new_notifications) arrive in phase 8 per SPEC §9.
+Run via stdio:
+    uv run python -m mcp_server.main
 """
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from mcp_server.server import mcp
 
-from core.logging import configure, get_logger
-
-configure()
-logger = get_logger("mcp_server")
-
-app = FastAPI(title="ValueBet Engine MCP", version="0.1.0")
-
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    logger.info("health.check")
-    return {"status": "ok", "service": "mcp"}
+if __name__ == "__main__":
+    mcp.run()

@@ -256,6 +256,7 @@ class Secrets(BaseSettings):
     brave_search_api_key: str = ""
     gemini_api_key: str = ""
     api_token: str = ""
+    api_secret_token: str = ""
 
 
 class AppConfig(BaseModel):

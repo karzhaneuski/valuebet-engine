@@ -99,11 +99,25 @@ def evaluate_fair_probs_for_bet(
                 for a in range(11)
                 if h + a == int_line
             )
-
-        if direction == "over":
-            p_win = matrix.total_over(target_line)
+            if direction == "over":
+                p_win = sum(
+                    matrix.exact_score(h, a)
+                    for h in range(11)
+                    for a in range(11)
+                    if h + a > int_line
+                )
+            else:
+                p_win = sum(
+                    matrix.exact_score(h, a)
+                    for h in range(11)
+                    for a in range(11)
+                    if h + a < int_line
+                )
         else:
-            p_win = matrix.total_under(target_line)
+            if direction == "over":
+                p_win = matrix.total_over(target_line)
+            else:
+                p_win = matrix.total_under(target_line)
 
     elif m == "btts":
         yes = "yes" in sel or sel == "y"
