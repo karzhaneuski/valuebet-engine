@@ -100,7 +100,7 @@ odds_policy:
     - cap_correct_score_5_week
     - disable_t3_h2h
     - t3_slot_to_day
-  pacing: { enabled: true, safety_margin_credits: 25 }
+  pacing: { enabled: true, safety_margin_credits: 25, stage_1_credits: 425, stage_2_credits: 440 }
   t4_recheck: true
   postponement: { shift_min: 15, no_result_after_h: 3, void_after_h: 48 }
   scores_poll_after_matchday: true

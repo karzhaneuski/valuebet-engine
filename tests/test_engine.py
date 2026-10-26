@@ -148,16 +148,24 @@ def test_multiscore_and_goals_range_thresholds(sample_fair_matrix: FairMatrix) -
 
 
 def test_reference_totals_and_h2h_never_recommended(sample_fair_matrix: FairMatrix) -> None:
-    # Even with huge edge, totals and 1X2 are strictly reference-only
+    # SPEC v3: Totals and 1X2 are evaluated on equal terms with other markets.
+    # When odds have implausibly large edge (>20% cap), they are rejected by protective guard.
     item_tot = FortunaPrice("totals", ("over", 2.5), 5.00, "over 2.5", 1)
     item_h2h = FortunaPrice("h2h", "1", 5.00, "1", 2)
 
     res = evaluate_fortuna_prices(sample_fair_matrix, [item_tot, item_h2h])
     assert res.recommendations_count == 0
     assert res.outcomes[0].recommended is False
-    assert "Справочный рынок" in res.outcomes[0].rejection_reason
+    assert "Неправдоподобный edge" in res.outcomes[0].rejection_reason
     assert res.outcomes[1].recommended is False
-    assert "Справочный рынок" in res.outcomes[1].rejection_reason
+    assert "Неправдоподобный edge" in res.outcomes[1].rejection_reason
+
+    # Normal totals with valid edge within thresholds are accepted
+    p_over = sample_fair_matrix.total_over(2.5)
+    normal_tot = FortunaPrice("totals", ("over", 2.5), (1.0 / p_over) * 1.08, "over 2.5", 3)
+    res_normal = evaluate_fortuna_prices(sample_fair_matrix, [normal_tot])
+    assert res_normal.outcomes[0].price_above_fair is True
+    assert res_normal.outcomes[0].recommended is True
 
 
 def test_risk_flags_multiplier_and_exclusion(sample_fair_matrix: FairMatrix) -> None:
@@ -303,8 +311,8 @@ def test_integer_and_quarter_totals_lines(sample_fair_matrix: FairMatrix) -> Non
 
     # P(under 3) + P(push 3) + P(over 3) must sum to 1.0!
     assert out_u3.p_fair + out_o3.p_fair + p_push_3 == pytest.approx(1.0, abs=1e-9)
-    assert out_u3.recommended is False
-    assert out_u3.rejection_reason == "Справочный рынок"
+    assert out_u3.price_above_fair is True
+    assert out_u3.recommended is True
 
     # Edge must be EV = P(win) * odds + P(push) * 1 - 1
     ev_u3 = out_u3.p_fair * item_u3.odds + p_push_3 * 1.0 - 1.0
@@ -512,10 +520,10 @@ def test_price_above_fair_concept_and_btts(sample_fair_matrix: FairMatrix) -> No
     assert out.price_above_fair is True
     assert out.recommended is True
 
-    # Check BTTS market evaluation
+    # Check BTTS market evaluation (SPEC v3: evaluated on equal terms)
     p_btts_yes = FortunaPrice("btts", "yes", 1.90, "BTTS Yes", 1)
     p_btts_no = FortunaPrice("btts", "no", 1.95, "BTTS No", 2)
     res = evaluate_fortuna_prices(sample_fair_matrix, [p_btts_yes, p_btts_no])
     assert len(res.outcomes) == 2
     assert res.outcomes[0].p_fair + res.outcomes[1].p_fair == pytest.approx(1.0, abs=1e-6)
-    assert res.outcomes[0].rejection_reason == "Справочный рынок"
+    assert res.outcomes[0].price_above_fair is True

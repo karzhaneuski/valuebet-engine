@@ -564,9 +564,11 @@ def evaluate_fortuna_prices(
         fair_odds = (1.0 - p_push) / p_fair if p_fair > 1e-9 else 9999.0
         kelly = calculate_kelly_quarter_capped(p_fair, item.odds)
 
-        # Decision logic
+        # Decision logic: mark price_above_fair objectively across all markets
         recommended = False
         reason = ""
+
+        mult = risk_cfg.absence_edge_multiplier if has_risk_multiplier else 1.0
 
         if fair_matrix.status == "no_market":
             recommended = False
@@ -574,18 +576,17 @@ def evaluate_fortuna_prices(
         elif fair_matrix.status == "fallback":
             recommended = False
             reason = "Резервная модель (справочно)"
-        elif item.market in ("totals", "team_totals", "h2h", "btts"):
+        elif item_reason_override:
             recommended = False
-            reason = item_reason_override or "Справочный рынок"
-        elif item.market == "other":
-            recommended = False
-            reason = item_reason_override or "Справочно: inny"
+            reason = item_reason_override
         elif is_excluded:
             recommended = False
             reason = "Исключено (≥2 ключевых отсутствующих)"
+        elif item.market == "other":
+            recommended = False
+            reason = "Справочно: inny (хвост 5+ смещен, z=-2.28)"
         elif item.market == "exact_score":
             base_edge_req = thresh.exact_score_edge
-            mult = risk_cfg.absence_edge_multiplier if has_risk_multiplier else 1.0
             effective_edge = base_edge_req * mult
             if edge > thresh.implausible_edge_exact_score:
                 reason = (
@@ -601,9 +602,9 @@ def evaluate_fortuna_prices(
                 reason = f"Ниже порога edge (< {effective_edge:.1%})"
             else:
                 recommended = True
+                reason = "Цена выше справедливой"
         elif item.market == "multiscore":
             base_edge_req = thresh.multiscore_edge
-            mult = risk_cfg.absence_edge_multiplier if has_risk_multiplier else 1.0
             effective_edge = base_edge_req * mult
             if edge > thresh.implausible_edge_multiscore:
                 reason = (
@@ -619,9 +620,9 @@ def evaluate_fortuna_prices(
                 reason = f"Ниже порога edge (< {effective_edge:.1%})"
             else:
                 recommended = True
+                reason = "Цена выше справедливой"
         elif item.market == "goals_range":
             base_edge_req = thresh.multiscore_edge
-            mult = risk_cfg.absence_edge_multiplier if has_risk_multiplier else 1.0
             effective_edge = base_edge_req * mult
             if edge > thresh.implausible_edge_goals_range:
                 reason = (
@@ -637,6 +638,75 @@ def evaluate_fortuna_prices(
                 reason = f"Ниже порога edge (< {effective_edge:.1%})"
             else:
                 recommended = True
+                reason = "Цена выше справедливой"
+        elif item.market == "totals":
+            base_edge_req = getattr(thresh, "totals_edge", 0.03) or 0.03
+            effective_edge = base_edge_req * mult
+            imp_e = getattr(thresh, "implausible_edge_totals", 0.20)
+            max_o = getattr(thresh, "totals_max_odds", 6.0)
+            min_p = getattr(thresh, "totals_min_p", 0.10)
+            if edge > imp_e:
+                reason = f"Неправдоподобный edge ({edge:+.1%} > {imp_e:.0%}): проверь ввод / матч"
+            elif item.odds > max_o:
+                reason = f"Длинный коэффициент (> {max_o:.0f})"
+            elif p_fair < min_p:
+                reason = f"Мала p_fair (< {min_p:.1%})"
+            elif edge < effective_edge:
+                reason = f"Ниже порога edge (< {effective_edge:.1%})"
+            else:
+                recommended = True
+                reason = "Цена выше справедливой"
+        elif item.market == "team_totals":
+            base_edge_req = getattr(thresh, "team_totals_edge", 0.05) or 0.05
+            effective_edge = base_edge_req * mult
+            imp_e = getattr(thresh, "implausible_edge_team_totals", 0.25)
+            max_o = getattr(thresh, "team_totals_max_odds", 8.0)
+            min_p = getattr(thresh, "team_totals_min_p", 0.10)
+            if edge > imp_e:
+                reason = f"Неправдоподобный edge ({edge:+.1%} > {imp_e:.0%}): проверь ввод / матч"
+            elif item.odds > max_o:
+                reason = f"Длинный коэффициент (> {max_o:.0f})"
+            elif p_fair < min_p:
+                reason = f"Мала p_fair (< {min_p:.1%})"
+            elif edge < effective_edge:
+                reason = f"Ниже порога edge (< {effective_edge:.1%})"
+            else:
+                recommended = True
+                reason = "Цена выше справедливой"
+        elif item.market == "btts":
+            base_edge_req = getattr(thresh, "btts_edge", 0.03) or 0.03
+            effective_edge = base_edge_req * mult
+            imp_e = getattr(thresh, "implausible_edge_btts", 0.20)
+            max_o = getattr(thresh, "btts_max_odds", 6.0)
+            min_p = getattr(thresh, "btts_min_p", 0.10)
+            if edge > imp_e:
+                reason = f"Неправдоподобный edge ({edge:+.1%} > {imp_e:.0%}): проверь ввод / матч"
+            elif item.odds > max_o:
+                reason = f"Длинный коэффициент (> {max_o:.0f})"
+            elif p_fair < min_p:
+                reason = f"Мала p_fair (< {min_p:.1%})"
+            elif edge < effective_edge:
+                reason = f"Ниже порога edge (< {effective_edge:.1%})"
+            else:
+                recommended = True
+                reason = "Цена выше справедливой"
+        elif item.market in ("h2h", "1x2"):
+            base_edge_req = getattr(thresh, "h2h_edge", 0.03) or 0.03
+            effective_edge = base_edge_req * mult
+            imp_e = getattr(thresh, "implausible_edge_h2h", 0.25)
+            max_o = getattr(thresh, "h2h_max_odds", 12.0)
+            min_p = getattr(thresh, "h2h_min_p", 0.05)
+            if edge > imp_e:
+                reason = f"Неправдоподобный edge ({edge:+.1%} > {imp_e:.0%}): проверь ввод / матч"
+            elif item.odds > max_o:
+                reason = f"Длинный коэффициент (> {max_o:.0f})"
+            elif p_fair < min_p:
+                reason = f"Мала p_fair (< {min_p:.1%})"
+            elif edge < effective_edge:
+                reason = f"Ниже порога edge (< {effective_edge:.1%})"
+            else:
+                recommended = True
+                reason = "Цена выше справедливой"
 
         if recommended:
             reco_count += 1
@@ -658,7 +728,7 @@ def evaluate_fortuna_prices(
                 price_above_fair=recommended,
                 rejection_reason=reason,
                 stake_flat=1.0 if recommended else 0.0,
-                kelly_quarter_capped=kelly,
+                kelly_quarter_capped=kelly if recommended else 0.0,
                 flags=outcome_flags,
                 raw_price=item,
                 recommended=recommended,

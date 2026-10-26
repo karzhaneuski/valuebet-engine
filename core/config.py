@@ -128,6 +128,8 @@ class PacingConfig(BaseModel):
     # projected burn = used + spent_per_day_so_far * days_left; degrade
     # early when projection would cross hard_stop + safety_margin
     safety_margin_credits: int = 25
+    stage_1_credits: int = 425
+    stage_2_credits: int = 440
 
 
 class PostponementConfig(BaseModel):

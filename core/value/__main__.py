@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from core.config import load_config
 from core.db import get_engine
+from core.http import register_runtime_secrets
 from core.orm import Match, PrefilterDecision
 from core.value.engine import (
     evaluate_fortuna_prices,
@@ -48,6 +49,7 @@ from core.value.standby_model import (
 
 def _cmd_evaluate(args: argparse.Namespace, session: Session) -> int:
     """Evaluate Fortuna odds for a single match."""
+    register_runtime_secrets()
     cfg = load_config()
     # 1. Match lookup
     match: Match | None = None
@@ -249,7 +251,7 @@ def _cmd_evaluate(args: argparse.Namespace, session: Session) -> int:
 
         if is_past:
             sys.stderr.write(
-                f"\n[ОШИБКА] Нельзя сохранять рекомендации для прошедших матчей "
+                f"\n[ОШИБКА] Нельзя сохранять оценки для прошедших матчей "
                 f"(начало/дата: {time_str}, сейчас: {now_utc.isoformat()}).\n"
             )
             return 1
@@ -258,12 +260,12 @@ def _cmd_evaluate(args: argparse.Namespace, session: Session) -> int:
         session.commit()
         if saved > 0:
             print(
-                f"\n[OK] Записано {saved} активных рекомендаций в таблицу 'recommendations' "
-                f"(матч ID {match.id})."
+                f"\n[OK] Записано {saved} оценок с ценой выше справедливой "
+                f"в таблицу 'recommendations' (матч ID {match.id})."
             )
         else:
             print(
-                f"\n[ИНФО] 0 активных рекомендаций выше порогов "
+                f"\n[ИНФО] 0 исходов с ценой выше справедливой "
                 f"(ранее активные переведены в 'withdrawn') (матч ID {match.id})."
             )
 
@@ -536,6 +538,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
 
+    register_runtime_secrets()
     cfg = load_config()
     db_url = os.environ.get("DATABASE_URL") or cfg.database.url
     engine = get_engine(db_url)

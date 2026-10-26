@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import Any
 
 import httpx
 from sqlalchemy import select
@@ -215,15 +216,47 @@ class OddsApiClient:
 
     # --- paid: odds snapshots ------------------------------------------------------
 
-    def snapshot_sport_totals(self, sport_key: str, tier: str) -> dict:
+    def snapshot_sport_odds(
+        self,
+        sport_key: str,
+        tier: str,
+        markets: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Sport-level paid odds snapshot (defaults to markets=totals,h2h, expected_cost=2)."""
+        target_markets = markets or ["totals", "h2h"]
         endpoint = f"/sports/{sport_key}/odds"
+        expected_cost = len(target_markets)
         body, remaining = self._paid_get(
-            endpoint, {"regions": "eu", "markets": "totals",
-                       "oddsFormat": "decimal"}, expected_cost=1)
+            endpoint,
+            {
+                "regions": "eu",
+                "markets": ",".join(target_markets),
+                "oddsFormat": "decimal",
+            },
+            expected_cost=expected_cost,
+        )
         assert isinstance(body, list)
-        written = self._store_events_odds(body, sport_key, "totals", tier)
-        return {"events": len(body), "rows": written, "credits": 1,
-                "remaining": remaining}
+        written = 0
+        for m in target_markets:
+            written += self._store_events_odds(body, sport_key, m, tier)
+        return {
+            "events": len(body),
+            "rows": written,
+            "credits": expected_cost,
+            "remaining": remaining,
+        }
+
+    def snapshot_sport_totals(
+        self,
+        sport_key: str,
+        tier: str,
+        markets: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Backward-compatible alias for sport-level snapshot with totals
+        (default expected_cost=1).
+        """
+        target_markets = markets if markets is not None else ["totals"]
+        return self.snapshot_sport_odds(sport_key, tier, markets=target_markets)
 
     def snapshot_event_markets(self, sport_key: str, event_id: str,
                                markets: list[str], tier: str) -> dict:
@@ -266,6 +299,7 @@ class OddsApiClient:
                     if bounds and not (bounds[0] <= lead_h <= bounds[1]):
                         tier_assigned = "off_window"
                 for bk in ev.get("bookmakers", []):
+                    bk_key = str(bk.get("key") or bk.get("title"))
                     for mkt in bk.get("markets", []):
                         if mkt.get("key") != market:
                             continue
@@ -275,7 +309,16 @@ class OddsApiClient:
                                 continue
                             point = o.get("point")
                             line = None
-                            if point is not None:
+                            raw_name = str(o.get("name"))
+                            outcome_name = raw_name
+                            if market == "h2h":
+                                if raw_name in ("Draw", "X", "draw"):
+                                    outcome_name = "Draw"
+                                elif raw_name in (ev.get("home_team"), "Home", "1"):
+                                    outcome_name = "Home"
+                                elif raw_name in (ev.get("away_team"), "Away", "2"):
+                                    outcome_name = "Away"
+                            elif point is not None:
                                 # half lines only (docs/decisions.md S11)
                                 if half_only and float(point) * 2 % 2 != 1:
                                     dropped_lines += 1
@@ -284,9 +327,9 @@ class OddsApiClient:
                             s.add(OddsSnapshot(
                                 toa_sport_key=sport_key, toa_event_id=eid,
                                 match_id=match.id if match else None,
-                                bookmaker=str(bk.get("key") or bk.get("title")),
+                                bookmaker=bk_key,
                                 market=market, line=line,
-                                outcome=str(o.get("name")),
+                                outcome=outcome_name,
                                 price=Decimal(str(price)),
                                 tier=tier_assigned,
                                 planned_offset_min=TIER_LOWER_BOUND_MIN.get(

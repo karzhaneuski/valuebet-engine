@@ -177,16 +177,86 @@ def load_market_inputs_for_match(
     m_name = f"{home_name} - {away_name}"
 
     # 1. Check odds_snapshots (TOA live snapshots <= cutoff)
+    toa_where = [
+        (OddsSnapshot.match_id == match_id)
+        | (OddsSnapshot.toa_event_id == match.toa_event_id if match.toa_event_id else False),
+        OddsSnapshot.captured_at_utc <= cutoff,
+        OddsSnapshot.source == "toa",
+    ]
     toa_snaps = list(
         session.scalars(
             select(OddsSnapshot)
-            .where(
-                OddsSnapshot.match_id == match_id,
-                OddsSnapshot.captured_at_utc <= cutoff,
-            )
+            .where(*toa_where)
             .order_by(OddsSnapshot.captured_at_utc.desc())
         ).all()
     )
+
+    if toa_snaps:
+        toa_totals: dict[str, list[MarketTotalsLine]] = {}
+        toa_h2h: dict[str, MarketOdds1X2] = {}
+        bookmakers = {s.bookmaker for s in toa_snaps}
+        latest_capture_time: dt.datetime | None = None
+
+        for bk in bookmakers:
+            bk_snaps = [s for s in toa_snaps if s.bookmaker == bk]
+            totals_by_line: dict[float, dict[str, float]] = {}
+            for s in bk_snaps:
+                if s.market == "totals" and s.line is not None:
+                    l_val = float(s.line)
+                    out_dir = "over" if s.outcome.strip().lower() in ("over", "o") else "under"
+                    totals_by_line.setdefault(l_val, {})
+                    if out_dir not in totals_by_line[l_val]:
+                        totals_by_line[l_val][out_dir] = float(s.price)
+                        if latest_capture_time is None or s.captured_at_utc > latest_capture_time:
+                            latest_capture_time = s.captured_at_utc
+
+            lines_list: list[MarketTotalsLine] = []
+            for l_val, prices in totals_by_line.items():
+                if "over" in prices and "under" in prices:
+                    lines_list.append(
+                        MarketTotalsLine(line=l_val, over=prices["over"], under=prices["under"])
+                    )
+            if lines_list:
+                toa_totals[bk] = lines_list
+
+            h2h_prices: dict[str, float] = {}
+            for s in bk_snaps:
+                if s.market == "h2h":
+                    out_name = s.outcome.strip().lower()
+                    if out_name in ("home", "1") or (
+                        match.home_team and s.outcome == match.home_team.name
+                    ):
+                        if "home" not in h2h_prices:
+                            h2h_prices["home"] = float(s.price)
+                    elif out_name in ("draw", "x"):
+                        if "draw" not in h2h_prices:
+                            h2h_prices["draw"] = float(s.price)
+                    elif (
+                        out_name in ("away", "2")
+                        or (match.away_team and s.outcome == match.away_team.name)
+                    ) and "away" not in h2h_prices:
+                        h2h_prices["away"] = float(s.price)
+                    if latest_capture_time is None or s.captured_at_utc > latest_capture_time:
+                        latest_capture_time = s.captured_at_utc
+
+            if "home" in h2h_prices and "draw" in h2h_prices and "away" in h2h_prices:
+                toa_h2h[bk] = MarketOdds1X2(
+                    home=h2h_prices["home"],
+                    draw=h2h_prices["draw"],
+                    away=h2h_prices["away"],
+                )
+
+        common_books = set(toa_totals.keys()) & set(toa_h2h.keys())
+        if common_books:
+            filt_totals = {b: toa_totals[b] for b in common_books}
+            filt_h2h = {b: toa_h2h[b] for b in common_books}
+            return MarketInputs(
+                source="toa_snapshot",
+                snapshot_time=latest_capture_time,
+                totals_by_book=filt_totals,
+                h2h_by_book=filt_h2h,
+                match_name=m_name,
+            )
 
     # 2. Check prematch_odds (football-data pre-match odds)
     # Bookmaker 'P' is Pinnacle, 'Avg' is consensus. Explicitly ignore 'Max'!
@@ -235,14 +305,6 @@ def load_market_inputs_for_match(
             totals_by_book=totals_by_book,
             h2h_by_book=h2h_by_book,
             match_name=m_name,
-        )
-
-    # Fallback / Empty market with explicit diagnostic reason
-    if toa_snaps and not h2h_by_book:
-        logger.info(
-            "Match %d: Found %d TOA snapshots, but no 1X2 market (TOA 1X2 scheduled for Phase 7)",
-            match_id,
-            len(toa_snaps),
         )
 
     return MarketInputs(
