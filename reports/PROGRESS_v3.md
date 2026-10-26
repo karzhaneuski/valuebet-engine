@@ -76,7 +76,7 @@
 - [x] C7. APScheduler tasks with `--dry-run` mode.
 - [x] C8. Unit tests (`tests/test_tracking.py`, `tests/test_scheduler.py`).
 - [x] C9. Self-review report `reports/self_review_phase7.md`.
-- [ ] C10. Push & verify green CI.
+- [x] C10. Push & verify green CI (Run `40254479322` success: lint-type-test in 1m16s, docker-arm64 in 6m50s).
 
 ---
 
