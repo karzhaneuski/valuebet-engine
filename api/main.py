@@ -25,7 +25,7 @@ configure()
 register_runtime_secrets()
 logger = get_logger("api")
 
-enable_docs = os.environ.get("ENABLE_API_DOCS", "true").lower() in ("true", "1")
+enable_docs = os.environ.get("ENABLE_API_DOCS", "false").lower() in ("true", "1")
 
 app = FastAPI(
     title="ValueBet Engine API",

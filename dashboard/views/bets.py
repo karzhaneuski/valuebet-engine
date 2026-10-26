@@ -96,7 +96,7 @@ def render_bets_view(api: ApiClient) -> None:
     for b in bets:
         pnl_val = b.get("pnl")
         pnl_str = f"{pnl_val:+.2f} ед." if pnl_val is not None else "—"
-        clv_val = b.get("clv")
+        clv_val = b.get("clv_pct") if b.get("clv_pct") is not None else b.get("clv")
         clv_str = f"{clv_val:+.2f}%" if clv_val is not None else "—"
         odds_val = float(b.get("odds") or b.get("bookmaker_odds") or 0.0)
         stake_val = float(b.get("stake") or b.get("stake_units") or 0.0)

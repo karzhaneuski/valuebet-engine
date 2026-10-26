@@ -24,7 +24,10 @@ from api.schemas import (
     TeamTotalsItem,
     TotalsLinePrice,
 )
-from core.orm import ClosingOdds, Match, OddsSnapshot, PrematchOdds
+from core.config import load_config
+from core.news.extractor import NewsItem
+from core.news.freshness import get_freshness_warnings
+from core.orm import ClosingOdds, Match, OddsSnapshot, PlayerAvailability, PrematchOdds
 from core.tracking.clv import evaluate_fair_probs_for_bet
 from core.value.fair_matrix import build_fair_matrix
 from core.value.persistence import load_market_inputs_for_match
@@ -268,13 +271,37 @@ def get_match_fair_prices(
                 )
             )
 
+    cfg = load_config()
+    k_high = cfg.fair_matrix.kappa_high
     caveats = [
         "Справедливая матрица построена из девигованных котировок острых букмекеров.",
         "Bivariate Poisson с ρ = 0 (неотличимо от ρ из рыночной ничьей на валидации n=3504).",
-        "Инфляция вероятности ничьих κ_high = 1.05 применена на диагонали от 2:2 и выше.",
+        f"Инфляция вероятности ничьих κ_high = {k_high:.2f} применена на диагонали от 2:2 и выше.",
         "Вероятность исхода 'inny' (>4 голов) рассчитана как остаток вероятности сетки 5x5.",
         "Для целочисленных тоталов справедливый коэффициент учитывает push: (1 - P(push))/P(win).",
     ]
+
+    anomaly_flags: list[str] = []
+    absences = list(
+        db.scalars(
+            select(PlayerAvailability).where(PlayerAvailability.match_id == match.id)
+        ).all()
+    )
+    if absences:
+        news_items = [
+            NewsItem(
+                player=a.player,
+                team=h_name if a.team_id == match.home_team_id else a_name,
+                status=a.status,
+                source_url=a.source_url or "",
+                quote_summary=a.quote_summary or "",
+                published_at=a.detected_at_utc,
+            )
+            for a in absences
+        ]
+        freshness_warns = get_freshness_warnings(news_items, inputs.snapshot_time)
+        caveats.extend(freshness_warns)
+        anomaly_flags.extend(freshness_warns)
 
     return FairPricesResponse(
         match_id=match.id,
@@ -291,5 +318,5 @@ def get_match_fair_prices(
         h2h=h2h,
         team_totals=team_totals,
         methodological_caveats=caveats,
-        anomaly_flags=[],
+        anomaly_flags=anomaly_flags,
     )

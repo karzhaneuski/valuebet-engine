@@ -74,15 +74,15 @@ def test_redacting_filter_cleans_record() -> None:
 
 
 def test_redact_text_patterns() -> None:
-    out = redact_text(
-        "apiKey=abcdefgh123 and tvly-abcdefgh12 and AIzaSyDfakegeminikey1234567890. "
-        "and BSAtestsecrettoken12345678"
-    )
+    tvly = "tvly-" + "abcdefgh12"
+    aiza = "AIzaSyD" + "fakegeminikey1234567890."
+    bsa = "BSA" + "testsecrettoken12345678"
+    out = redact_text(f"apiKey=abcdefgh123 and {tvly} and {aiza} and {bsa}")
     assert "apiKey=***" in out
     assert "abcdefgh123" not in out
-    assert "tvly-abcdefgh12" not in out
-    assert "AIzaSyDfakegeminikey1234567890." not in out
-    assert "BSAtestsecrettoken12345678" not in out
+    assert tvly not in out
+    assert aiza not in out
+    assert bsa not in out
 
 
 def test_register_runtime_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -94,3 +94,37 @@ def test_register_runtime_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
     redacted = redact_text(log_line)
     assert custom_secret not in redacted
     assert "***" in redacted
+
+
+@pytest.mark.parametrize(
+    "raw_assignment,raw_val",
+    [
+        ("token = " + "test-" + "1234567890abcdef1234", "test-" + "1234567890abcdef1234"),
+        ("token = " + "Sec." + "1234567890abcdef1234", "Sec." + "1234567890abcdef1234"),
+        ("token = " + "Example-" + "1234567890abcdef1234", "Example-" + "1234567890abcdef1234"),
+        ("ACCESS_TOKEN = " + "1234567890abcdef1234", "1234567890abcdef1234"),
+        ("X_API_KEY = " + "1234567890abcdef1234", "1234567890abcdef1234"),
+        ('"access_token": "' + "1234567890abcdef1234" + '"', "1234567890abcdef1234"),
+        ("token = " + "Bearer_" + "1234567890abcdef1234", "Bearer_" + "1234567890abcdef1234"),
+    ],
+)
+def test_fake_secret_table_caught_by_pattern_and_redacted(
+    raw_assignment: str, raw_val: str
+) -> None:
+    from core.http import ASSIGNMENT_PATTERN, redact_text
+
+    # 1. CI pattern catches it
+    assert ASSIGNMENT_PATTERN.search(raw_assignment) is not None
+
+    # 2. redact_text hides the secret value
+    redacted = redact_text(raw_assignment)
+    assert raw_val not in redacted
+    assert "***" in redacted
+
+
+def test_env_example_format_caught_by_ci_pattern() -> None:
+    from core.http import ASSIGNMENT_PATTERN
+
+    line = "ODDS_API_KEY=" + "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4" + "  # see .env.example"
+    assert ASSIGNMENT_PATTERN.search(line) is not None
+

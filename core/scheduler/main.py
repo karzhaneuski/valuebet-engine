@@ -83,10 +83,10 @@ def run_sync(request: Request, dry_run: bool = True) -> dict[str, Any]:
 
     # 2. Token verification
     auth_header = request.headers.get("Authorization", "")
-    req_token = auth_header.removeprefix("Bearer ").strip()
+    received_secret = auth_header.removeprefix("Bearer ").strip()
     sec = Secrets()
     expected = sec.api_secret_token or sec.api_token or "test-sync-token"
-    if not expected or req_token != expected:
+    if not expected or received_secret != expected:
         logger.warning("Invalid authorization token for /run-sync")
         raise HTTPException(
             status_code=http_status.HTTP_401_UNAUTHORIZED,
@@ -137,12 +137,11 @@ def setup_background_scheduler(
         replace_existing=True,
     )
 
-    # 3. Paid TOA odds snapshots polling
+    # 3. Paid TOA odds snapshots polling (step <= 15 min per SPEC §9)
     sched.add_job(
         lambda: job_poll_odds_snapshots(session_factory, config=cfg, dry_run=False),
-        "cron",
-        hour="*/6",
-        minute=15,
+        "interval",
+        minutes=15,
         id="poll_odds",
         replace_existing=True,
     )

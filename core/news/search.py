@@ -125,14 +125,18 @@ def record_search_window(
     match_id: int,
     window: str,
 ) -> None:
-    """Record that a news search window has been satisfied for a match."""
+    """Record that a news search window has been satisfied for a match without charging credits."""
     endpoint_marker = f"news_search/match_{match_id}_{window}"
-    check_and_increment_quota(
-        session=session,
+    now = dt.datetime.now(dt.UTC)
+    usage = ApiQuotaUsage(
         provider=provider,
         endpoint=endpoint_marker,
-        credits=1,
+        credits=0,
+        status="settled",
+        created_at_utc=now,
     )
+    session.add(usage)
+    session.flush()
 
 
 class SearchClient(ABC):

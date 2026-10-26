@@ -26,7 +26,7 @@ from core.db import session_scope
 from core.ingest.aliases import AliasMatch, AliasMatcher
 from core.ingest.understat_archive import ArchiveRow, archive_rows, is_archived, store_archive
 from core.logging import get_logger
-from core.orm import Match, MatchLineup, MatchStat, Team, TeamAlias
+from core.orm import Match, MatchLineup, MatchStat, Result, Team, TeamAlias
 
 logger = get_logger("ingest.understat")
 
@@ -369,6 +369,20 @@ class UnderstatLoader:
                         existing.home_xg = row.home_xg  # type: ignore[assignment]
                         existing.away_xg = row.away_xg  # type: ignore[assignment]
                         report.stats_updated += 1
+
+                    # Ensure official Result is written/updated
+                    res = s.scalars(select(Result).where(Result.match_id == match.id)).first()
+                    if res is None:
+                        s.add(Result(
+                            match_id=match.id,
+                            home_goals=row.home_goals,
+                            away_goals=row.away_goals,
+                            source="understat",
+                            settled_at_utc=dt.datetime.now(dt.UTC),
+                        ))
+                    else:
+                        res.home_goals = row.home_goals
+                        res.away_goals = row.away_goals
         return report
 
     def upsert_lineups(self, match: Match, rows: list[dict]) -> int:

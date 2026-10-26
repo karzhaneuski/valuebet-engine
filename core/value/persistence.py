@@ -124,7 +124,7 @@ def save_recommendations_to_db(
                 p_model=d_p_model,
                 p_market_devig=d_p_market,
                 edge=Decimal(f"{out.edge:.4f}"),
-                kelly_quarter_capped=Decimal(f"{out.kelly_quarter_capped:.4f}"),
+                kelly_quarter_capped=Decimal("0.0000"),
                 flags=", ".join(out.flags),
                 variant=variant,
                 matrix_source=result.source,
@@ -169,18 +169,26 @@ def load_market_inputs_for_match(
         raise ValueError(f"Match ID {match_id} not found in database.")
 
     end_of_day = dt.datetime.combine(match.date_utc, dt.time(23, 59))
-    cutoff = as_of or match.commence_time_utc or end_of_day
+    if as_of is not None:
+        if match.commence_time_utc and as_of == match.commence_time_utc:
+            time_cond = OddsSnapshot.captured_at_utc < as_of
+        else:
+            time_cond = OddsSnapshot.captured_at_utc <= as_of
+    elif match.commence_time_utc:
+        time_cond = OddsSnapshot.captured_at_utc < match.commence_time_utc
+    else:
+        time_cond = OddsSnapshot.captured_at_utc <= end_of_day
 
     # Determine match name for metadata
     home_name = match.home_team.name if match.home_team else f"Team_{match.home_team_id}"
     away_name = match.away_team.name if match.away_team else f"Team_{match.away_team_id}"
     m_name = f"{home_name} - {away_name}"
 
-    # 1. Check odds_snapshots (TOA live snapshots <= cutoff)
+    # 1. Check odds_snapshots (TOA live snapshots)
     toa_where = [
         (OddsSnapshot.match_id == match_id)
         | (OddsSnapshot.toa_event_id == match.toa_event_id if match.toa_event_id else False),
-        OddsSnapshot.captured_at_utc <= cutoff,
+        time_cond,
         OddsSnapshot.source == "toa",
     ]
     toa_snaps = list(

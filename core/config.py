@@ -77,9 +77,28 @@ class ModelConfig(BaseModel):
 
 class ThresholdsConfig(BaseModel):
     # Uncalibrated initial starting thresholds (empirical tuning occurs via forward CLV)
-    totals_edge: float | None = None  # reference-only (totals have no reco)
-    multiscore_edge: float = 0.08     # uncalibrated starting threshold
-    exact_score_edge: float = 0.12    # uncalibrated starting threshold
+    totals_edge: float = 0.02  # per SPEC
+    totals_min_p: float = 0.10
+    totals_max_odds: float = 6.0
+    implausible_edge_totals: float = 0.20
+
+    team_totals_edge: float = 0.05
+    team_totals_min_p: float = 0.10
+    team_totals_max_odds: float = 8.0
+    implausible_edge_team_totals: float = 0.25
+
+    btts_edge: float = 0.03
+    btts_min_p: float = 0.15
+    btts_max_odds: float = 6.0
+    implausible_edge_btts: float = 0.20
+
+    h2h_edge: float = 0.03
+    h2h_min_p: float = 0.10
+    h2h_max_odds: float = 12.0
+    implausible_edge_h2h: float = 0.25
+
+    multiscore_edge: float = 0.08  # uncalibrated starting threshold
+    exact_score_edge: float = 0.12  # uncalibrated starting threshold
     exact_score_min_p: float = 0.04
     exact_score_max_odds: float = 21.0
     implausible_edge_exact_score: float = 0.40

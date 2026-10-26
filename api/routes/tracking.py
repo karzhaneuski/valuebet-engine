@@ -70,6 +70,7 @@ def _bet_to_item(bet: UserBet, db: Session) -> UserBetItem:
         status=bet.status,
         pnl=float(bet.pnl_units) if bet.pnl_units is not None else None,
         clv=float(bet.clv_fair) if bet.clv_fair is not None else None,
+        clv_pct=round(float(bet.clv_fair) * 100.0, 2) if bet.clv_fair is not None else None,
         clv_source=bet.clv_source,
         placed_at_utc=bet.placed_at_utc,
         settled_at_utc=bet.settled_at_utc,

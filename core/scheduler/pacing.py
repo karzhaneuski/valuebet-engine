@@ -73,6 +73,7 @@ def evaluate_degradation_state(
             "effective_pinnacle_cs_cap": 0,
             "disable_t3_h2h": True,
             "t3_granularity": "day",
+            "t3_slot_to_day": True,
         }
 
     day, _total_days, days_left = get_current_month_days(now)
@@ -123,4 +124,5 @@ def evaluate_degradation_state(
         "effective_pinnacle_cs_cap": effective_cs_cap,
         "disable_t3_h2h": disable_t3_h2h,
         "t3_granularity": t3_granularity,
+        "t3_slot_to_day": (t3_granularity == "day"),
     }

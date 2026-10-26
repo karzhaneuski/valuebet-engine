@@ -8,7 +8,7 @@ from decimal import Decimal
 
 import numpy as np
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from core.orm import Base, ClosingOdds, Match, Team, UserBet
@@ -316,3 +316,109 @@ def test_bootstrap_ci_95() -> None:
     assert low < high
     mean_val = float(np.mean(vals))
     assert low <= mean_val <= high
+
+
+def test_job_refresh_history_records_result_and_settles_team_totals() -> None:
+    from sqlalchemy.pool import StaticPool
+
+    from core.config import load_config
+    from core.orm import MatchStat, Result
+    from core.scheduler.tasks import job_refresh_history, job_settle_matches_and_clv
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    sm = sessionmaker(bind=engine, expire_on_commit=False)
+    cfg = load_config()
+
+    with sm() as s:
+        arsenal = Team(name="Arsenal", league="premier_league")
+        chelsea = Team(name="Chelsea", league="premier_league")
+        s.add_all([arsenal, chelsea])
+        s.flush()
+
+        ko = dt.datetime(2026, 10, 25, 16, 30, tzinfo=dt.UTC)
+        match = Match(
+            league="premier_league",
+            season="2026-2027",
+            home_team_id=arsenal.id,
+            away_team_id=chelsea.id,
+            home_team=arsenal,
+            away_team=chelsea,
+            date_utc=ko.date(),
+            commence_time_utc=ko,
+            kickoff_source="toa",
+            status="scheduled",
+            toa_event_id="ev_ars_che",
+        )
+        s.add(match)
+        s.flush()
+
+        # Place user bet on home team total over 1.5
+        bet = UserBet(
+            match_id=match.id,
+            market="team_totals",
+            selection_key="Arsenal:over:1.5",
+            line=Decimal("1.5"),
+            odds=Decimal("1.850"),
+            stake_units=Decimal("10.00"),
+            bookmaker="Fortuna",
+            status="open",
+            placed_at_utc=ko - dt.timedelta(hours=5),
+            created_at_utc=ko - dt.timedelta(hours=5),
+        )
+        s.add(bet)
+
+        # Simulate Understat stat row in DB
+        s.add(
+            MatchStat(
+                match_id=match.id,
+                source="understat",
+                home_goals=2,
+                away_goals=1,
+                home_xg=1.85,
+                away_xg=0.92,
+            )
+        )
+        s.commit()
+        match_id = match.id
+        bet_id = bet.id
+
+    # Execute job_refresh_history to populate Result
+    class DummyLoader:
+        def schedule_rows(self, slug: str, year: int) -> list:
+            return []
+
+    res_refresh = job_refresh_history(
+        session_factory=sm,
+        understat_loader=DummyLoader(),  # type: ignore[arg-type]
+        config=cfg,
+        now=ko + dt.timedelta(hours=3),
+    )
+    assert res_refresh["status"] == "success"
+
+    # Verify Result exists in DB
+    with sm() as s:
+        res_row = s.scalar(select(Result).where(Result.match_id == match_id))
+        assert res_row is not None
+        assert res_row.home_goals == 2
+        assert res_row.away_goals == 1
+
+    # Execute settlement
+    res_settle = job_settle_matches_and_clv(
+        session_factory=sm,
+        config=cfg,
+        now=ko + dt.timedelta(hours=3),
+    )
+    assert res_settle["status"] == "success"
+    assert res_settle["settled_bets"] == 1
+
+    # Verify bet settled to 'won' (not 'void')
+    with sm() as s:
+        settled_bet = s.get(UserBet, bet_id)
+        assert settled_bet is not None
+        assert settled_bet.status == "won"
+        assert settled_bet.pnl_units is not None and settled_bet.pnl_units > 0

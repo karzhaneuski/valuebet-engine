@@ -223,7 +223,7 @@ def test_get_fair_prices_success(client: TestClient) -> None:
     # Methodological caveats
     caveats = " ".join(data["methodological_caveats"])
     assert "ρ = 0" in caveats
-    assert "κ_high = 1.05" in caveats
+    assert "κ_high = 0.20" in caveats
 
 
 def test_get_fair_prices_not_found(client: TestClient) -> None:
@@ -327,6 +327,36 @@ def test_record_user_bet_and_list(client: TestClient) -> None:
     items = list_resp.json()["bets"]
     assert len(items) == 1
     assert items[0]["id"] == bet["id"]
+
+
+def test_user_bets_returns_clv_pct(
+    client: TestClient, session_factory: sessionmaker[Session]
+) -> None:
+    now_utc = dt.datetime.now(dt.UTC)
+    with session_factory() as s:
+        b = UserBet(
+            match_id=101,
+            market="exact_score",
+            selection_key="2:1",
+            odds=Decimal("8.00"),
+            stake_units=Decimal("1.00"),
+            status="won",
+            pnl_units=Decimal("7.00"),
+            clv_fair=Decimal("0.0525"),
+            clv_source="fair_market_matrix",
+            placed_at_utc=now_utc - dt.timedelta(hours=2),
+            settled_at_utc=now_utc,
+            created_at_utc=now_utc,
+        )
+        s.add(b)
+        s.commit()
+
+    resp = client.get("/user-bets", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    bets = resp.json()["bets"]
+    found = next(x for x in bets if x.get("clv_source") == "fair_market_matrix")
+    assert found["clv"] == 0.0525
+    assert found["clv_pct"] == 5.25
 
 
 # --- Performance Stats Tests -------------------------------------------------

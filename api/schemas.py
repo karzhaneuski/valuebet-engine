@@ -149,6 +149,7 @@ class UserBetItem(BaseModel):
     status: str
     pnl: float | None = None
     clv: float | None = None
+    clv_pct: float | None = None
     clv_source: str | None = None
     placed_at_utc: dt.datetime
     settled_at_utc: dt.datetime | None = None

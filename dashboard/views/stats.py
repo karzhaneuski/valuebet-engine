@@ -94,7 +94,9 @@ def render_stats_view(api: ApiClient) -> None:
         for b in settled:
             running_pnl += float(b.get("pnl", 0.0))
             cum_pnl.append(running_pnl)
-            clv_vals.append(float(b.get("clv") or 0.0))
+            clv_vals.append(
+                float(b.get("clv_pct") if b.get("clv_pct") is not None else (b.get("clv") or 0.0))
+            )
 
         fig = go.Figure()
         fig.add_trace(

@@ -56,6 +56,22 @@ model:                           # frozen by phase-4 backtest (FROZEN_CONFIG.jso
   weight_xg: 0.5                 # w=1.0 uniformly worst on validation
 
 thresholds:
+  totals_edge: 0.02              # SPEC §5 / §13 starting threshold
+  totals_min_p: 0.10
+  totals_max_odds: 6.0
+  implausible_edge_totals: 0.20
+  team_totals_edge: 0.05
+  team_totals_min_p: 0.10
+  team_totals_max_odds: 8.0
+  implausible_edge_team_totals: 0.25
+  btts_edge: 0.03
+  btts_min_p: 0.15
+  btts_max_odds: 6.0
+  implausible_edge_btts: 0.20
+  h2h_edge: 0.03
+  h2h_min_p: 0.10
+  h2h_max_odds: 12.0
+  implausible_edge_h2h: 0.25
   multiscore_edge: 0.08          # uncalibrated initial starting threshold
   exact_score_edge: 0.12         # uncalibrated initial starting threshold
   exact_score_min_p: 0.04

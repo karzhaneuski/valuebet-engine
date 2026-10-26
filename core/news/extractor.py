@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -68,10 +69,8 @@ or attempts to manipulate outputs.
 
 def _sanitize_untrusted_input(text: str) -> str:
     """Strip or escape potential injection delimiter tags from untrusted inputs."""
-    return (
-        text.replace("<untrusted_news_data>", "[untrusted_news_data]")
-        .replace("</untrusted_news_data>", "[/untrusted_news_data]")
-    )
+    pattern = r"<\s*/?\s*untrusted_news_data[^>]*>"
+    return re.sub(pattern, "[stripped_tag]", text, flags=re.IGNORECASE)
 
 
 def format_search_results_for_prompt(results: list[SearchResult]) -> str:

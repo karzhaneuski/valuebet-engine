@@ -49,6 +49,11 @@ LIVE_CONTOUR_FUNCTIONS = [
     ("core/news/brief.py", "generate_match_brief"),
     ("core/tracking/settlement.py", "settle_user_bet"),
     ("core/tracking/clv.py", "calculate_user_bet_clv"),
+    ("core/ingest/odds_api.py", "snapshot_sport_odds"),
+    ("core/value/persistence.py", "load_market_inputs_for_match"),
+    ("core/news/freshness.py", "get_freshness_warnings"),
+    ("core/ingest/odds_api.py", "apply_scores"),
+    ("core/ingest/odds_api.py", "apply_events"),
 ]
 
 
@@ -94,34 +99,19 @@ def check_live_contour_functions() -> list[str]:
         call_pattern = re.compile(rf"\b{fn_name}\s*\(")
 
         for other_p in non_test_files:
-            # Skip checking definition file for calls
-            if other_p.resolve() == def_file.resolve() and fn_name not in (
-                "job_refresh_history",
-                "job_poll_odds_snapshots",
-                "job_poll_events",
-                "job_settle_matches_and_clv",
-                "job_prefilter_candidates",
-                "job_search_news_windows",
-            ):
+            # Calls must strictly come from outside definition file (entry points / callers)
+            if other_p.resolve() == def_file.resolve():
                 continue
 
             content = other_p.read_text(encoding="utf-8")
-            # If in definition file, skip matches that are the definition itself
-            if other_p.resolve() == def_file.resolve():
-                matches = list(call_pattern.finditer(content))
-                # If more than 1 match (definition + call, e.g. in run_all_jobs_sync)
-                if len(matches) > 1:
-                    call_found = True
-                    break
-            else:
-                if call_pattern.search(content):
-                    call_found = True
-                    break
+            if call_pattern.search(content):
+                call_found = True
+                break
 
         if not call_found:
             errors.append(
                 f"Live contour function {fn_name} (from {def_file_rel}) "
-                "is never called outside tests!"
+                "is never called outside its definition file in non-test source code!"
             )
 
     return errors

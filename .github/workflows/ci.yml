@@ -18,14 +18,19 @@ jobs:
       - name: Secrets scan (history + working tree)
         run: |
           PAT=$(uv run python -c 'from core.http import ASSIGNMENT_PATTERN; print(ASSIGNMENT_PATTERN.pattern)')
+          RAW_PAT='(tvly-[A-Za-z0-9.\-_]{10,}|AIza[A-Za-z0-9_.\-]{20,}|BSA[A-Za-z0-9_.\-]{15,})'
           echo "scan pattern: $PAT"
-          if git log --all -p | grep -iP "$PAT" | grep -vP '(sec\.api_secret_token|sec\.api_token|your-secret-api-token|example|test-|auth_header)' | grep -qP '.'; then
+          echo "raw pattern: $RAW_PAT"
+          if git log --all -p | grep -iP "$PAT" | grep -vxF -f .github/secrets_allowlist.txt | grep -qP '.'; then
             echo "secret-like pattern found in git history"; exit 1
           fi
-          if git grep -iP "$PAT" -- . ':!*.lock' | grep -vP '(sec\.api_secret_token|sec\.api_token|your-secret-api-token|example|test-|auth_header)' | grep -qP '.'; then
+          if git grep -iP "$PAT" -- . ':!*.lock' | grep -vxF -f .github/secrets_allowlist.txt | grep -qP '.'; then
             echo "secret-like pattern found in tracked files"; exit 1
           fi
-          if git grep -iP '(tvly-[A-Za-z0-9.\-_]{10,}|AIza[A-Za-z0-9_.\-]{20,}|BSA[A-Za-z0-9_.\-]{15,})' -- . ':!*.lock' ':!core/http.py' ':!tests/test_http_secrets.py' ':!tests/test_cli_secrets.py' | grep -qP '.'; then
+          if git log --all -p | grep -iP "$RAW_PAT" | grep -vxF -f .github/secrets_allowlist.txt | grep -qP '.'; then
+            echo "hardcoded API key token pattern found in git history"; exit 1
+          fi
+          if git grep -iP "$RAW_PAT" -- . ':!*.lock' ':!core/http.py' | grep -vxF -f .github/secrets_allowlist.txt | grep -qP '.'; then
             echo "hardcoded API key token pattern found in tracked files"; exit 1
           fi
       - name: Check no stubs

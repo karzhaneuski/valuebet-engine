@@ -19,10 +19,17 @@ from core.news.extractor import NewsItem
 logger = logging.getLogger(__name__)
 
 FORBIDDEN_BRIEF_PATTERNS = [
+    re.compile(r"%", re.IGNORECASE),
+    re.compile(r"процент[а-я]*", re.IGNORECASE),
+    re.compile(r"поставить", re.IGNORECASE),
     re.compile(r"ставк[а-я]*", re.IGNORECASE),
+    re.compile(r"коэффициент[а-я]*", re.IGNORECASE),
     re.compile(r"рекоменд[а-я]*", re.IGNORECASE),
-    re.compile(r"\b\d+%\b"),
     re.compile(r"\b0\.\d+\b"),
+    re.compile(r"\bbet\b", re.IGNORECASE),
+    re.compile(r"\bodds\b", re.IGNORECASE),
+    re.compile(r"\bvalue\b", re.IGNORECASE),
+    re.compile(r"\bstake\b", re.IGNORECASE),
 ]
 
 

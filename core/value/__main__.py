@@ -481,7 +481,7 @@ def main(argv: list[str] | None = None) -> int:
         "--save",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Сохранять ли рекомендации в базу (по умолчанию: да)",
+        help="Сохранять ли оценки цен в базу (по умолчанию: да)",
     )
 
     # Command: candidates

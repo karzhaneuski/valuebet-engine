@@ -8,6 +8,7 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import sys
 
 from sqlalchemy import create_engine, select
@@ -19,8 +20,9 @@ from core.llm.provider import GeminiProvider
 from core.logging import configure, get_logger
 from core.news.brief import generate_match_brief
 from core.news.extractor import extract_player_news
+from core.news.freshness import get_freshness_warnings
 from core.news.search import TavilySearchClient, search_news_for_match
-from core.orm import Match
+from core.orm import Match, OddsSnapshot, PlayerAvailability
 from core.scheduler.tasks import job_prefilter_candidates
 
 configure()
@@ -109,6 +111,34 @@ def run_brief_cli(args: argparse.Namespace) -> int:
             search_results=search_results,
         )
 
+        # Save extracted items into PlayerAvailability
+        now_utc = dt.datetime.now(dt.UTC)
+        for item in extraction.items:
+            t_id = match.home_team_id if item.team.lower() in h_name.lower() else match.away_team_id
+            session.add(
+                PlayerAvailability(
+                    team_id=t_id,
+                    match_id=match.id,
+                    player=item.player,
+                    status=item.status,
+                    source="news_llm",
+                    source_url=item.source_url,
+                    quote_summary=item.quote_summary,
+                    detected_at_utc=item.published_at or now_utc,
+                )
+            )
+        session.commit()
+
+        # Check market snapshot freshness
+        latest_snap = session.scalar(
+            select(OddsSnapshot)
+            .where(OddsSnapshot.match_id == match.id)
+            .order_by(OddsSnapshot.captured_at_utc.desc())
+            .limit(1)
+        )
+        snap_time = latest_snap.captured_at_utc if latest_snap else None
+        freshness_warns = get_freshness_warnings(extraction.items, snap_time)
+
         brief = generate_match_brief(
             llm_provider=llm,
             home_team=h_name,
@@ -119,6 +149,10 @@ def run_brief_cli(args: argparse.Namespace) -> int:
         print("\n" + "=" * 70)
         print(f"НОВОСТНОЙ БРИФ: {h_name} — {a_name}")
         print("=" * 70)
+        if freshness_warns:
+            for w in freshness_warns:
+                print(f"[ВНИМАНИЕ] {w}")
+            print("-" * 70)
         print(brief)
         print("=" * 70)
         return 0

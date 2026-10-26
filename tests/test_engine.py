@@ -104,7 +104,7 @@ def test_exact_score_thresholds_and_rejections(sample_fair_matrix: FairMatrix) -
     out_good = res.outcomes[0]
     assert out_good.recommended is True
     assert out_good.stake_flat == 1.0
-    assert out_good.kelly_quarter_capped > 0.0
+    assert out_good.kelly_quarter_capped == 0.0  # SPEC v3: automated Kelly sizing eliminated
 
     out_small = res.outcomes[1]
     assert out_small.recommended is False

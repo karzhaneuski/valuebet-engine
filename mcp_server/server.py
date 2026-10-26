@@ -22,6 +22,8 @@ from api.matching import search_matches_by_query
 from core.config import load_config
 from core.db import session_scope
 from core.http import register_runtime_secrets
+from core.news.extractor import NewsItem
+from core.news.freshness import get_freshness_warnings
 from core.orm import ClosingOdds, Match, OddsSnapshot, PlayerAvailability, PrematchOdds, UserBet
 from core.tracking.stats import compute_performance_metrics
 from core.value.engine import evaluate_fortuna_prices
@@ -222,7 +224,7 @@ def evaluate_fortuna_odds(
             )
 
         res_lines.append(
-            "\nСправочная оценка (оговорка: kappa_high=0.20). "
+            f"\nСправочная оценка (оговорка: kappa_high={cfg.fair_matrix.kappa_high:.2f}). "
             "Без рекомендаций и Келли. Ставки сопряжены с риском."
         )
         return "\n".join(res_lines)
@@ -395,8 +397,9 @@ def get_news_brief(home_team: str, away_team: str) -> str:
                 + "\n".join(cand_lines)
             )
 
+        kappa_val = cfg.fair_matrix.kappa_high
         caveat_text = (
-            "Оговорка: матрица рассчитывается с параметром сглаживания κ_high = 0.20 "
+            f"Оговорка: матрица рассчитывается с параметром сглаживания κ_high = {kappa_val:.2f} "
             "на диагонали от 2:2 для учёта редких результативных ничьих."
         )
 
@@ -407,14 +410,47 @@ def get_news_brief(home_team: str, away_team: str) -> str:
                     select(PlayerAvailability).where(PlayerAvailability.match_id == match.id)
                 ).all()
             )
+            h_name = match.home_team.name if match.home_team else home_team
+            a_name = match.away_team.name if match.away_team else away_team
+
+            latest_snap = session.scalar(
+                select(OddsSnapshot)
+                .where(OddsSnapshot.match_id == match.id)
+                .order_by(OddsSnapshot.captured_at_utc.desc())
+                .limit(1)
+            )
+            snapshot_time = latest_snap.captured_at_utc if latest_snap else None
+            news_items = [
+                NewsItem(
+                    player=a.player,
+                    team=h_name if a.team_id == match.home_team_id else a_name,
+                    status=a.status,
+                    source_url=a.source_url or "",
+                    quote_summary=a.quote_summary or "",
+                    published_at=a.detected_at_utc,
+                )
+                for a in absences
+            ]
+            warnings = get_freshness_warnings(news_items, snapshot_time)
+            warn_str = ("\n" + "\n".join(warnings)) if warnings else ""
+
+            disclaimer_suffix = (
+                f"{warn_str}\n{caveat_text}\n"
+                "Тон строго нейтральный. Без рекомендаций по ставкам."
+            )
             if absences:
                 items = [f"• {a.player} ({a.status}): {a.quote_summary or ''}" for a in absences]
-                h_name = match.home_team.name if match.home_team else home_team
-                a_name = match.away_team.name if match.away_team else away_team
                 return (
                     f"Сводка новостей по матчу {h_name} — {a_name}:\n"
                     + "\n".join(items)
-                    + f"\n{caveat_text}\nТон строго нейтральный. Без рекомендаций по ставкам."
+                    + "\n"
+                    + disclaimer_suffix
+                )
+            if warnings:
+                return (
+                    f"Сводка по матчу {h_name} — {a_name}:\n"
+                    "Подтверждённых критических потерь или дисквалификаций не зафиксировано.\n"
+                    + disclaimer_suffix
                 )
 
         return (
