@@ -50,15 +50,15 @@
 
 ## Part B: Phase 6 — News & LLM (`phase-6-news`)
 
-- [ ] B1. Create branch `phase-6-news` from `spec-v3`.
-- [ ] B2. `core/llm`: Provider interface (`LLMProvider`) with `generate_text` and `generate_structured`.
-- [ ] B3. `core/llm`: `GeminiProvider` implementation with logging into `llm_calls` table and retries.
-- [ ] B4. `core/news`: Search client (Tavily with Brave fallback) respecting search quotas.
-- [ ] B5. Extraction schema with prompt-injection defense (`published_at`, `player`, `status`, etc.).
-- [ ] B6. User brief (`core/news/brief.py`) in Russian without price alterations.
-- [ ] B7. Flag "новость свежее снимка рынка" comparing `published_at` against market snapshot timestamp.
-- [ ] B8. Unit tests with mocked providers (`tests/test_news.py`, `tests/test_llm.py`).
-- [ ] B9. Self-review report `reports/self_review_phase6.md`.
+- [x] B1. Create branch `phase-6-news` from `spec-v3`.
+- [x] B2. `core/llm`: Provider interface (`LLMProvider`) with `generate_text` and `generate_structured`.
+- [x] B3. `core/llm`: `GeminiProvider` implementation with logging into `llm_calls` table and retries.
+- [x] B4. `core/news`: Search client (Tavily with Brave fallback) respecting search quotas.
+- [x] B5. Extraction schema with prompt-injection defense (`published_at`, `player`, `status`, etc.).
+- [x] B6. User brief (`core/news/brief.py`) in Russian without price alterations.
+- [x] B7. Flag "новость свежее снимка рынка" comparing `published_at` against market snapshot timestamp.
+- [x] B8. Unit tests with mocked providers (`tests/test_news.py`, `tests/test_llm.py`).
+- [x] B9. Self-review report `reports/self_review_phase6.md`.
 - [ ] B10. Push & verify green CI.
 
 ---

@@ -52,6 +52,10 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 [tool.ruff.lint.per-file-ignores]
 # Cyrillic user-facing text, Polish betting terminology, and typographic dashes
 "core/value/*" = ["RUF001", "RUF002", "RUF003"]
+"core/news/*" = ["RUF001", "RUF002", "RUF003"]
+"api/*" = ["RUF001", "RUF002", "RUF003"]
+"mcp_server/*" = ["RUF001", "RUF002", "RUF003"]
+"dashboard/*" = ["RUF001", "RUF002", "RUF003"]
 "tests/*" = ["RUF001", "RUF002", "RUF003"]
 "scripts/*" = ["RUF001", "RUF002", "RUF003"]
 
