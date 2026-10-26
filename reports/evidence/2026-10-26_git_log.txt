@@ -1,0 +1,23 @@
+c9f0959 feat(v3): resolve blocking issues, TOA dedup, result sync, secrets restore, news defense, and e2e suite
+1fd65ea docs: record green CI run 40317518951 and final test count in summary and progress
+692bd8f fix(tests): isolate db sessions in health and scheduler tests to avoid uninitialized state
+6fcca74 fix(ci): allow auth_header in secrets scan and rename token variable
+d4db132 docs: record SPEC v3 multi-channel E2E tests, decisions, and honest final summary
+f798fc0 feat(interfaces): align REST API, FastMCP server, and Streamlit dashboard with SPEC v3
+635036d ci(security): register runtime secrets in entrypoints and add anti-stub and strict mypy checks
+c2972dd test(e2e): add anti-stub verification script and stage 1 e2e lifecycle test
+dcb158a feat(tracking): implement multi-market settlement and pre-kickoff CLV calculation
+01bff18 feat(news): implement prompt injection defense, briefing sanitization, and Gemini header auth
+3ac22f8 feat(scheduler): implement real tier polling, events monitoring, and secured sync runner
+6b233f3 feat(value): evaluate all markets on equal footing and update TOA ingestion
+2005adc feat(db): add h2h to odd markets and clv sources to orm and alembic
+65f0a23 docs: finalize SPEC v3 summary report and master progress checklist
+43e6fd2 Phase 9: implement Streamlit analytical dashboard and AppTest suite
+4786d63 docs: record Phase 8 CI green verification
+21aa5de fix(api): make /health resilient to uninitialized database tables
+cfbcab7 fix(http): refine ASSIGNMENT_PATTERN to prevent false positives in secrets scan
+dbbd96a Phase 8: implement REST API, Bearer token auth, and MCP server for Hermes
+89d383a docs: record Phase 7 CI green verification
+8521086 Phase 7: implement user bet tracking, settlement, pre-kickoff CLV, and scheduler
+5df8d9b docs: record Phase 6 CI green verification
+45100b7 Phase 6: implement news extraction, LLM provider, search clients, and freshness check

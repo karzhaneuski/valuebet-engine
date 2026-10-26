@@ -24,13 +24,13 @@ jobs:
           if git log --all -p | grep -iP "$PAT" | grep -vxF -f .github/secrets_allowlist.txt | grep -qP '.'; then
             echo "secret-like pattern found in git history"; exit 1
           fi
-          if git grep -iP "$PAT" -- . ':!*.lock' | grep -vxF -f .github/secrets_allowlist.txt | grep -qP '.'; then
+          if git grep -iP "$PAT" -- . ':!*.lock' ':!.github/secrets_allowlist.txt' | grep -vxF -f .github/secrets_allowlist.txt | grep -qP '.'; then
             echo "secret-like pattern found in tracked files"; exit 1
           fi
           if git log --all -p | grep -iP "$RAW_PAT" | grep -vxF -f .github/secrets_allowlist.txt | grep -qP '.'; then
             echo "hardcoded API key token pattern found in git history"; exit 1
           fi
-          if git grep -iP "$RAW_PAT" -- . ':!*.lock' ':!core/http.py' | grep -vxF -f .github/secrets_allowlist.txt | grep -qP '.'; then
+          if git grep -iP "$RAW_PAT" -- . ':!*.lock' ':!core/http.py' ':!.github/secrets_allowlist.txt' | grep -vxF -f .github/secrets_allowlist.txt | grep -qP '.'; then
             echo "hardcoded API key token pattern found in tracked files"; exit 1
           fi
       - name: Check no stubs

@@ -1,0 +1,22 @@
+=== Running Anti-Stub & Live Contour Checks ===
+
+PASSED: Checked 4 directories for forbidden stub patterns.
+PASSED: Verified definition and external call for all 16 live contour functions:
+  ✓ job_poll_odds_snapshots        (defined in core/scheduler/tasks.py)
+  ✓ job_poll_events                (defined in core/scheduler/tasks.py)
+  ✓ job_refresh_history            (defined in core/scheduler/tasks.py)
+  ✓ job_settle_matches_and_clv     (defined in core/scheduler/tasks.py)
+  ✓ job_prefilter_candidates       (defined in core/scheduler/tasks.py)
+  ✓ job_search_news_windows        (defined in core/scheduler/tasks.py)
+  ✓ search_news_for_match          (defined in core/news/search.py)
+  ✓ extract_player_news            (defined in core/news/extractor.py)
+  ✓ generate_match_brief           (defined in core/news/brief.py)
+  ✓ settle_user_bet                (defined in core/tracking/settlement.py)
+  ✓ calculate_user_bet_clv         (defined in core/tracking/clv.py)
+  ✓ snapshot_sport_odds            (defined in core/ingest/odds_api.py)
+  ✓ load_market_inputs_for_match   (defined in core/value/persistence.py)
+  ✓ get_freshness_warnings         (defined in core/news/freshness.py)
+  ✓ apply_scores                   (defined in core/ingest/odds_api.py)
+  ✓ apply_events                   (defined in core/ingest/odds_api.py)
+
+All anti-stub verification gates passed successfully.
