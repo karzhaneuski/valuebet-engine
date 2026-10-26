@@ -174,7 +174,7 @@ def job_poll_odds_snapshots(
     logger.info("Executing job_poll_odds_snapshots (dry_run=%s)", dry_run)
 
     with session_factory() as session:
-        if client is None and not Secrets().odds_api_key:
+        if not dry_run and client is None and not Secrets().odds_api_key:
             return {"status": "skipped", "reason": "no_api_key"}
 
         credits_used = get_toa_credits_used(session, now=curr_now)
