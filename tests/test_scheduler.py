@@ -174,7 +174,10 @@ def test_job_settle_matches_and_clv(db_session_factory: sessionmaker[Session]) -
 # --- FastAPI Scheduler Endpoints Tests ---------------------------------------
 
 
-def test_scheduler_api_endpoints(db_session_factory: sessionmaker[Session]) -> None:
+def test_scheduler_api_endpoints(
+    db_session_factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("core.scheduler.main._session_factory", db_session_factory)
     client = TestClient(app)
 
     # Health endpoint
