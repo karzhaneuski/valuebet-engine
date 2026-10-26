@@ -95,9 +95,9 @@
 
 ## Part E: Phase 9 — Dashboard & Final Summary (`phase-9-dashboard`)
 
-- [ ] E1. Create branch `phase-9-dashboard` from `phase-8-api-mcp`.
-- [ ] E2. Streamlit dashboard (`dashboard/`): 5 pages communicating strictly via REST API.
-- [ ] E3. AppTest / API mock tests (`tests/test_dashboard.py`).
-- [ ] E4. Self-review report `reports/self_review_phase9.md`.
+- [x] E1. Create branch `phase-9-dashboard` from `phase-8-api-mcp`.
+- [x] E2. Streamlit dashboard (`dashboard/`): 5 pages communicating strictly via REST API (`dashboard/api_client.py`).
+- [x] E3. AppTest / API mock tests (`tests/test_dashboard.py` — 9 passed, architectural zero-DB check).
+- [x] E4. Self-review report `reports/self_review_phase9.md`.
 - [ ] E5. Push & verify green CI.
 - [ ] E6. Final report `reports/SUMMARY_v3.md` and chat summary.
