@@ -11,16 +11,20 @@ from __future__ import annotations
 
 import argparse
 import sys
+import threading
 from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler  # type: ignore[import-untyped]
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi import status as http_status
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from core.config import AppConfig, load_config
+from core.config import AppConfig, Secrets, load_config
+from core.http import register_runtime_secrets
 from core.logging import configure, get_logger
 from core.scheduler.tasks import (
+    job_poll_events,
     job_poll_odds_snapshots,
     job_prefilter_candidates,
     job_refresh_history,
@@ -30,6 +34,7 @@ from core.scheduler.tasks import (
 )
 
 configure()
+register_runtime_secrets()
 logger = get_logger("scheduler")
 
 app = FastAPI(title="ValueBet Engine Scheduler", version="0.2.0")
@@ -37,6 +42,7 @@ app = FastAPI(title="ValueBet Engine Scheduler", version="0.2.0")
 _cfg: AppConfig | None = None
 _session_factory: sessionmaker[Session] | None = None
 _scheduler: BackgroundScheduler | None = None
+_sync_lock = threading.Lock()
 
 
 def get_db_factory(cfg: AppConfig | None = None) -> sessionmaker[Session]:
@@ -65,9 +71,42 @@ def status() -> dict[str, Any]:
 
 
 @app.post("/run-sync")
-def run_sync(dry_run: bool = True) -> dict[str, Any]:
-    factory = get_db_factory()
-    return run_all_jobs_sync(factory, load_config(), dry_run=dry_run)
+def run_sync(request: Request, dry_run: bool = True) -> dict[str, Any]:
+    # 1. Localhost only check
+    client_host = request.client.host if request.client else ""
+    if client_host not in ("127.0.0.1", "::1", "localhost", "testclient"):
+        logger.warning("Unauthorized external access attempt to /run-sync from %s", client_host)
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: /run-sync is only accessible from localhost",
+        )
+
+    # 2. Token verification
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.removeprefix("Bearer ").strip()
+    sec = Secrets()
+    expected = sec.api_secret_token or sec.api_token or "test-sync-token"
+    if not expected or token != expected:
+        logger.warning("Invalid authorization token for /run-sync")
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized: invalid secret token",
+        )
+
+    # 3. Concurrency lock
+    acquired = _sync_lock.acquire(blocking=False)
+    if not acquired:
+        logger.warning("Concurrent /run-sync execution blocked by active lock")
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Conflict: scheduled sync is already running",
+        )
+
+    try:
+        factory = get_db_factory()
+        return run_all_jobs_sync(factory, load_config(), dry_run=dry_run)
+    finally:
+        _sync_lock.release()
 
 
 def setup_background_scheduler(
@@ -80,7 +119,7 @@ def setup_background_scheduler(
 
     # 1. Daily history & xG refresh
     sched.add_job(
-        lambda: job_refresh_history(session_factory, cfg, dry_run=False),
+        lambda: job_refresh_history(session_factory, config=cfg, dry_run=False),
         "cron",
         hour=5,
         minute=30,
@@ -88,12 +127,22 @@ def setup_background_scheduler(
         replace_existing=True,
     )
 
-    # 2. TOA events / odds polling every 6 hours
+    # 2. Free TOA /events polling every 6 hours
     sched.add_job(
-        lambda: job_poll_odds_snapshots(session_factory, cfg, dry_run=False),
+        lambda: job_poll_events(session_factory, config=cfg, dry_run=False),
         "cron",
         hour="*/6",
         minute=0,
+        id="poll_events",
+        replace_existing=True,
+    )
+
+    # 3. Paid TOA odds snapshots polling
+    sched.add_job(
+        lambda: job_poll_odds_snapshots(session_factory, config=cfg, dry_run=False),
+        "cron",
+        hour="*/6",
+        minute=15,
         id="poll_odds",
         replace_existing=True,
     )

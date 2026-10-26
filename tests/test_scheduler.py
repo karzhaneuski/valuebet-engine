@@ -187,8 +187,15 @@ def test_scheduler_api_endpoints(db_session_factory: sessionmaker[Session]) -> N
     assert resp.status_code == 200
     assert "service" in resp.json()
 
-    # Synchronous run endpoint
-    resp = client.post("/run-sync?dry_run=true")
+    # Synchronous run endpoint - unauthorized without token
+    resp_unauth = client.post("/run-sync?dry_run=true")
+    assert resp_unauth.status_code == 401
+
+    # Synchronous run endpoint - authorized with Bearer token
+    resp = client.post(
+        "/run-sync?dry_run=true",
+        headers={"Authorization": "Bearer test-sync-token"},
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert "refresh_history" in data

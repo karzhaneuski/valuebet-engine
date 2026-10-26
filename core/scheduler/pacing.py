@@ -59,7 +59,6 @@ def evaluate_degradation_state(
 
     credits_used = get_toa_credits_used(session, now=now)
     hard_stop = odds_cfg.hard_stop_credits  # 450
-    safety_margin = pacing_cfg.safety_margin_credits  # 25
 
     if credits_used >= hard_stop:
         logger.warning(
@@ -80,7 +79,9 @@ def evaluate_degradation_state(
     daily_rate = credits_used / max(1, day)
     projected_burn = credits_used + (daily_rate * days_left)
 
-    burn_threshold = hard_stop - safety_margin  # 425 credits
+    stage_1_thresh = pacing_cfg.stage_1_credits
+    stage_2_thresh = pacing_cfg.stage_2_credits
+    burn_threshold = stage_1_thresh
     degradation_needed = pacing_cfg.enabled and (projected_burn > burn_threshold)
 
     active_steps: list[DegradationStep] = []
@@ -96,8 +97,8 @@ def evaluate_degradation_state(
             active_steps.append("cap_correct_score_5_week")
             effective_cs_cap = min(5, effective_cs_cap)
 
-        # 2nd step: disable T-3 h2h if projection exceeds hard_stop - 10
-        if projected_burn > (hard_stop - 10) and "disable_t3_h2h" in ladder:
+        # 2nd step: disable T-3 h2h if projection exceeds stage 2 threshold
+        if projected_burn > stage_2_thresh and "disable_t3_h2h" in ladder:
             active_steps.append("disable_t3_h2h")
             disable_t3_h2h = True
 
