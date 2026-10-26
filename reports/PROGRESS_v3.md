@@ -99,3 +99,15 @@
 - [x] **2.8. Stage 2 E2E Integration Test**:
   - `tests/test_e2e_stage2.py`: Verifies multi-channel consistency across REST API (FastAPI TestClient), MCP tools in-process, and Streamlit Dashboard (AppTest). All channels report identical settled bets, turnover, P/L, ROI, and sample size warnings.
   - Verification: `tests/test_e2e_stage2.py` passed (1 passed in 2.05s).
+
+---
+
+## Stage 3: CI/CD Quality Gates & Anti-Stub Verification
+
+- [x] **Zero Forbidden Stubs**: `scripts/check_no_stubs.py` verified 0 forbidden stub patterns in 4 directories and external invocation of all 11 contour functions.
+- [x] **Mypy Strict**: `uv run mypy --strict core/model core/backtest core/value core/news core/llm core/tracking core/scheduler` (clean, 34 files).
+- [x] **Pytest Suite**: 363 passed, 3 skipped in 25.07s locally.
+- [x] **GitHub Actions CI**: Run ID `40317518951` on `v3-integration` (commit `692bd8f`):
+  - `lint-type-test`: Passed in 1m57s (ID `121553724144`).
+  - `docker-arm64`: Passed in 6m25s (ID `121553723848`).
+

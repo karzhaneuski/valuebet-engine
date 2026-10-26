@@ -95,7 +95,7 @@ platform darwin -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
 rootdir: /Users/karzhaneuski/projects/valuebet-engine
 configfile: pyproject.toml
 plugins: anyio-4.13.1, respx-0.22.3
-collected 364 items
+collected 366 items
 
 tests/test_alembic_match_lineups.py .                                    [  0%]
 tests/test_anomaly_warnings.py ..                                        [  0%]
@@ -115,29 +115,30 @@ tests/test_e2e_stage2.py .                                               [ 20%]
 tests/test_engine.py ................                                    [ 24%]
 tests/test_football_data_ingest.py ..................................    [ 33%]
 tests/test_fortuna_parser.py ............                                [ 37%]
-tests/test_http_secrets.py .......                                       [ 39%]
-tests/test_inny_bias.py ..                                               [ 39%]
-tests/test_llm.py .......                                                [ 41%]
-tests/test_market_matrix.py ...................................          [ 51%]
-tests/test_mcp.py ..........                                             [ 53%]
-tests/test_multiplicative_devig.py ....                                  [ 54%]
-tests/test_multiscore_engine.py ......                                   [ 56%]
-tests/test_news.py ..............                                        [ 60%]
-tests/test_odds_api_client.py .............                              [ 64%]
-tests/test_pacing.py ..........                                          [ 66%]
-tests/test_persistence_cli.py .............                              [ 70%]
-tests/test_pinnacle_benchmark.py ...s                                    [ 71%]
-tests/test_pl_line_shopping.py ....                                      [ 72%]
+tests/test_health.py .....                                               [ 38%]
+tests/test_http_secrets.py .......                                       [ 40%]
+tests/test_inny_bias.py ..                                               [ 40%]
+tests/test_llm.py .......                                                [ 42%]
+tests/test_market_matrix.py ...................................          [ 52%]
+tests/test_mcp.py ..........                                             [ 55%]
+tests/test_multiplicative_devig.py ....                                  [ 56%]
+tests/test_multiscore_engine.py ......                                   [ 57%]
+tests/test_news.py ..............                                        [ 61%]
+tests/test_odds_api_client.py .............                              [ 65%]
+tests/test_pacing.py ..........                                          [ 67%]
+tests/test_persistence_cli.py .............                              [ 71%]
+tests/test_pinnacle_benchmark.py ...s                                    [ 72%]
+tests/test_pl_line_shopping.py ....                                      [ 73%]
 tests/test_postponement.py .................                             [ 77%]
-tests/test_prefilter.py ..........................                       [ 84%]
-tests/test_scheduler.py ......                                           [ 85%]
-tests/test_scheduler_tasks.py ...........                                [ 88%]
-tests/test_soft_vs_sharp_totals.py ........                              [ 91%]
-tests/test_standby_model.py s                                            [ 91%]
-tests/test_tracking.py ...........                                       [ 94%]
+tests/test_prefilter.py ..........................                       [ 85%]
+tests/test_scheduler.py ......                                           [ 86%]
+tests/test_scheduler_tasks.py ...........                                [ 89%]
+tests/test_soft_vs_sharp_totals.py ........                              [ 92%]
+tests/test_standby_model.py s                                            [ 92%]
+tests/test_tracking.py ...........                                       [ 95%]
 tests/test_understat_ingest.py ...................ss                     [100%]
 
-======================== 361 passed, 3 skipped in 25.01s ========================
+======================== 363 passed, 3 skipped in 25.07s ========================
 ```
 
 ### 3.2 Anti-Stub Checker (`scripts/check_no_stubs.py`)
@@ -168,6 +169,14 @@ All anti-stub verification gates passed successfully.
 - **Alembic migration & schema parity**:
   - `uv run alembic upgrade head` -> All 10 migrations upgraded cleanly.
   - `uv run alembic check` -> `No new upgrade operations detected.`
+
+### 3.4 GitHub Actions CI Workflow Run
+- **Branch**: `v3-integration`
+- **Workflow Run ID**: `40317518951`
+- **Trigger**: Push (`692bd8f`)
+- **Status**: Completed with `success` (100% Green)
+  - `lint-type-test`: Completed in 1m57s (ID `121553724144`) — Secrets scan, anti-stub verification, Ruff, Mypy, strict Mypy, Pytest (363 passed, 3 skipped), Alembic migrations from scratch, ingest checks, Alembic check.
+  - `docker-arm64`: Completed in 6m25s (ID `121553723848`) — Multiplatform QEMU Buildx image compilation and native ARM64 import smoke test.
 
 ---
 
