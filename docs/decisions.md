@@ -831,3 +831,44 @@ reports/backtest/4b_hybrid_market_1x2.json, reports/backtest/4b_hybrid_all_marke
      `CHECK clv_source IN ('fair_market_matrix', 'pinnacle_correct_score')`: In Phase 7 CLV evaluation, `clv_source` must accommodate both closing market-implied matrix and direct closing correct_score snapshots.
 
 **Reason**: Phase 5 requirements; SPEC §4, §5, §7; docs/decisions.md B6.1–B6.5.
+
+---
+
+## Product pivot: analytics tool (SPEC v3)
+
+**Date**: 2026-10-26  
+**Decision**: Product pivot: transition from automated betting recommendation generator to analytical decision-support and price evaluation tool (SPEC v3).
+
+1. **Analytical Tool Concept (SPEC v3)**:
+   - The product does NOT generate automated betting instructions or promises of profit. Real Fortuna margin measurements (mean ~33% exact score, ~21% multiscore, 6–7% totals) and soft-vs-sharp backtests prove that systematic beating of soft bookmaker margins on static pre-match quotes at a single bookmaker is unfeasible.
+   - The engine serves as an **analytical tool for market-implied fair pricing and bookmaker quote diagnostics**.
+2. **Fair Prices on Equal Footing Across All Markets**:
+   - The fair probability distribution derived from the devigged sharp market matrix (O/U 2.5 + 1X2 devig via OLS, $\rho=0$, $\kappa_{\text{high}}=0.20$ on diagonal $\ge 2:2$) generates fair probabilities $p_{\text{fair}}$ and fair decimal odds $\text{odds}_{\text{fair}} = \frac{1 - P(\text{push})}{P(\text{win})}$ for ALL markets:
+     - Exact score ($0..10 \times 0..10$),
+     - Multiscore (all 11 non-overlapping partitions),
+     - Goals ranges,
+     - Over/Under totals (including integer lines with push return and effective expected value),
+     - Team totals (home and away),
+     - Both teams to score (BTTS Yes/No),
+     - 1X2 Match winner.
+   - All markets are presented on equal footing without artificial partition into "recommended" vs "reference-only".
+   - Methodological caveats are displayed alongside prices (e.g. tail 5+ / "inny" empirical negative bias $z = -2.28$).
+3. **Fortuna Evaluation & "Price Above Fair"**:
+   - For user-supplied Fortuna quotes, the system evaluates:
+     - Margin (overround) by section;
+     - Deviation of each quote from market fair price $\Delta = \frac{\text{odds}}{\text{odds}_{\text{fair}}} - 1$ (or EV per unit staked for lines with push);
+     - If price exceeds fair price by configured edge threshold, it is flagged as `"цена выше справедливой"` (price above fair).
+     - The word "рекомендация" (recommendation) and recommended bet sizing (Kelly criterion) are removed from user output.
+4. **User Bet Tracking & Transparent Settlement**:
+   - Users record their own actual placed bets (`user_bets` table).
+   - The engine automatically calculates the closing line value (CLV) against the fair market price from the latest market snapshot strictly prior to kickoff ($\text{CLV}_{\text{fair}} = \text{odds}_{\text{placed}} \cdot p_{\text{fair, closing}} - 1$).
+   - Realized bet P/L and CLV statistics (by league, market, timeframe, with bootstrap confidence intervals) provide an honest audit of user decision quality.
+5. **Dixon-Coles Standby Role & Anomaly Detection**:
+   - Dixon-Coles model remains an emergency zero-alpha fallback when sharp market odds are entirely missing.
+   - Divergence $|s_{\text{market}} - s_{\text{model}}| > 0.15$ triggers an informational anomaly flag without modifying fair market probabilities.
+6. **Responsible Gambling**:
+   - Explicit disclaimer in CLI, API, MCP, and Dashboard: the tool provides analytical calculations and does not guarantee betting profit; historical validation shows no systematic alpha when betting solely against Fortuna.
+7. **Research Branch: Polish Bookmakers Line Shopping**:
+   - An experimental research script outside the primary betting loop evaluates quotes across legal Polish bookmakers (`data/manual/pl_books/*.txt`) against Pinnacle devigged totals to quantify synthetic line shopping opportunities.
+
+**Reason**: Empirical results of Phases 4, 4b, 5 (`reports/fortuna_margin_study.md`, `reports/soft_vs_sharp_totals.md`, `reports/phase5_report.md`); project owner product pivot decision for SPEC v3.
