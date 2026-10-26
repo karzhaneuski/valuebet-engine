@@ -67,15 +67,15 @@
 
 ## Part C: Phase 7 — Tracking & Scheduler (`phase-7-tracking`)
 
-- [ ] C1. Create branch `phase-7-tracking` from `phase-6-news`.
-- [ ] C2. TOA tier snapshotting by budget (~393 credits/30d), QuotaGuard cost tracking, degradation ladder.
-- [ ] C3. Match results fallback (football-data for top-5, TOA `/scores` for UCL).
-- [ ] C4. `user_bets` tracking and settlement by official final score across all markets.
-- [ ] C5. Pre-kickoff CLV calculation against closing fair market matrix (`clv_source="fair_market_matrix"` / `"pinnacle_correct_score"`).
-- [ ] C6. Metrics & statistics (P/L, ROI with variance warning, CLV, hit rate, 95% bootstrap CI).
-- [ ] C7. APScheduler tasks with `--dry-run` mode.
-- [ ] C8. Unit tests (`tests/test_tracking.py`, `tests/test_scheduler.py`).
-- [ ] C9. Self-review report `reports/self_review_phase7.md`.
+- [x] C1. Create branch `phase-7-tracking` from `phase-6-news`.
+- [x] C2. TOA tier snapshotting by budget (~393 credits/30d), QuotaGuard cost tracking, degradation ladder.
+- [x] C3. Match results fallback (football-data for top-5, TOA `/scores` for UCL).
+- [x] C4. `user_bets` tracking and settlement by official final score across all markets.
+- [x] C5. Pre-kickoff CLV calculation against closing fair market matrix (`clv_source="fair_market_matrix"` / `"pinnacle_correct_score"`).
+- [x] C6. Metrics & statistics (P/L, ROI with variance warning, CLV, hit rate, 95% bootstrap CI).
+- [x] C7. APScheduler tasks with `--dry-run` mode.
+- [x] C8. Unit tests (`tests/test_tracking.py`, `tests/test_scheduler.py`).
+- [x] C9. Self-review report `reports/self_review_phase7.md`.
 - [ ] C10. Push & verify green CI.
 
 ---

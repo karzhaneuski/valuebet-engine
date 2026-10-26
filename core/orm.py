@@ -449,3 +449,51 @@ class ClosingOdds(Base):
     home_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
     draw_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
     away_price: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
+
+
+# --- user bets & performance tracking ---------------------------------------
+
+USER_BET_STATUSES = ("open", "won", "lost", "push", "void")
+USER_BET_CLV_SOURCES = ("fair_market_matrix", "pinnacle_correct_score")
+
+
+class UserBet(Base):
+    """User-registered bets for performance tracking and pre-kickoff CLV auditing (SPEC §7)."""
+
+    __tablename__ = "user_bets"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('open', 'won', 'lost', 'push', 'void')",
+            name="ck_user_bets_status",
+        ),
+        Index("ix_user_bets_match_id", "match_id"),
+        Index("ix_user_bets_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"))
+    market: Mapped[str] = mapped_column(String(40))
+    selection_key: Mapped[str] = mapped_column(String(80), index=True)
+    line: Mapped[Decimal | None] = mapped_column(Numeric(4, 2), nullable=True)
+    odds: Mapped[Decimal] = mapped_column(Numeric(8, 3))
+    stake_units: Mapped[Decimal] = mapped_column(
+        Numeric(8, 2), default=Decimal("1.00"), server_default="1.00"
+    )
+    bookmaker: Mapped[str] = mapped_column(
+        String(60), default="fortuna", server_default="fortuna"
+    )
+    placed_at_utc: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+    p_fair_at_placement: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
+    matrix_snapshot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("odds_snapshots.id"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), default="open", server_default="open"
+    )
+    payout_units: Mapped[Decimal | None] = mapped_column(Numeric(8, 3), nullable=True)
+    pnl_units: Mapped[Decimal | None] = mapped_column(Numeric(8, 3), nullable=True)
+    clv_fair: Mapped[Decimal | None] = mapped_column(Numeric(7, 4), nullable=True)
+    clv_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at_utc: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+    settled_at_utc: Mapped[dt.datetime | None] = mapped_column(UTCDateTime, nullable=True)
