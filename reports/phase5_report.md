@@ -82,9 +82,9 @@ All 7 steps (Steps 0–6) are complete, fully tested, and committed on branch `p
 - **Persistence**: Logged 79 decisions into `prefilter_decisions` on `/tmp/p5.db`. Idempotent on `(match_id, decision_date)`.
 
 ### Step 6: Persistence & CLI Demonstration
-- **Migration**: `alembic/versions/48fd4f90f079_recommendations_matrix_provenance.py`
+- **Migration**: `alembic/versions/48fd4f90f079_recommendations_matrix_provenance.py` & `e5f1b2c3d4e5_recommendation_lifecycle_status_and_key.py`
   - Added `matrix_source` and `input_hash` to `recommendations`.
-  - Unique constraint `uq_recommendations_idempotency` on `(match_id, market, outcome, variant, input_hash)`.
+  - Initial constraint `uq_recommendations_idempotency` on `(match_id, market, outcome, variant, input_hash)` was dropped in migration `e5f1b2c3d4e5` in favor of partial unique index `uq_recommendations_active` on `(match_id, selection_key, variant)` `WHERE status = 'active'` to support recommendation lifecycle transitions (`superseded`, `withdrawn`).
 - **CLI Usage**:
   - `uv run python -m core.value evaluate --match "<Home> - <Away>" --input <file>`
   - `uv run python -m core.value candidates --days 7 --cap 10`
