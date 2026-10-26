@@ -74,7 +74,23 @@ def test_redacting_filter_cleans_record() -> None:
 
 
 def test_redact_text_patterns() -> None:
-    out = redact_text("apiKey=abcdefgh123 and tvly-abcdefgh12")
+    out = redact_text(
+        "apiKey=abcdefgh123 and tvly-abcdefgh12 and AIzaSyDfakegeminikey1234567890. "
+        "and BSAtestsecrettoken12345678"
+    )
     assert "apiKey=***" in out
     assert "abcdefgh123" not in out
     assert "tvly-abcdefgh12" not in out
+    assert "AIzaSyDfakegeminikey1234567890." not in out
+    assert "BSAtestsecrettoken12345678" not in out
+
+
+def test_register_runtime_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    custom_secret = "custom_very_secret_token_value_999"
+    monkeypatch.setenv("API_SECRET_TOKEN", custom_secret)
+    from core.http import register_runtime_secrets
+    register_runtime_secrets()
+    log_line = f"Processing request with token: {custom_secret}"
+    redacted = redact_text(log_line)
+    assert custom_secret not in redacted
+    assert "***" in redacted

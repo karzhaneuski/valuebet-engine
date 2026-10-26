@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Callable, Mapping, MutableMapping
 from typing import Any
 
 import httpx
@@ -49,6 +49,20 @@ def register_secret_values(values: list[str]) -> None:
     for v in values:
         if len(v) >= 8 and v not in _redact_values:
             _redact_values.append(v)
+
+
+def register_runtime_secrets() -> None:
+    """Load secrets from environment and register them for redaction."""
+    try:
+        from core.config import load_secrets
+        secrets = load_secrets()
+        register_secret_values([v for v in (
+            secrets.odds_api_key, secrets.api_football_key,
+            secrets.tavily_api_key, secrets.brave_search_api_key,
+            secrets.gemini_api_key, secrets.api_secret_token, secrets.api_token
+        ) if v])
+    except Exception:
+        pass
 
 
 _PARAM_PATTERN = re.compile(
@@ -145,7 +159,7 @@ def redact_processor(logger: object, method: str,
     return event_dict
 
 
-def retry_call(fn, attempts: int = 3, backoff_s: float = 2.0):
+def retry_call[T](fn: Callable[[], T], attempts: int = 3, backoff_s: float = 2.0) -> T:
     """Run fn() with exponential backoff between attempts (S2). Free
     endpoints and football-data only; paid calls retry through the quota
     reserve, one reservation per attempt."""

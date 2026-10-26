@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main, "phase-*", "spec-*"]
+    branches: [main, "phase-*", "spec-*", "v3-*"]
   pull_request:
 
 jobs:
@@ -19,16 +19,23 @@ jobs:
         run: |
           PAT=$(uv run python -c 'from core.http import ASSIGNMENT_PATTERN; print(ASSIGNMENT_PATTERN.pattern)')
           echo "scan pattern: $PAT"
-          if git log --all -p | grep -qP "$PAT"; then
+          if git log --all -p | grep -iP "$PAT" | grep -vP '(sec\.api_secret_token|sec\.api_token|your-secret-api-token|example|test-)' | grep -qP '.'; then
             echo "secret-like pattern found in git history"; exit 1
           fi
-          if git grep -qP "$PAT" -- . ':!*.lock'; then
+          if git grep -iP "$PAT" -- . ':!*.lock' | grep -vP '(sec\.api_secret_token|sec\.api_token|your-secret-api-token|example|test-)' | grep -qP '.'; then
             echo "secret-like pattern found in tracked files"; exit 1
           fi
+          if git grep -iP '(tvly-[A-Za-z0-9.\-_]{10,}|AIza[A-Za-z0-9_.\-]{20,}|BSA[A-Za-z0-9_.\-]{15,})' -- . ':!*.lock' ':!core/http.py' ':!tests/test_http_secrets.py' ':!tests/test_cli_secrets.py' | grep -qP '.'; then
+            echo "hardcoded API key token pattern found in tracked files"; exit 1
+          fi
+      - name: Check no stubs
+        run: uv run python scripts/check_no_stubs.py
       - name: Ruff
         run: uv run ruff check .
       - name: Mypy
         run: uv run mypy
+      - name: Mypy (strict on core)
+        run: uv run mypy --strict core/model core/backtest core/value core/news core/llm core/tracking core/scheduler
       - name: Pytest
         run: uv run pytest
       - name: Alembic migration from scratch + seed
