@@ -70,7 +70,7 @@ def test_gemini_provider_generate_text(in_memory_db: sessionmaker[Session]) -> N
 
     expected_url = (
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash"
-        ":generateContent?key=test-gemini-key"
+        ":generateContent"
     )
     mock_response = {
         "candidates": [
@@ -121,7 +121,7 @@ def test_gemini_provider_generate_structured_with_markdown_strip(
 
     expected_url = (
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash"
-        ":generateContent?key=test-gemini-key"
+        ":generateContent"
     )
 
     # Return valid JSON wrapped in markdown fences
@@ -159,7 +159,7 @@ def test_gemini_provider_retry_on_invalid_json(in_memory_db: sessionmaker[Sessio
 
     expected_url = (
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash"
-        ":generateContent?key=test-gemini-key"
+        ":generateContent"
     )
 
     route = respx.post(expected_url)
@@ -207,7 +207,7 @@ def test_gemini_provider_structured_exhausted_raises(in_memory_db: sessionmaker[
 
     expected_url = (
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash"
-        ":generateContent?key=test-gemini-key"
+        ":generateContent"
     )
 
     route = respx.post(expected_url)

@@ -184,9 +184,14 @@ class GeminiProvider(LLMProvider):
         if not self.api_key:
             raise LLMError("GEMINI_API_KEY is not set. Cannot call Gemini API.")
 
-        url = f"{self.config.api_base}/models/{model}:generateContent?key={self.api_key}"
+        url = f"{self.config.api_base}/models/{model}:generateContent"
         attempts = 0
         backoff = 1.0
+
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": self.api_key,
+        }
 
         with httpx.Client(timeout=self.timeout) as client:
             while attempts < self.max_retries:
@@ -197,7 +202,7 @@ class GeminiProvider(LLMProvider):
                         method="POST",
                         url=url,
                         json=payload,
-                        headers={"Content-Type": "application/json"},
+                        headers=headers,
                     )
                     data: dict[str, Any] = resp.json()
                     return data
@@ -237,35 +242,41 @@ class GeminiProvider(LLMProvider):
             },
         }
 
-        data = self._call_api_with_retry(chosen_model, payload)
-
         try:
+            data = self._call_api_with_retry(chosen_model, payload)
+
             candidates = data.get("candidates", [])
             if not candidates:
                 raise LLMError("Gemini returned no candidates in response")
-            text = candidates[0]["content"]["parts"][0]["text"]
-        except (KeyError, IndexError) as exc:
-            raise LLMError(f"Malformed Gemini response: {data}") from exc
+            text = str(candidates[0]["content"]["parts"][0]["text"])
 
-        # Extract token usage if available
-        usage = data.get("usageMetadata", {})
-        p_tok = usage.get("promptTokenCount")
-        c_tok = usage.get("candidatesTokenCount")
-        cost = Decimal("0.0000")
-        if p_tok and c_tok:
-            # Estimate Flash cost: ~$0.10/1M in, $0.40/1M out
-            cost = Decimal(f"{(p_tok * 0.00000010 + c_tok * 0.00000040):.6f}")
+            # Extract token usage if available
+            usage = data.get("usageMetadata", {})
+            p_tok = usage.get("promptTokenCount")
+            c_tok = usage.get("candidatesTokenCount")
+            cost = Decimal("0.0000")
+            if p_tok and c_tok:
+                # Estimate Flash cost: ~$0.10/1M in, $0.40/1M out
+                cost = Decimal(f"{(p_tok * 0.00000010 + c_tok * 0.00000040):.6f}")
 
-        self._log_call(
-            purpose=purpose,
-            prompt=prompt,
-            response=text,
-            model=chosen_model,
-            prompt_tokens=p_tok,
-            completion_tokens=c_tok,
-            cost_usd=cost,
-        )
-        return text
+            self._log_call(
+                purpose=purpose,
+                prompt=prompt,
+                response=text,
+                model=chosen_model,
+                prompt_tokens=p_tok,
+                completion_tokens=c_tok,
+                cost_usd=cost,
+            )
+            return text
+        except Exception as exc:
+            self._log_call(
+                purpose=purpose,
+                prompt=prompt,
+                response=f"ERROR: {exc}",
+                model=chosen_model,
+            )
+            raise
 
     def generate_structured(
         self,
@@ -341,4 +352,10 @@ class GeminiProvider(LLMProvider):
                 )
 
         err_msg = f"Failed to generate structured data for {schema.__name__}: {last_error}"
+        self._log_call(
+            purpose=purpose,
+            prompt=prompt,
+            response=f"ERROR: {err_msg}",
+            model=chosen_model,
+        )
         raise LLMError(err_msg)

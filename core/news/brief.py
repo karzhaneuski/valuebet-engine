@@ -11,11 +11,43 @@ STRICTLY PROHIBITS:
 from __future__ import annotations
 
 import logging
+import re
 
 from core.llm.provider import LLMError, LLMProvider
 from core.news.extractor import NewsItem
 
 logger = logging.getLogger(__name__)
+
+FORBIDDEN_BRIEF_PATTERNS = [
+    re.compile(r"ставк[а-я]*", re.IGNORECASE),
+    re.compile(r"рекоменд[а-я]*", re.IGNORECASE),
+    re.compile(r"\b\d+%\b"),
+    re.compile(r"\b0\.\d+\b"),
+]
+
+
+def verify_and_sanitize_brief(
+    brief: str,
+    home_team: str,
+    away_team: str,
+    news_items: list[NewsItem],
+) -> str:
+    """Post-verification: check for forbidden betting words and probabilities."""
+    for pat in FORBIDDEN_BRIEF_PATTERNS:
+        match = pat.search(brief)
+        if match:
+            logger.warning(
+                "Forbidden betting content detected in LLM brief ('%s'). "
+                "Replacing with safe neutral factual template.",
+                match.group(0),
+            )
+            neutral_lines = [
+                f"Фактическая сводка по составам: {home_team} — {away_team}:",
+            ]
+            for item in news_items:
+                neutral_lines.append(f"• {item.player} ({item.team}): статус «{item.status}».")
+            return "\n".join(neutral_lines)
+    return brief
 
 BRIEF_PROMPT_TEMPLATE = """Вы — спортивный футбольный аналитик. Ваша задача — подготовить краткую
 информационную сводку (2–3 абзаца на русском языке) по матчу {home_team} — {away_team}
@@ -45,11 +77,7 @@ def generate_match_brief(
     Returns safe objective text without betting advice or invented probabilities.
     """
     if not news_items:
-        return (
-            f"По матчу {home_team} — {away_team} подтверждённых данных о критических потерях "
-            "или дисквалификациях ключевых игроков на данный момент не обнаружено. "
-            "Команды готовятся к матчу в штатных составах."
-        )
+        return f"По матчу {home_team} — {away_team} подтверждённых данных о составах нет."
 
     formatted_items = []
     for item in news_items:
@@ -71,7 +99,12 @@ def generate_match_brief(
             model=model,
             purpose="user_brief",
         )
-        return brief.strip()
+        return verify_and_sanitize_brief(
+            brief=brief.strip(),
+            home_team=home_team,
+            away_team=away_team,
+            news_items=news_items,
+        )
     except LLMError as exc:
         logger.warning(
             "Failed to generate news brief for %s vs %s: %s",

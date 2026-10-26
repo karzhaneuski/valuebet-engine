@@ -320,7 +320,7 @@ def test_user_brief_generation() -> None:
 def test_user_brief_empty_news() -> None:
     provider = MockLLMProvider()
     brief = generate_match_brief(provider, "Arsenal", "Liverpool", [])
-    assert "штатных составах" in brief
+    assert "подтверждённых данных о составах нет" in brief
     assert len(provider.calls) == 0
 
 
