@@ -25,8 +25,9 @@ from api.schemas import (
     TotalsLinePrice,
 )
 from core.orm import ClosingOdds, Match, OddsSnapshot, PrematchOdds
-from core.tracking.clv import evaluate_fair_probs_for_bet, load_closing_market_inputs
+from core.tracking.clv import evaluate_fair_probs_for_bet
 from core.value.fair_matrix import build_fair_matrix
+from core.value.persistence import load_market_inputs_for_match
 
 router = APIRouter(tags=["matches"])
 
@@ -143,7 +144,7 @@ def get_match_fair_prices(
     h_name = match.home_team.name if match.home_team else f"Team_{match.home_team_id}"
     a_name = match.away_team.name if match.away_team else f"Team_{match.away_team_id}"
 
-    inputs = load_closing_market_inputs(db, match)
+    inputs = load_market_inputs_for_match(db, match.id)
     if inputs is None or inputs.is_empty():
         msg = f"Котировки для матча '{h_name} - {a_name}' пока не загружены"
         raise HTTPException(

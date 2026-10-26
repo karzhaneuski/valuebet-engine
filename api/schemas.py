@@ -185,7 +185,10 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     database_connected: bool
-    database_url_redacted: str
+    database_url_redacted: str | None = None
     last_odds_snapshot_utc: dt.datetime | None = None
     toa_credits_remaining: int | None = None
     search_quota: dict[str, Any] = Field(default_factory=dict)
+    pacing_stage: int = 0
+    pacing_degraded: bool = False
+    pacing_actions: list[str] = Field(default_factory=list)

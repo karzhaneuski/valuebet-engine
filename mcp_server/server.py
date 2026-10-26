@@ -21,12 +21,15 @@ from sqlalchemy.orm import Session
 from api.matching import search_matches_by_query
 from core.config import load_config
 from core.db import session_scope
+from core.http import register_runtime_secrets
 from core.orm import ClosingOdds, Match, OddsSnapshot, PlayerAvailability, PrematchOdds, UserBet
-from core.tracking.clv import evaluate_fair_probs_for_bet, load_closing_market_inputs
 from core.tracking.stats import compute_performance_metrics
+from core.value.engine import evaluate_fortuna_prices
 from core.value.fair_matrix import build_fair_matrix
 from core.value.fortuna_input import calculate_section_overrounds, parse_fortuna_text
+from core.value.persistence import load_market_inputs_for_match
 
+register_runtime_secrets()
 mcp = FastMCP("valuebet-engine")
 
 
@@ -84,23 +87,23 @@ def get_match_fair_prices(match_id: int) -> str:
         h = match.home_team.name if match.home_team else f"Team_{match.home_team_id}"
         a = match.away_team.name if match.away_team else f"Team_{match.away_team_id}"
 
-        inputs = load_closing_market_inputs(session, match)
+        inputs = load_market_inputs_for_match(session, match.id)
         if inputs is None or inputs.is_empty():
             return f"Для матча ID {match_id} ({h} — {a}) нет котировок острых букмекеров."
 
         fair_matrix = build_fair_matrix(inputs, home_team=h, away_team=a)
 
         # 1X2
-        p_1, _ = evaluate_fair_probs_for_bet(fair_matrix, "h2h", "1", None)
-        p_x, _ = evaluate_fair_probs_for_bet(fair_matrix, "h2h", "X", None)
-        p_2, _ = evaluate_fair_probs_for_bet(fair_matrix, "h2h", "2", None)
+        p_1 = fair_matrix.p_home_devig
+        p_x = fair_matrix.p_draw_devig
+        p_2 = fair_matrix.p_away_devig
         fo_1 = f"{1.0 / p_1:.2f}" if p_1 > 0.001 else "—"
         fo_x = f"{1.0 / p_x:.2f}" if p_x > 0.001 else "—"
         fo_2 = f"{1.0 / p_2:.2f}" if p_2 > 0.001 else "—"
 
         # Totals 2.5
-        p_o25, _ = evaluate_fair_probs_for_bet(fair_matrix, "totals", "over", Decimal("2.5"))
-        p_u25, _ = evaluate_fair_probs_for_bet(fair_matrix, "totals", "under", Decimal("2.5"))
+        p_o25 = fair_matrix.total_over(2.5)
+        p_u25 = fair_matrix.total_under(2.5)
         fo_o25 = f"{1.0 / p_o25:.2f}" if p_o25 > 0.001 else "—"
         fo_u25 = f"{1.0 / p_u25:.2f}" if p_u25 > 0.001 else "—"
 
@@ -172,7 +175,7 @@ def evaluate_fortuna_odds(
         h = match.home_team.name if match.home_team else f"Team_{match.home_team_id}"
         a = match.away_team.name if match.away_team else f"Team_{match.away_team_id}"
 
-        inputs = load_closing_market_inputs(session, match)
+        inputs = load_market_inputs_for_match(session, match.id)
         if inputs is None or inputs.is_empty():
             return f"Для матча {h} — {a} нет котировок острых букмекеров."
 
@@ -187,52 +190,22 @@ def evaluate_fortuna_odds(
             return "Не удалось распознать котировки Fortuna из переданного текста."
 
         section_margins = calculate_section_overrounds(parsed_prices)
+        eval_result = evaluate_fortuna_prices(
+            fair_matrix=fair_matrix,
+            fortuna_prices=parsed_prices,
+            match_name=f"{h} — {a}",
+            home_team=h,
+            away_team=a,
+        )
+
         above_fair = []
-
-        for item in parsed_prices:
-            m_type: str = item.market
-            sel_str = ""
-            line_val: Decimal | None = None
-
-            if m_type == "exact_score" and isinstance(item.selection, tuple):
-                sel_str = f"{item.selection[0]}:{item.selection[1]}"
-            elif m_type == "other":
-                m_type = "exact_score"
-                sel_str = "inny"
-            elif m_type == "multiscore":
-                if isinstance(item.selection, frozenset):
-                    sel_str = ", ".join(f"{gh}:{ga}" for gh, ga in sorted(item.selection))
-                else:
-                    sel_str = str(item.selection)
-            elif m_type == "goals_range" and isinstance(item.selection, tuple):
-                sel_str = f"{item.selection[0]}-{item.selection[1]}"
-            elif m_type == "totals" and isinstance(item.selection, tuple):
-                sel_str = str(item.selection[0])
-                line_val = Decimal(str(item.selection[1]))
-            elif m_type in ("h2h", "1x2", "btts"):
-                sel_str = str(item.selection)
-            elif (
-                m_type == "team_totals"
-                and isinstance(item.selection, tuple)
-                and len(item.selection) == 3
-            ):
-                sel_str = f"{item.selection[0]}_{item.selection[1]}"
-                line_val = Decimal(str(item.selection[2]))
-            else:
-                sel_str = str(item.selection)
-
-            p_win, p_push = evaluate_fair_probs_for_bet(
-                fair_matrix, m_type, sel_str, line_val
-            )
-            if p_win <= 0.0:
-                continue
-
-            fair_odd = (1.0 - p_push) / p_win if p_win > 0.0001 else 999.0
-            edge = (p_win * item.odds) + (p_push * 1.0) - 1.0
-            if edge > 0.0:
+        for out in eval_result.outcomes:
+            if out.price_above_fair:
+                edge_pct = out.edge * 100.0
                 above_fair.append(
-                    f"• {m_type} '{sel_str}': коэффициент {item.odds:.2f} vs "
-                    f"справедливый {fair_odd:.2f} (EV: +{edge * 100:.1f}%)"
+                    f"• {out.market} '{out.selection_display}': "
+                    f"коэффициент {out.odds_fortuna:.2f} vs справедливый {out.fair_odds:.2f} "
+                    f"(EV: +{edge_pct:.1f}%)"
                 )
 
         margins_str = ", ".join(f"{k}: {v * 100:.1f}%" for k, v in section_margins.items())
@@ -249,7 +222,8 @@ def evaluate_fortuna_odds(
             )
 
         res_lines.append(
-            "\nСправочная оценка. Без рекомендаций и Келли. Ставки сопряжены с риском."
+            "\nСправочная оценка (оговорка: kappa_high=0.20). "
+            "Без рекомендаций и Келли. Ставки сопряжены с риском."
         )
         return "\n".join(res_lines)
 
@@ -262,6 +236,7 @@ def record_user_bet(
     odds: float,
     stake: float,
     bookmaker: str = "Fortuna",
+    line: float | None = None,
 ) -> str:
     """Record a user bet for post-match settlement and pre-kickoff CLV tracking."""
     cfg = load_config()
@@ -270,17 +245,68 @@ def record_user_bet(
         if match is None:
             return f"Матч с ID {match_id} не найден в базе данных."
 
+        m_clean = market.strip().lower()
+        sel_clean = outcome.strip()
+        allowed_markets = {
+            "exact_score",
+            "multiscore",
+            "goals_range",
+            "totals",
+            "btts",
+            "h2h",
+            "team_totals",
+        }
+        if m_clean not in allowed_markets:
+            return (
+                f"Неподдерживаемый рынок '{market}'. Допустимые: "
+                f"{', '.join(sorted(allowed_markets))}."
+            )
+
+        now = dt.datetime.now(dt.UTC)
+        if match.commence_time_utc:
+            ko = (
+                match.commence_time_utc
+                if match.commence_time_utc.tzinfo
+                else match.commence_time_utc.replace(tzinfo=dt.UTC)
+            )
+            if now >= ko:
+                return (
+                    f"Ошибка: матч уже начался ({ko.strftime('%Y-%m-%d %H:%M UTC')}). "
+                    f"Регистрация ставок задним числом отклонена."
+                )
+
         h = match.home_team.name if match.home_team else f"Team_{match.home_team_id}"
         a = match.away_team.name if match.away_team else f"Team_{match.away_team_id}"
 
-        now = dt.datetime.now(dt.UTC)
+        p_fair_dec: Decimal | None = None
+        try:
+            from core.tracking.clv import evaluate_fair_probs_for_bet
+
+            inputs = load_market_inputs_for_match(session, match.id, as_of=now)
+            if not inputs.is_empty():
+                fair_matrix = build_fair_matrix(inputs, home_team=h, away_team=a, config=cfg)
+                if fair_matrix.status == "ok":
+                    p_win, _ = evaluate_fair_probs_for_bet(
+                        matrix=fair_matrix,
+                        market=m_clean,
+                        selection_key=sel_clean,
+                        line=Decimal(str(line)) if line is not None else None,
+                        cs_grid_max_goals=cfg.fortuna.cs_grid_max_goals,
+                    )
+                    if p_win > 0:
+                        p_fair_dec = Decimal(str(round(p_win, 4)))
+        except Exception:
+            p_fair_dec = None
+
         bet = UserBet(
             match_id=match_id,
-            market=market.strip().lower(),
-            selection_key=outcome.strip(),
+            market=m_clean,
+            selection_key=sel_clean,
+            line=Decimal(str(line)) if line is not None else None,
             odds=Decimal(str(odds)),
             stake_units=Decimal(str(stake)),
             bookmaker=bookmaker.strip(),
+            p_fair_at_placement=p_fair_dec,
             status="open",
             placed_at_utc=now,
             created_at_utc=now,
@@ -289,12 +315,13 @@ def record_user_bet(
         session.flush()
         session.refresh(bet)
 
+        fair_str = f" | p_fair: {p_fair_dec:.4f}" if p_fair_dec is not None else ""
         return (
             f"Ставка успешно записана:\n"
             f"• ID ставки: {bet.id}\n"
             f"• Матч: {h} — {a} (ID {match_id})\n"
-            f"• Рынок: {market} | Исход: {outcome}\n"
-            f"• Коэффициент: {odds:.2f} | Ставка: {stake:.2f} ед.\n"
+            f"• Рынок: {m_clean} | Исход: {sel_clean}\n"
+            f"• Коэффициент: {odds:.2f}{fair_str} | Ставка: {stake:.2f} ед.\n"
             f"• Букмекер: {bookmaker}\n"
             f"• Статус: open (ожидает завершения матча и расчёта)"
         )
@@ -318,13 +345,15 @@ def get_user_performance(period: str = "all") -> str:
         report = compute_performance_metrics(bets)
 
         roi_ci_str = (
-            f"[{report.roi_ci_95[0]:+.1f}% ... {report.roi_ci_95[1]:+.1f}%]"
+            f"[{report.roi_ci_95[0] * 100.0:+.1f}% ... {report.roi_ci_95[1] * 100.0:+.1f}%]"
             if report.roi_ci_95
             else "недостаточно данных"
         )
-        clv_str = f"{report.avg_clv:+.2f}%" if report.avg_clv is not None else "—"
+        clv_str = f"{report.avg_clv * 100.0:+.2f}%" if report.avg_clv is not None else "—"
         clv_pos_str = (
-            f"{report.positive_clv_share:.1%}" if report.positive_clv_share is not None else "—"
+            f"{report.positive_clv_share * 100.0:.1f}%"
+            if report.positive_clv_share is not None
+            else "—"
         )
 
         n_tot = report.total_bets
@@ -334,8 +363,8 @@ def get_user_performance(period: str = "all") -> str:
             f"Статистика ({period}):",
             f"• Ставок: {n_tot} (рассчитано: {n_set}, в игре: {n_opn})",
             f"• Оборот: {report.total_stake:.2f} ед. | P/L: {report.total_pnl:+.2f} ед.",
-            f"• ROI: {report.roi:+.2f}% (95% CI: {roi_ci_str})",
-            f"• Hit Rate: {report.hit_rate:.1%}",
+            f"• ROI: {report.roi * 100.0:+.2f}% (95% CI: {roi_ci_str})",
+            f"• Hit Rate: {report.hit_rate * 100.0:.1f}%",
             f"• Средний CLV: {clv_str}",
             f"• Доля положительного CLV: {clv_pos_str}",
         ]
@@ -354,7 +383,24 @@ def get_news_brief(home_team: str, away_team: str) -> str:
     cfg = load_config()
     with session_scope(cfg.database.url) as session:
         candidates = list(search_matches_by_query(session, f"{home_team} - {away_team}"))
-        if candidates:
+        if len(candidates) > 1:
+            cand_lines = [
+                f"• ID {m.id}: {m.home_team.name if m.home_team else ''} — "
+                f"{m.away_team.name if m.away_team else ''} ({m.date_utc})"
+                for m in candidates[:5]
+            ]
+            return (
+                f"Неоднозначный запрос: найдено несколько матчей для '{home_team} — {away_team}'. "
+                f"Уточните запрос или укажите точный ID матча:\n"
+                + "\n".join(cand_lines)
+            )
+
+        caveat_text = (
+            "Оговорка: матрица рассчитывается с параметром сглаживания κ_high = 0.20 "
+            "на диагонали от 2:2 для учёта редких результативных ничьих."
+        )
+
+        if len(candidates) == 1:
             match = candidates[0]
             absences = list(
                 session.scalars(
@@ -363,14 +409,17 @@ def get_news_brief(home_team: str, away_team: str) -> str:
             )
             if absences:
                 items = [f"• {a.player} ({a.status}): {a.quote_summary or ''}" for a in absences]
+                h_name = match.home_team.name if match.home_team else home_team
+                a_name = match.away_team.name if match.away_team else away_team
                 return (
-                    f"Сводка новостей по матчу {home_team} — {away_team}:\n"
+                    f"Сводка новостей по матчу {h_name} — {a_name}:\n"
                     + "\n".join(items)
-                    + "\nТон строго нейтральный. Без рекомендаций по ставкам."
+                    + f"\n{caveat_text}\nТон строго нейтральный. Без рекомендаций по ставкам."
                 )
 
         return (
             f"Сводка по матчу {home_team} — {away_team}:\n"
             "Подтверждённых критических потерь или дисквалификаций не зафиксировано. "
-            "Команды готовятся к матчу в штатных составах."
+            "Команды готовятся к матчу в штатных составах.\n"
+            f"{caveat_text}\nТон строго нейтральный. Без рекомендаций по ставкам."
         )

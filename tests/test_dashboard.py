@@ -349,6 +349,21 @@ def test_app_page_stats(mock_api_client: None) -> None:
     assert any("< 100 ставок" in w for w in warning_texts)
 
 
+def test_app_page_stats_negative_roi_formatting(mock_api_client: None) -> None:
+    """Unit contract: when API returns roi: -20.0, the dashboard displays exactly -20.0%."""
+    negative_perf = dict(MOCK_PERFORMANCE_DATA)
+    negative_perf["roi"] = -20.0
+    with patch.object(ApiClient, "get_performance", return_value=negative_perf):
+        at = AppTest.from_file(APP_PATH, default_timeout=15.0)
+        at.run()
+        at.sidebar.radio[0].set_value("Статистика и CLV").run()
+        assert not at.exception
+
+        roi_metrics = [m for m in at.metric if m.label == "ROI"]
+        assert len(roi_metrics) == 1
+        assert roi_metrics[0].value == "-20.0%"
+
+
 def test_app_page_status(mock_api_client: None) -> None:
     """Test navigating to System & Data Status page."""
     at = AppTest.from_file(APP_PATH, default_timeout=15.0)

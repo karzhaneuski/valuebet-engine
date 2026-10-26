@@ -11,7 +11,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from core.orm import Base, ClosingOdds, Match, Team
+from core.orm import Base, ClosingOdds, Match, PrematchOdds, Team
 from mcp_server.server import (
     evaluate_fortuna_odds,
     get_match_fair_prices,
@@ -90,7 +90,7 @@ def mcp_test_db(monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
     session.add_all([m1, m2])
     session.flush()
 
-    # Seed closing odds for m1
+    # Seed closing and prematch odds for m1
     c1 = ClosingOdds(
         match_id=201,
         bookmaker="PC",
@@ -100,7 +100,16 @@ def mcp_test_db(monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
         draw_price=Decimal("3.40"),
         away_price=Decimal("3.60"),
     )
-    session.add(c1)
+    p1 = PrematchOdds(
+        match_id=201,
+        bookmaker="P",
+        over_price=Decimal("1.95"),
+        under_price=Decimal("1.95"),
+        home_price=Decimal("2.10"),
+        draw_price=Decimal("3.40"),
+        away_price=Decimal("3.60"),
+    )
+    session.add_all([c1, p1])
     session.commit()
 
     yield session
@@ -170,6 +179,39 @@ def test_record_user_bet(mcp_test_db: Session) -> None:
     assert "status: open" in res.lower() or "open" in res
 
 
+def test_record_user_bet_rejects_past_kickoff(mcp_test_db: Session) -> None:
+    # Set match commence_time in the past
+    match = mcp_test_db.get(Match, 201)
+    assert match is not None
+    orig_time = match.commence_time_utc
+    match.commence_time_utc = dt.datetime.now(dt.UTC) - dt.timedelta(hours=1)
+    mcp_test_db.commit()
+
+    try:
+        res = record_user_bet(
+            match_id=201,
+            market="totals",
+            outcome="over 2.5",
+            odds=1.90,
+            stake=5.0,
+        )
+        assert "Ошибка: матч уже начался" in res
+    finally:
+        match.commence_time_utc = orig_time
+        mcp_test_db.commit()
+
+
+def test_record_user_bet_rejects_invalid_market(mcp_test_db: Session) -> None:
+    res = record_user_bet(
+        match_id=201,
+        market="corners",
+        outcome="over 10.5",
+        odds=2.00,
+        stake=1.0,
+    )
+    assert "Неподдерживаемый рынок 'corners'" in res
+
+
 def test_get_user_performance(mcp_test_db: Session) -> None:
     res = get_user_performance(period="all")
     assert "Статистика" in res
@@ -183,3 +225,4 @@ def test_get_news_brief(mcp_test_db: Session) -> None:
     assert "Сводка" in res
     assert "Arsenal" in res
     assert "Chelsea" in res
+    assert "0.20" in res

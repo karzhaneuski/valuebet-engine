@@ -52,11 +52,11 @@ def render_stats_view(api: ApiClient) -> None:
 
     ci_roi = perf.get("bootstrap_ci_roi_95")
     ci_roi_str = f"[{ci_roi['lower']:+.1f}% ... {ci_roi['upper']:+.1f}%]" if ci_roi else "—"
-    m2.metric("ROI", f"{roi:+.2f}%", help=f"95% Bootstrap CI: {ci_roi_str}")
+    m2.metric("ROI", f"{roi:+.1f}%", help=f"95% Bootstrap CI: {ci_roi_str}")
 
     ci_clv = perf.get("bootstrap_ci_clv_95")
     ci_clv_str = f"[{ci_clv['lower']:+.1f}% ... {ci_clv['upper']:+.1f}%]" if ci_clv else "—"
-    m3.metric("Средний CLV", f"{clv:+.2f}%", help=f"95% Bootstrap CI: {ci_clv_str}")
+    m3.metric("Средний CLV", f"{clv:+.1f}%", help=f"95% Bootstrap CI: {ci_clv_str}")
 
     m4.metric("Hit Rate (проходимость)", f"{hit_rate:.1f}%")
 

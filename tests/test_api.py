@@ -14,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 
 from api.db import get_db
 from api.main import app
-from core.orm import Base, ClosingOdds, Match, Team, UserBet
+from core.orm import Base, ClosingOdds, Match, PrematchOdds, Team, UserBet
 
 TEST_TOKEN = "secret-token-12345"
 AUTH_HEADER = {"Authorization": f"Bearer {TEST_TOKEN}"}
@@ -72,7 +72,7 @@ def session_factory() -> Iterator[sessionmaker[Session]]:
     session.add_all([m1, m2])
     session.flush()
 
-    # Seed closing odds for m1 so fair matrix can be built
+    # Seed prematch and closing odds for m1 so fair matrix can be built
     c1 = ClosingOdds(
         match_id=101,
         bookmaker="PC",
@@ -82,7 +82,16 @@ def session_factory() -> Iterator[sessionmaker[Session]]:
         draw_price=Decimal("3.40"),
         away_price=Decimal("3.60"),
     )
-    session.add(c1)
+    p1 = PrematchOdds(
+        match_id=101,
+        bookmaker="P",
+        over_price=Decimal("1.95"),
+        under_price=Decimal("1.95"),
+        home_price=Decimal("2.10"),
+        draw_price=Decimal("3.40"),
+        away_price=Decimal("3.60"),
+    )
+    session.add_all([c1, p1])
     session.commit()
     session.close()
 
@@ -123,6 +132,27 @@ def test_health_is_public(client: TestClient) -> None:
     assert data["status"] == "ok"
     assert data["version"] == "0.3.0"
     assert data["database_connected"] is True
+    assert data["database_url_redacted"] is None
+    assert "pacing_stage" in data
+
+
+def test_health_degraded_on_db_failure() -> None:
+    def _failing_db() -> Iterator[Session]:
+        from unittest.mock import MagicMock
+        m_session = MagicMock()
+        m_session.execute.side_effect = RuntimeError("DB down")
+        yield m_session
+
+    app.dependency_overrides[get_db] = _failing_db
+    try:
+        with TestClient(app) as tc:
+            resp = tc.get("/health")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["status"] == "degraded"
+            assert data["database_connected"] is False
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_auth_missing_token(client: TestClient) -> None:
@@ -332,7 +362,7 @@ def test_get_performance(
     perf = resp.json()
     assert perf["settled_bets"] == 1
     assert perf["total_profit"] == 7.0
-    assert perf["roi"] == 7.0
+    assert perf["roi"] == 700.0
     # Mandatory sample size warning for N < 100
     assert perf["sample_size_warning"] is not None
     assert "статистически недостаточна" in perf["sample_size_warning"]

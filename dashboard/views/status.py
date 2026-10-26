@@ -44,13 +44,23 @@ def render_status_view(api: ApiClient) -> None:
         st.progress(progress)
         st.caption(f"Использовано {toa_used} из 500 кредитов (остаток: **{toa_rem}**).")
 
-        # Ladder status
-        if toa_used >= 450:
-            st.error("🚨 **Режим жесткой блокировки:** расход > 450 кредитов. Опросы остановлены.")
-        elif toa_used >= 380:
-            st.warning("⚠️ **Режим деградации:** опрос тира 3 переведен на 1 раз/сутки.")
+        # Ladder status sourced directly from backend /health
+        p_stage = health.get("pacing_stage", 0)
+        p_degraded = health.get("pacing_degraded", False)
+        p_actions = health.get("pacing_actions", [])
+
+        if p_stage >= 3 or (toa_used >= 450):
+            st.error(
+                "🚨 **Режим жесткой блокировки:** лимит квоты исчерпан (стадия 3). "
+                "Платные запросы заблокированы."
+            )
+        elif p_degraded:
+            actions_text = (
+                ", ".join(p_actions) if p_actions else "активны ограничения лестницы деградации"
+            )
+            st.warning(f"⚠️ **Режим деградации (стадия {p_stage}):** {actions_text}.")
         else:
-            st.info("🟢 **Штатный режим:** опрос выполняется по расписанию тиров.")
+            st.info("🟢 **Штатный режим:** опрос выполняется по расписанию тиров без ограничений.")
 
     # Search quotas
     search_q = health.get("search_quota", {})
