@@ -76,18 +76,33 @@ MATCH_STATUSES = ("scheduled", "postponed_suspected", "postponed", "finished",
                   "void")
 KICKOFF_SOURCES = ("toa", "understat_placeholder")
 # TOA market keys, as they come from the API (odds_snapshots)
-ODD_MARKETS = ("totals", "btts", "correct_score", "alternate_totals")
+ODD_MARKETS = ("totals", "btts", "correct_score", "alternate_totals", "h2h")
 # SPEC §1 market vocabulary (recommendations); correct_score is the TOA
 # spelling of the exact-score market, exact_score/multiscore/goals_range
 # are our internal names
-RECO_MARKETS = ("exact_score", "multiscore", "goals_range", "totals", "btts")
+RECO_MARKETS = (
+    "exact_score",
+    "multiscore",
+    "goals_range",
+    "totals",
+    "btts",
+    "team_totals",
+    "h2h",
+)
 RECO_STATUSES = ("active", "superseded", "withdrawn")
 ODD_TIERS = ("T-48", "T-24", "T-3", "T-1", "manual", "off_window")
 ODD_SOURCES = ("toa", "manual_fortuna")
-CLV_SOURCES = ("avgc", "maxc", "own_snapshot_t3")
+CLV_SOURCES = (
+    "avgc",
+    "maxc",
+    "own_snapshot_t3",
+    "fair_market_matrix",
+    "pinnacle_correct_score",
+    "football_data_closing",
+)
 RECO_VARIANTS = ("base", "shadow_llm")
 FINAL_ODDS_SOURCES = ("fortuna_manual", "fortuna_api")
-PLAYER_STATUSES = ("out", "doubtful", "suspended")
+PLAYER_STATUSES = ("out", "doubtful", "suspended", "returning")
 PLAYER_SOURCES = ("api_football", "news_llm")
 
 
@@ -454,7 +469,7 @@ class ClosingOdds(Base):
 # --- user bets & performance tracking ---------------------------------------
 
 USER_BET_STATUSES = ("open", "won", "lost", "push", "void")
-USER_BET_CLV_SOURCES = ("fair_market_matrix", "pinnacle_correct_score")
+USER_BET_CLV_SOURCES = ("fair_market_matrix", "pinnacle_correct_score", "football_data_closing")
 
 
 class UserBet(Base):
@@ -465,6 +480,11 @@ class UserBet(Base):
         CheckConstraint(
             "status IN ('open', 'won', 'lost', 'push', 'void')",
             name="ck_user_bets_status",
+        ),
+        CheckConstraint(
+            "clv_source IS NULL OR clv_source IN "
+            "('fair_market_matrix', 'pinnacle_correct_score', 'football_data_closing')",
+            name="ck_user_bets_clv_source",
         ),
         Index("ix_user_bets_match_id", "match_id"),
         Index("ix_user_bets_status", "status"),
