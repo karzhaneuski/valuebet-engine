@@ -200,8 +200,8 @@ def test_calculate_user_bet_clv_from_closing_odds(db_session: Session) -> None:
         home_team_id=t1.id,
         away_team_id=t2.id,
         date_utc=now.date(),
-        commence_time_utc=now + dt.timedelta(hours=2),
-        status="scheduled",
+        commence_time_utc=now - dt.timedelta(hours=2),
+        status="finished",
     )
     db_session.add(match)
     db_session.flush()
@@ -233,7 +233,7 @@ def test_calculate_user_bet_clv_from_closing_odds(db_session: Session) -> None:
 
     clv_val, source = calculate_user_bet_clv(db_session, bet)
     assert clv_val is not None
-    assert source == "fair_market_matrix"
+    assert source == "football_data_closing"
     # Over 2.5 fair prob is ~0.50, odds placed = 2.05 -> CLV ~ +0.025
     assert clv_val > 0
 
