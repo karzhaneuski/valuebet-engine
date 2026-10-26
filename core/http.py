@@ -37,7 +37,8 @@ _ENV_NAMES = (
     r"api_?key|apiKey|token)\b"
 )
 ASSIGNMENT_PATTERN = re.compile(
-    _ENV_NAMES + r"[\"']?\s*[:=]\s*[\"']?(?!your-|test-|example-|sec\.)[A-Za-z0-9._\-]{20,}",
+    _ENV_NAMES
+    + r"[\"']?\s*[:=]\s*[\"']?(?!your-|test-|example-|sec\.|auth_header)[A-Za-z0-9._\-]{20,}",
     re.IGNORECASE,
 )
 

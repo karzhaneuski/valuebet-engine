@@ -83,10 +83,10 @@ def run_sync(request: Request, dry_run: bool = True) -> dict[str, Any]:
 
     # 2. Token verification
     auth_header = request.headers.get("Authorization", "")
-    token = auth_header.removeprefix("Bearer ").strip()
+    req_token = auth_header.removeprefix("Bearer ").strip()
     sec = Secrets()
     expected = sec.api_secret_token or sec.api_token or "test-sync-token"
-    if not expected or token != expected:
+    if not expected or req_token != expected:
         logger.warning("Invalid authorization token for /run-sync")
         raise HTTPException(
             status_code=http_status.HTTP_401_UNAUTHORIZED,
