@@ -30,30 +30,50 @@ def health_check(db: Session = Depends(get_db)) -> HealthResponse:
     except Exception:
         db_connected = False
 
-    last_snap = db.scalar(select(func.max(OddsSnapshot.captured_at_utc)))
-
+    last_snap = None
+    toa_remaining: int | None = 500
     curr_period = get_current_period_utc()
-    toa_used = db.scalar(
-        select(QuotaCounter.credits_used).where(
-            QuotaCounter.provider == "toa",
-            QuotaCounter.period == curr_period,
-        )
-    )
-    toa_remaining = 500 - (toa_used or 0)
+    tavily_used: int = 0
+    brave_used: int = 0
 
-    # Search quotas
-    tavily_used = db.scalar(
-        select(QuotaCounter.credits_used).where(
-            QuotaCounter.provider == "tavily",
-            QuotaCounter.period == curr_period,
-        )
-    )
-    brave_used = db.scalar(
-        select(QuotaCounter.credits_used).where(
-            QuotaCounter.provider == "brave",
-            QuotaCounter.period == curr_period,
-        )
-    )
+    if db_connected:
+        try:
+            last_snap = db.scalar(select(func.max(OddsSnapshot.captured_at_utc)))
+        except Exception:
+            last_snap = None
+
+        try:
+            toa_used = db.scalar(
+                select(QuotaCounter.credits_used).where(
+                    QuotaCounter.provider == "toa",
+                    QuotaCounter.period == curr_period,
+                )
+            )
+            toa_remaining = 500 - (toa_used or 0)
+        except Exception:
+            toa_remaining = 500
+
+        try:
+            tav_val = db.scalar(
+                select(QuotaCounter.credits_used).where(
+                    QuotaCounter.provider == "tavily",
+                    QuotaCounter.period == curr_period,
+                )
+            )
+            tavily_used = tav_val or 0
+        except Exception:
+            tavily_used = 0
+
+        try:
+            brv_val = db.scalar(
+                select(QuotaCounter.credits_used).where(
+                    QuotaCounter.provider == "brave",
+                    QuotaCounter.period == curr_period,
+                )
+            )
+            brave_used = brv_val or 0
+        except Exception:
+            brave_used = 0
 
     return HealthResponse(
         status="ok",
@@ -64,7 +84,7 @@ def health_check(db: Session = Depends(get_db)) -> HealthResponse:
         toa_credits_remaining=toa_remaining,
         search_quota={
             "period": curr_period,
-            "tavily_credits_used": tavily_used or 0,
-            "brave_credits_used": brave_used or 0,
+            "tavily_credits_used": tavily_used,
+            "brave_credits_used": brave_used,
         },
     )
