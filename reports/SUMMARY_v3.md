@@ -2,188 +2,244 @@
 
 **Date:** 2026-10-26  
 **Repository:** `karzhaneuski/valuebet-engine`  
+**Branch:** `v3-integration`  
 **Specification:** `SPEC.md` (v3.0.0 — Analytical Architecture Pivot)  
-**Phases Completed:** SPEC v3, Phase 6 (News & LLM Context), Phase 7 (User Bets & Automation), Phase 8 (REST API & Hermes MCP Server), Phase 9 (Streamlit Dashboard & AppTest Suite).
+**Phases Completed:** SPEC v3, Phase 6 (News & LLM Context), Phase 7 (User Bets & Automation), Phase 8 (REST API & FastMCP Server), Phase 9 (Streamlit Dashboard & Multi-Channel E2E Suite).
 
 ---
 
-## 1. Executive Summary & Strategic Product Pivot
+## 1. Executive Summary & Product Pivot
 
 ### 1.1 Why the Architecture Pivoted to SPEC v3
-Backtesting results (documented in `reports/backtest/SUMMARY_4b.md`) demonstrated unequivocally that statistical Poisson/Dixon-Coles models cannot systematically beat modern sharp bookmakers. The closing lines of sharp books (Pinnacle) already incorporate virtually all available public information.
+Backtesting results (`reports/backtest/SUMMARY_4b.md`) and empirical soft vs. sharp market measurements (`reports/soft_vs_sharp_totals.md`, `reports/fortuna_margin_study.md`) proved unequivocally that statistical Poisson/Dixon-Coles models cannot systematically beat modern sharp bookmakers, and that high soft-bookmaker margins (~33% on exact scores, ~21% on multiscore, 6–7% on totals) render passive single-bookmaker automated betting unprofitable.
 
-Consequently, **SPEC v3** fundamentally pivoted ValueBet Engine from an *automated betting recommendation generator* into a **high-precision analytical auditing and fair-pricing engine**:
-1. **Fair Exact Score Matrix via Sharp Market Lines:** The fair exact score probability matrix is constructed entirely from devigged sharp market closing lines (O/U 2.5 and 1X2), using bivariate Poisson optimization and Shin/multiplicative devigging.
-2. **Dixon-Coles as Standby & Anomaly Detector:** The statistical model does not generate betting recommendations. It operates strictly as a standby fallback when market liquidity is absent, and as an anomaly detection flag ($z$-score divergence).
-3. **Fortuna Discrepancy Evaluation:** The user bets manually exclusively at Polish licensed bookmaker Fortuna. The engine evaluates user-entered lines against the fair matrix, calculating expected value ($EV = P \cdot \text{odds} - 1$) and section margins.
-4. **Zero Kelly & Zero Recommendations:** The engine never recommends bet placement or stake amounts. Outcomes with positive EV are objectively labelled as *"цена выше справедливой"* (price above fair).
-5. **Rigorous Financial & Closing Line Audit:** The system tracks user bets, settles outcomes across all football markets, computes Closing Line Value (CLV) against the fair matrix captured pre-kickoff, and reports portfolio ROI and CLV with 95% bootstrap confidence intervals and mandatory sample size variance warnings ($N < 100$).
+Consequently, **SPEC v3** fundamentally transitioned ValueBet Engine from an *automated recommendation generator* into a **high-precision analytical decision-support and quote-auditing system**:
+1. **Fair Exact Score Matrix via Sharp Market Lines:** The fair exact score probability distribution is derived entirely from devigged sharp market closing quotes (O/U 2.5 and 1X2 devig via Shin/multiplicative, bivariate Poisson optimization with $\rho=0$, and $\kappa_{\text{high}}=0.20$ smoothing on diagonal $\ge 2:2$).
+2. **"Все рынки на равных":** All football markets (`exact_score`, `multiscore`, `goals_range`, `totals`, `team_totals`, `btts`, `h2h`) are computed from the fair matrix on equal footing.
+3. **Objective Fortuna Price Evaluation:** Compares user-supplied Polish Fortuna odds against fair market prices. Outcomes where price exceeds fair price by configured margin are objectively labeled *"цена выше справедливой"* (price above fair). Automatic betting recommendations and Kelly sizing are strictly eliminated.
+4. **Transparent User Bet Tracking & CLV Audit:** The user records actual bets manually (`user_bets` table). The engine settles bets by official final scores and calculates Closing Line Value (CLV) against the pre-kickoff fair market matrix snapshot. Portfolio ROI, hit rate, and CLV are audited with 95% bootstrap confidence intervals and mandatory sample size warnings ($N < 100$).
+5. **Robust Security & Degradation Pacing:** Complete prompt injection defenses for scraped news, token-based API authentication, and a three-tier TOA quota degradation ladder (425 / 440 / 450 credits).
 
 ---
 
-## 2. Implementation Overview by Phase
+## 2. Architecture & File Mapping
 
 ```mermaid
 flowchart TD
-    subgraph Data Sources & Ingest
+    subgraph Data Layer & Ingestion
         FD[Football-Data CSVs] --> DB[(SQLite Database)]
-        US[Understat xG Archive] --> DB
-        TOA[The Odds API] -->|Tiered Pacing & Quotas| DB
-        NEWS[Tavily / Brave Search] -->|Injection Defense| LLM[LLM News Briefing]
+        US[Understat Results & xG] --> DB
+        TOA[The Odds API] -->|Pacing Ladder 425/440/450| DB
+        NEWS[Tavily / Brave Search] -->|Injection Delimiters| EXT[News Extractor]
     end
 
-    subgraph Analytical Core
+    subgraph Analytical Engine
         DB --> FM[Fair Pricing Matrix Engine]
-        DB --> STB[Standby Dixon-Coles & Anomaly Flag]
-        DB --> UB[User Bets & Settlement Engine]
-        DB --> CLV[Pre-kickoff CLV Audit & Bootstrap CI]
-        DB --> SCH[APScheduler with Degradation Ladder]
+        DB --> TRK[Settlement & CLV Engine]
+        DB --> SCH[Scheduler Tasks & Workers]
+        EXT --> LLM[Gemini LLM Provider]
+        LLM --> BRF[Factual Briefing Engine]
     end
 
-    subgraph Interfaces & Clients
-        FM & UB & CLV & SCH --> API[FastAPI REST API<br>Bearer Token Auth]
-        API --> MCP[Hermes MCP Server<br>Official FastMCP Tools]
+    subgraph Interfaces & Delivery
+        FM & TRK & BRF & SCH --> API[FastAPI REST API]
         API --> DASH[Streamlit Dashboard<br>Zero Direct DB Access]
+        FM & TRK & BRF --> MCP[FastMCP Python Server]
+        MCP --> HERMES[Hermes Agent]
     end
 ```
 
-### 2.1 Part A: SPEC v3 Core Realignment (`spec-v3`)
-- **Git Branch:** `spec-v3` (branched from `main`).
-- **Core Changes:**
-  - Removed Kelly sizing logic, recommendation generators, and automatic bet placement signals.
-  - Replaced betting terminology across documentation, engine classes, and interfaces with SPEC v3 concepts: *"цена выше справедливой"* (price above fair), fair odds, closing fair matrix.
-  - Updated `SPEC.md` to version 3.0.0 and documented key decisions in `docs/decisions.md`.
-- **CI Verification:** GitHub Actions Run `40251194212` (**Success**: lint-type-test in 1m24s, docker-arm64 in 6m02s).
+### 2.1 File Map: Real vs Legacy Architecture
+All features are implemented in real code without placeholders or fictional imports:
 
-### 2.2 Part B: Phase 6 — News & LLM Context Engine (`phase-6-news`)
-- **Git Branch:** `phase-6-news` (branched from `spec-v3`).
-- **Key Modules:**
-  - `core/news/search.py`: Pluggable search clients for Tavily and Brave Search APIs with monthly quota tracking in `quota_counters`.
-  - `core/news/defense.py`: Multi-stage defense against indirect prompt injections in scraped news content (regex pattern neutralization, structure sanitization).
-  - `core/news/llm.py`: LLM summarization pipeline producing concise Russian briefs focusing on team news, injuries, managerial changes, and tactical context.
-  - Warnings for outdated news (>48h) or missing recent coverage.
-- **CI Verification:** GitHub Actions Run `40252703190` (**Success**: lint-type-test in 1m27s, docker-arm64 in 5m32s).
-
-### 2.3 Part C: Phase 7 — User Bets Tracking & Automation (`phase-7-tracking`)
-- **Git Branch:** `phase-7-tracking` (branched from `phase-6-news`).
-- **Key Modules:**
-  - `core/orm.py`: Added `user_bets` table tracking manual user bets with status lifecycle (`open`, `won`, `lost`, `push`, `void`), P/L, and CLV metrics.
-  - `core/tracking/settlement.py`: Automatic settlement engine supporting exact score, totals (both half lines and integer lines with push), 1X2, BTTS, goals range, team totals, and multiscore.
-  - `core/tracking/clv.py`: Pre-kickoff fair matrix snapshot capture, CLV computation ($CLV = (\text{odds} / \text{odds}_{\text{fair\_close}}) - 1$), portfolio performance aggregation with 95% bootstrap confidence intervals for ROI and CLV, and mandatory small sample size warning ($N < 100$).
-  - `core/tracking/scheduler.py`: APScheduler daemon with graceful degradation ladder based on TOA monthly consumption (Normal -> Degraded at 380 credits -> Hard stop at 450 credits).
-- **CI Verification:** GitHub Actions Run `40254479322` (**Success**: lint-type-test in 1m16s, docker-arm64 in 6m50s).
-
-### 2.4 Part D: Phase 8 — REST API & Hermes MCP Server (`phase-8-api-mcp`)
-- **Git Branch:** `phase-8-api-mcp` (branched from `phase-7-tracking`).
-- **Key Modules:**
-  - `api/`: FastAPI REST service with Bearer token authentication (`API_SECRET_TOKEN`), structured schemas, and comprehensive endpoints:
-    - `GET /matches`: Filter matches by league, horizon, status, and team search.
-    - `GET /matches/{id}/fair-prices`: Full fair price table (1X2, BTTS, totals, exact scores, inny) and methodological caveats.
-    - `POST /fortuna-eval`: Evaluate pasted Fortuna lines, compute section margins (~31% on exact score), flag +EV outcomes.
-    - `POST /user-bets`, `GET /user-bets`: Record manual bets and retrieve history.
-    - `GET /performance`: Portfolio P/L, ROI, CLV, bootstrap CIs, and variance warnings.
-    - `GET /health`: Public system health check with database connectivity and quota gauges.
-  - `mcp_server/`: Official FastMCP Python server exposing 6 tools for Hermes Agent (`get_matches`, `get_fair_prices`, `evaluate_fortuna_odds`, `record_user_bet`, `get_portfolio_stats`, `get_system_status`).
-  - `docs/hermes-setup.md`: Complete setup and operational guide for Hermes Agent.
-- **CI Verification:** GitHub Actions Run `40258335876` (**Success**: lint-type-test in 1m37s, docker-arm64 in 5m34s).
-
-### 2.5 Part E: Phase 9 — Streamlit Analytical Dashboard (`phase-9-dashboard`)
-- **Git Branch:** `phase-9-dashboard` (branched from `phase-8-api-mcp`).
-- **Key Modules:**
-  - `dashboard/api_client.py`: Strict HTTP client (`ApiClient`) ensuring zero direct SQLite access from UI code.
-  - `dashboard/app.py`: Main Streamlit application with navigation and responsible gaming disclaimer.
-  - `dashboard/views/matches.py`: Page 1 — Matches, search, fair odds, integer line push probabilities, caveats.
-  - `dashboard/views/fortuna.py`: Page 2 — Fortuna odds evaluation, section margin metrics, "цена выше справедливой" badges.
-  - `dashboard/views/bets.py`: Page 3 — Manual bet entry form and live audit table.
-  - `dashboard/views/stats.py`: Page 4 — Honest P/L and ROI, average CLV, 95% bootstrap intervals, mandatory $N < 100$ warning, interactive Plotly charts.
-  - `dashboard/views/status.py`: Page 5 — Health status, TOA credit budget progress bar, degradation ladder alert banner.
-  - `tests/test_dashboard.py`: Unit and AppTest test suite verifying zero DB access and full UI interactivity.
-- **CI Verification:** GitHub Actions Run `40259695001` (**Success**: lint-type-test in 1m25s, docker-arm64 in 5m54s).
+| Domain | Real Implemented File | Description |
+|:---|:---|:---|
+| **ORM & DB** | `core/orm.py` | Full schema: `odds_snapshots`, `user_bets`, `results`, `quota_counters`, `llm_calls`, `player_availability` |
+| **Migrations** | `alembic/versions/596dfc9c3bf1_add_h2h_market_and_clv_sources.py` | Schema migration for `h2h` market and pre-kickoff `CLV_SOURCES` |
+| **Value Engine** | `core/value/engine.py` | Evaluates all markets on equal footing; sets `price_above_fair`; preserves `calculate_kelly_quarter_capped` |
+| **Fair Matrix** | `core/value/fair_matrix.py` | Bivariate Poisson exact score matrix with $\rho=0$, $\kappa_{\text{high}}=0.20$ |
+| **Fortuna Parser** | `core/value/fortuna_input.py` | Section margins and Fortuna text parser for Polish interface |
+| **Scheduler Tasks** | `core/scheduler/tasks.py` | `job_poll_odds_snapshots`, `job_poll_events`, `job_refresh_history`, `job_settle_matches_and_clv` |
+| **Scheduler Service** | `core/scheduler/main.py` | FastAPI worker, Bearer token auth, localhost verification, concurrency lock on `/run-sync` |
+| **Pacing Ladder** | `core/scheduler/pacing.py` | Projected burn evaluation; degradation thresholds at 425, 440, and 450 credits |
+| **News Search** | `core/news/search.py` | Tavily client with Brave Search fallback; monthly quota tracking |
+| **News Extractor** | `core/news/extractor.py` | Prompt injection defense with `<untrusted_news_data>` delimiter tag sanitization |
+| **News Briefing** | `core/news/brief.py` | Neutral briefing generation; empty fallback template; anti-betting post-verification |
+| **News CLI** | `core/news/__main__.py` | CLI: `python -m core.news brief --match-id <id>` |
+| **LLM Provider** | `core/llm/provider.py` | `GeminiProvider` using `x-goog-api-key` header; logs failed calls to `llm_calls` |
+| **Bet Settlement** | `core/tracking/settlement.py` | Multi-market settlement logic by official score; integer lines push handling |
+| **CLV Calculation** | `core/tracking/clv.py` | Pre-kickoff fair matrix snapshot lookup; calculates CLV against fair matrix |
+| **Portfolio Stats** | `core/tracking/stats.py` | ROI, hit rate, average CLV, Brier score, 95% bootstrap confidence intervals |
+| **Tracking CLI** | `core/tracking/__main__.py` | CLI: `python -m core.tracking bet add\|list\|settle\|stats` |
+| **REST API** | `api/main.py` | FastAPI application with CORS configuration and toggleable `/docs` |
+| **Health API** | `api/routes/health.py` | Public health check with DB status, pacing state, zero DB URL leaks |
+| **Matches API** | `api/routes/matches.py` | Match querying and full fair pricing distributions across all markets |
+| **Fortuna API** | `api/routes/fortuna.py` | Section overrounds and quote comparison against fair prices |
+| **Tracking API** | `api/routes/tracking.py` | User bet recording (rejects post-kickoff bets) and performance auditing |
+| **FastMCP Server** | `mcp_server/server.py` | 6 tools for Hermes Agent over official Python SDK `mcp` |
+| **Dashboard** | `dashboard/app.py` | Streamlit dashboard with 5 analytical views and zero direct DB access |
+| **Dashboard Views**| `dashboard/views/*` | `matches.py`, `fortuna.py`, `bets.py`, `stats.py`, `status.py` |
+| **Anti-Stub Script**| `scripts/check_no_stubs.py` | Automated verification of 0 forbidden stubs and 11 live contour functions |
+| **E2E Suite** | `tests/test_e2e_stage1.py`, `tests/test_e2e_stage2.py` | Comprehensive multi-channel lifecycle and consistency test suites |
 
 ---
 
-## 3. GitHub Actions CI Matrix Across All Phases
+## 3. Real Quality Gates & Test Suite Execution
 
-| Phase / Branch | Focus | Commit SHA | CI Run ID | lint-type-test | docker-arm64 | Overall Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **SPEC v3** (`spec-v3`) | Product Pivot & Cleanup | `c1c9119` | `40251194212` | 1m24s | 6m02s | **Passed (Green)** |
-| **Phase 6** (`phase-6-news`) | News, LLM & Search Quotas | `f93eb08` | `40252703190` | 1m27s | 5m32s | **Passed (Green)** |
-| **Phase 7** (`phase-7-tracking`)| User Bets, CLV & Scheduler | `6d00df5` | `40254479322` | 1m16s | 6m50s | **Passed (Green)** |
-| **Phase 8** (`phase-8-api-mcp`)| FastAPI & Hermes MCP Server | `4786d63` | `40258335876` | 1m37s | 5m34s | **Passed (Green)** |
-| **Phase 9** (`phase-9-dashboard`)| Streamlit Analytical Dashboard | `43e6fd2` | `40259695001` | 1m25s | 5m54s | **Passed (Green)** |
+All quality checks were run in macOS (Python 3.12, `uv`) against an isolated copy of the database (`/tmp/v3.db`).
 
----
+### 3.1 Pytest Execution (Verbatim Output)
+```text
+============================= test session starts ==============================
+platform darwin -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/karzhaneuski/projects/valuebet-engine
+configfile: pyproject.toml
+plugins: anyio-4.13.1, respx-0.22.3
+collected 364 items
 
-## 4. Quality Gates & Test Suite Health
+tests/test_alembic_match_lineups.py .                                    [  0%]
+tests/test_anomaly_warnings.py ..                                        [  0%]
+tests/test_api.py ...............                                        [  4%]
+tests/test_backtest_multiscore.py ....                                   [  6%]
+tests/test_backtest_phase4b.py .......                                   [  8%]
+tests/test_backtest_rho.py ....                                          [  9%]
+tests/test_check_no_stubs.py ..                                          [  9%]
+tests/test_cli_secrets.py .                                              [  9%]
+tests/test_clv_metric.py .                                               [ 10%]
+tests/test_config.py .......                                             [ 12%]
+tests/test_dashboard.py ..........                                       [ 14%]
+tests/test_dataset_quarantine.py .                                       [ 15%]
+tests/test_dixon_coles.py ................                               [ 19%]
+tests/test_e2e_stage1.py .                                               [ 19%]
+tests/test_e2e_stage2.py .                                               [ 20%]
+tests/test_engine.py ................                                    [ 24%]
+tests/test_football_data_ingest.py ..................................    [ 33%]
+tests/test_fortuna_parser.py ............                                [ 37%]
+tests/test_http_secrets.py .......                                       [ 39%]
+tests/test_inny_bias.py ..                                               [ 39%]
+tests/test_llm.py .......                                                [ 41%]
+tests/test_market_matrix.py ...................................          [ 51%]
+tests/test_mcp.py ..........                                             [ 53%]
+tests/test_multiplicative_devig.py ....                                  [ 54%]
+tests/test_multiscore_engine.py ......                                   [ 56%]
+tests/test_news.py ..............                                        [ 60%]
+tests/test_odds_api_client.py .............                              [ 64%]
+tests/test_pacing.py ..........                                          [ 66%]
+tests/test_persistence_cli.py .............                              [ 70%]
+tests/test_pinnacle_benchmark.py ...s                                    [ 71%]
+tests/test_pl_line_shopping.py ....                                      [ 72%]
+tests/test_postponement.py .................                             [ 77%]
+tests/test_prefilter.py ..........................                       [ 84%]
+tests/test_scheduler.py ......                                           [ 85%]
+tests/test_scheduler_tasks.py ...........                                [ 88%]
+tests/test_soft_vs_sharp_totals.py ........                              [ 91%]
+tests/test_standby_model.py s                                            [ 91%]
+tests/test_tracking.py ...........                                       [ 94%]
+tests/test_understat_ingest.py ...................ss                     [100%]
 
-Every commit across all phases strictly satisfied all local and remote quality gates:
-1. `uv run ruff check .`: **0 violations, all checks passed**.
-2. `uv run mypy`: **0 errors across 97 source files**.
-3. `uv run mypy --strict core/model core/backtest core/value`: **0 errors across 17 source files**.
-4. `uv run pytest`: **354 passed, 3 skipped in 34.43s** (0 failures).
-5. Secrets Scanning: History and working tree free of credentials (verified against `ASSIGNMENT_PATTERN`).
-6. Zero Direct Database Access: Formally enforced via unit test `test_dashboard_zero_direct_sqlite_access`.
-
----
-
-## 5. Architectural Directory Layout
-
-```
-valuebet-engine/
-├── alembic/                      # Database migrations
-│   └── versions/                 # Versioned migration scripts (including user_bets, quota_counters)
-├── api/                          # FastAPI REST Application
-│   ├── routes/                   # Matches, fair prices, fortuna eval, tracking, health
-│   ├── auth.py                   # Bearer token authentication
-│   ├── db.py                     # Database session dependency injection
-│   ├── main.py                   # FastAPI application factory
-│   └── schemas.py                # Pydantic v2 request/response models
-├── core/                         # Core Analytical Engine
-│   ├── backtest/                 # Backtesting framework & walk-forward simulation
-│   ├── ingest/                   # Football-data, Understat, The Odds API (pacing & quotas)
-│   ├── model/                    # Dixon-Coles standby model, markets, bivariate Poisson
-│   ├── news/                     # Tavily/Brave search, prompt injection defense, LLM brief
-│   ├── tracking/                 # Bet settlement, pre-kickoff CLV, bootstrap CIs, APScheduler
-│   ├── value/                    # Devigging (Shin/multiplicative), fair matrix builder
-│   ├── db.py                     # SQLAlchemy engine factory
-│   ├── http.py                   # Resilient HTTP client with retry, secrets masking
-│   └── orm.py                    # SQLAlchemy ORM declarative models
-├── dashboard/                    # Streamlit Analytical UI (Strict REST API client)
-│   ├── views/                    # 5 Dedicated Views (Matches, Fortuna, Bets, Stats, Status)
-│   ├── api_client.py             # REST API Client (zero SQLite / ORM imports)
-│   └── app.py                    # Streamlit entry point with sidebar & responsible gaming
-├── docs/                         # Architecture, Decisions & Guides
-│   ├── decisions.md              # Architectural Decision Records (ADRs)
-│   ├── data-sources.md           # External data provider specifications and quotas
-│   └── hermes-setup.md           # Hermes Agent MCP configuration guide
-├── mcp_server/                   # Hermes Agent MCP Server (Official Python SDK)
-│   ├── server.py                 # FastMCP server with 6 tools
-│   └── tools.py                  # Tool execution handlers
-├── reports/                      # Verification Reports & Historical Analysis
-│   ├── backtest/                 # Historical backtest findings (Phase 4b)
-│   ├── self_review_phase8.md     # Phase 8 Self-Review
-│   ├── self_review_phase9.md     # Phase 9 Self-Review
-│   ├── PROGRESS_v3.md            # Master phase tracking checklist
-│   └── SUMMARY_v3.md             # This document
-├── tests/                        # Comprehensive Pytest Suite (354 tests)
-│   ├── test_api.py               # REST API endpoint unit & integration tests
-│   ├── test_dashboard.py         # AppTest UI tests & zero-DB architectural guardrail
-│   ├── test_mcp.py               # MCP tool tests
-│   ├── test_news.py              # Search client, prompt defense & news extraction tests
-│   ├── test_tracking.py          # Settlement across all markets, CLV & bootstrap tests
-│   └── ...                       # Model, fair matrix, ingest, and quota test suites
-├── config.yaml                   # Application configuration
-├── pyproject.toml                # Project metadata & dependencies (uv)
-└── SPEC.md                       # Product Specification (v3.0.0)
+======================== 361 passed, 3 skipped in 25.01s ========================
 ```
 
+### 3.2 Anti-Stub Checker (`scripts/check_no_stubs.py`)
+```text
+=== Running Anti-Stub & Live Contour Checks ===
+
+PASSED: Checked 4 directories for forbidden stub patterns.
+PASSED: Verified definition and external call for all 11 live contour functions:
+  ✓ job_poll_odds_snapshots        (defined in core/scheduler/tasks.py)
+  ✓ job_poll_events                (defined in core/scheduler/tasks.py)
+  ✓ job_refresh_history            (defined in core/scheduler/tasks.py)
+  ✓ job_settle_matches_and_clv     (defined in core/scheduler/tasks.py)
+  ✓ job_prefilter_candidates       (defined in core/scheduler/tasks.py)
+  ✓ job_search_news_windows        (defined in core/scheduler/tasks.py)
+  ✓ search_news_for_match          (defined in core/news/search.py)
+  ✓ extract_player_news            (defined in core/news/extractor.py)
+  ✓ generate_match_brief           (defined in core/news/brief.py)
+  ✓ settle_user_bet                (defined in core/tracking/settlement.py)
+  ✓ calculate_user_bet_clv         (defined in core/tracking/clv.py)
+
+All anti-stub verification gates passed successfully.
+```
+
+### 3.3 Static Quality Gates
+- **Ruff linter**: `uv run ruff check .` -> `All checks passed!`
+- **Mypy type checker**: `uv run mypy` -> `Success: no issues found in 101 source files`
+- **Mypy strict check**: `uv run mypy --strict core/model core/backtest core/value core/news core/llm core/tracking core/scheduler` -> `Success: no issues found in 34 source files`
+- **Alembic migration & schema parity**:
+  - `uv run alembic upgrade head` -> All 10 migrations upgraded cleanly.
+  - `uv run alembic check` -> `No new upgrade operations detected.`
+
 ---
 
-## 6. Conclusion
+## 4. Honest Scope & "Не реализовано"
 
-The transformation of **ValueBet Engine** under **SPEC v3** is 100% complete. The system now delivers:
-- Mathematically rigorous fair pricing derived from sharp market closing consensus.
-- Complete independence from unviable prediction models.
-- Deep defensive protections against prompt injection and API budget exhaustion.
-- Transparent and honest user betting performance auditing (CLV, bootstrap CIs, variance warnings).
-- Multi-channel analytical interfaces: programmatic REST API, Hermes AI Agent MCP integration, and an interactive Streamlit dashboard.
+To maintain absolute transparency and integrity:
+
+1. **Реальные сетевые запросы к платным API во время тестов**:
+   - Во всех модульных и E2E-тестах используются моки (`respx`, фикстуры, `TestClient`). Это сделано умышленно согласно строгим проектным ограничениям (запрет на расходование квот The Odds API, Tavily, Brave, Gemini во время разработки и в CI).
+2. **Автоматическое выставление ставок у букмекеров**:
+   - Полностью отсутствует в соответствии с дизайн-принципами SPEC v3 и польским законодательством (Ustawa o grach hazardowych). Все ставки регистрируются пользователем вручную.
+3. **Теневой режим (`shadow_llm`)**:
+   - Отложен в `docs/decisions.md` до накопления репрезентативной выборки ($\ge 100$ матчей) в живом логе `llm_calls`. Схема базы данных полностью подготовлена.
+4. **Автоматический парсинг сайта Fortuna**:
+   - Сайт Fortuna защищён Cloudflare Turnstile / anti-bot. Автоматический веб-скрейпинг не реализован; используется ручная вставка текста страницы события в поле дашборда или через CLI/API (SPEC §5).
+
+---
+
+## 5. Production Deployment & Migration Guide
+
+### Шаг 1. Миграция базы данных
+Применить Alembic миграции на боевой базе данных:
+```bash
+uv run alembic upgrade head
+```
+
+### Шаг 2. Переменные окружения (.env)
+Сконфигурировать необходимые токены и ключи доступа:
+```bash
+DATABASE_URL=sqlite:///./valuebet.db
+API_SECRET_TOKEN=<your-secure-secret-token>
+GEMINI_API_KEY=<your-google-gemini-key>
+ODDS_API_KEY=<your-the-odds-api-key>
+TAVILY_API_KEY=<your-tavily-search-key>
+BRAVE_SEARCH_API_KEY=<optional-brave-key>
+CORS_ORIGINS=http://localhost:8501,http://127.0.0.1:8501
+ENABLE_API_DOCS=false
+```
+
+### Шаг 3. Запуск сервиса планировщика (Scheduler)
+Фоновый демон сбора данных, префильтрации кандидатов и расчёта ставок:
+```bash
+uv run python -m core.scheduler.main
+```
+Или однократный запуск всех заданий в тестовом режиме:
+```bash
+uv run python -m core.scheduler.main --dry-run
+```
+
+### Шаг 4. Запуск REST API
+API сервер для взаимодействия с клиентами и Hermes Agent:
+```bash
+uv run uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+### Шаг 5. Запуск Streamlit Dashboard
+Аналитический интерфейс для пользователя:
+```bash
+uv run streamlit run dashboard/app.py --server.port 8501
+```
+
+### Шаг 6. Интеграция с Hermes Agent (MCP)
+В конфигурацию Hermes Agent (`hermes.json`) добавить MCP сервер:
+```json
+{
+  "mcpServers": {
+    "valuebet": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "mcp_server.server"],
+      "cwd": "/path/to/valuebet-engine"
+    }
+  }
+}
+```
+Инструменты FastMCP (`get_upcoming_matches`, `get_match_fair_prices`, `evaluate_fortuna_odds`, `record_user_bet`, `get_user_performance`, `get_news_brief`) будут автоматически доступны агенту.

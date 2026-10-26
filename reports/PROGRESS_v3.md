@@ -1,103 +1,101 @@
-# Progress Log: SPEC v3 & Phases 6–9 Implementation
+# Master Progress Log: SPEC v3 & Phases 6–9 Live Realization
 
-**Current Status**: Part A Completed (branch `spec-v3`). Ready for push & CI verification before Part B.  
-**Branch Stack**:
-- `main` (`afeb49d`)
-  └── `spec-v3` (commits: `8335d44` .. `a5a8cc1`)
-      └── `phase-6-news` (pending Part B)
-          └── `phase-7-tracking` (pending Part C)
-              └── `phase-8-api-mcp` (pending Part D)
-                  └── `phase-9-dashboard` (pending Part E)
+**Branch**: `v3-integration`  
+**Date**: 2026-10-26  
+**Status**: Completed. All quality gates, anti-stub checks, and E2E suites passing 100%.
 
 ---
 
-## Part A: SPEC v3 & Code Alignment (`spec-v3`)
+## Stage 1: Core Engine, Scheduler, News, Tracking & Verification (1.1 – 1.8)
 
-- [x] **A1. Decisions Documentation**:
-  - `docs/decisions.md`: Added section `## Product pivot: analytics tool (SPEC v3)` covering all 7 design pivot decisions.
-  - Commit: `8335d44` (`SPEC v3: document analytics tool pivot decision`).
-- [x] **A2. Specification Rewrite**:
-  - `SPEC.md`: Rewritten to v3 with `Changelog v3` at top, preserving `Changelog v2 (Архив)` below it.
-  - Commit: `0ee993c` (`SPEC v3: rewrite specification to v3 with analytics pivot`).
-- [x] **A3. Prompts & Checklists Update**:
-  - `PROMPTS.md`: Updated tasks and review checklists for Phases 6–11.
-  - Commit: `4402c25` (`SPEC v3: update PROMPTS.md phases 6-11 tasks and checklists`).
-- [x] **A4. Code Alignment**:
-  - Value engine & CLI: `price_above_fair` concept, removed Kelly / "рекомендация" from table output, "Выше спр." and notes/caveats display.
-  - Lineups: strict whole-name normalized matching (`normalize_player_name`, `match_key_player`), missing lineups flagged as "нет данных о составе".
-  - Past match protection: `commence_time_utc = NULL` validated against today's date and match status (`finished`, `live`, `in_play`).
-  - Prefilter idempotency: prior accepted matches carried over across next-day reruns.
-  - Unit tests updated (`tests/test_engine.py`, `tests/test_persistence_cli.py`).
-  - Commit: `5a7d57b` (`SPEC v3: align value engine, CLI output, and prefilter safeguards`).
-- [x] **A5. Polish Bookmakers Line Shopping Check**:
-  - `scripts/pl_line_shopping_check.py`: parsing, Pinnacle totals devigging, MaxC margin calculation, comparison against fair prices.
-  - Fixture: `tests/fixtures/pl_books_synthetic.txt`.
-  - Test: `tests/test_pl_line_shopping.py` (4 passed).
-  - Report: `reports/pl_line_shopping.md`.
-  - Commit: `f50bed1` (`SPEC v3: implement Polish line shopping check script and test`).
-- [x] **A6. Margin Study & Phase 5 Migration Refinements**:
-  - `scripts/fortuna_margin_study.py` & `reports/fortuna_margin_study.md`: labeled 2026-10-25 matrix as Fortuna quotes (not sharp market, table $p_{\text{fair}} \times \text{odds}$ not representative).
-  - `reports/phase5_report.md`: noted initial constraint `uq_recommendations_idempotency` was dropped in migration `e5f1b2c3d4e5` in favor of partial unique index `uq_recommendations_active`.
-  - Commit: `a5a8cc1` (`SPEC v3: refine margin study caveats and phase 5 migration notes`).
-- [x] **A7. Self-Review & Quality Gates**:
-  - Report: `reports/self_review_part_a.md`.
-  - Tests: `285 passed, 3 skipped, 1 warning in 30.91s`.
-  - Ruff: clean.
-  - Mypy: clean (70 source files).
-  - Strict mypy: clean (17 source files).
+- [x] **1.1. Database Schema & Migration**:
+  - `core/orm.py`: Added `"h2h"` to `ODD_MARKETS`; added `"team_totals"`, `"h2h"` to `RECO_MARKETS`; added `"returning"` to `PLAYER_STATUSES`; added `"fair_market_matrix"`, `"pinnacle_correct_score"`, `"football_data_closing"` to `CLV_SOURCES`.
+  - Migration `alembic/versions/596dfc9c3bf1_add_h2h_market_and_clv_sources.py` generated and tested from scratch.
+  - Verification: `alembic upgrade head` and `alembic check` clean.
 
----
+- [x] **1.2. Value Engine Pivot ("Все рынки на равных")**:
+  - `core/value/engine.py`: Evaluates `exact_score`, `multiscore`, `goals_range`, `totals`, `team_totals`, `btts`, `h2h`.
+  - Sets `price_above_fair = True` objectively based on edge threshold without generating "recommendations".
+  - Backward compatibility: Preserved `calculate_kelly_quarter_capped(p_fair, item.odds)` for existing callers.
+  - Verification: All 16 unit tests in `tests/test_engine.py` pass.
 
-## Part B: Phase 6 — News & LLM (`phase-6-news`)
+- [x] **1.3. Scheduler Real Tasks & TOA Ingestion**:
+  - `core/scheduler/tasks.py`:
+    - `job_poll_odds_snapshots`: Active tier windows T-24 (23-25h before kickoff) and T-3 (2.5-3.5h), 15m delay tolerance, 1 retry, pacing degradation (425/440/450).
+    - `job_poll_events`: Free `/events` polling, detects kickoff shift > 15 min, flags `postponed_suspected`, triggers T-4 recheck.
+    - `job_refresh_history`: Results + xG from Understat for top 5, TOA `/scores` for UCL, sets finished status.
+    - `job_settle_matches_and_clv`: Settle open bets and compute pre-kickoff CLV against closing fair market matrix.
+    - `run_all_jobs_sync`: Synchronous execution runner for all scheduled jobs.
+  - `core/scheduler/main.py`: Secured `/run-sync` with localhost/127.0.0.1 validation, Bearer token verification, concurrency lock (`threading.Lock`), background scheduler.
+  - Verification: `tests/test_scheduler.py` (6 passed).
 
-- [x] B1. Create branch `phase-6-news` from `spec-v3`.
-- [x] B2. `core/llm`: Provider interface (`LLMProvider`) with `generate_text` and `generate_structured`.
-- [x] B3. `core/llm`: `GeminiProvider` implementation with logging into `llm_calls` table and retries.
-- [x] B4. `core/news`: Search client (Tavily with Brave fallback) respecting search quotas.
-- [x] B5. Extraction schema with prompt-injection defense (`published_at`, `player`, `status`, etc.).
-- [x] B6. User brief (`core/news/brief.py`) in Russian without price alterations.
-- [x] B7. Flag "новость свежее снимка рынка" comparing `published_at` against market snapshot timestamp.
-- [x] B8. Unit tests with mocked providers (`tests/test_news.py`, `tests/test_llm.py`).
-- [x] B9. Self-review report `reports/self_review_phase6.md`.
-- [x] B10. Push & verify green CI.
-  - Commit: `45100b7` (`Phase 6: implement news extraction, LLM provider, search clients, and freshness check`).
-  - GitHub Actions run: `40252703190` (`success` - lint-type-test 1m19s, docker-arm64 7m4s).
+- [x] **1.4. News Pipeline & Injection Defense**:
+  - `core/news/extractor.py`: Scraped text isolated inside `<untrusted_news_data>` delimiters; `_sanitize_untrusted_input` strips delimiter tags to prevent prompt injection escapes; 1 retry before graceful empty list fallback.
+  - `core/news/brief.py`: Returns exact template `"По матчу {home_team} — {away_team} подтверждённых данных о составах нет."` on empty news; post-verification `verify_and_sanitize_brief` detects betting words and probability percentages, substituting neutral template.
+  - `core/news/__main__.py`: CLI created supporting `brief --match-id <id> | --match "A - B" --window T-24h|T-3h [--dry-run]`, enforces weekly candidate check.
+  - Verification: `tests/test_news.py` (14 passed).
+
+- [x] **1.5. Gemini LLM Provider**:
+  - `core/llm/provider.py`: `GeminiProvider` sends API key via `x-goog-api-key` header (never query param); logs failed calls to `llm_calls` table with `ERROR: <msg>`.
+  - Verification: `tests/test_llm.py` (7 passed).
+
+- [x] **1.6. Tracking & Settlement**:
+  - `core/tracking/settlement.py`: Canonical outcome keys, side resolution via `match_team_side`, unknown market returns `"void"`.
+  - `core/tracking/clv.py`: Pre-kickoff fair matrix snapshot lookup; calculates CLV against fair matrix; rejects post-kickoff evaluation for scheduled matches.
+  - `core/tracking/__main__.py`: CLI created with `bet add`, `bet list`, `bet settle`, `bet stats` in Russian. Rejects bet placement after kickoff.
+  - Verification: `tests/test_tracking.py` (11 passed).
+
+- [x] **1.7. Stage 1 E2E Test**:
+  - `tests/test_e2e_stage1.py`: Full lifecycle from pre-match (T-48 schedule, T-24 poll, fair matrix, real Fortuna fixture evaluation, user bet placement) to post-match (T-3 closing snapshot, kickoff, finish, settlement, pre-kickoff CLV calculation, performance metrics).
+  - Verification: `tests/test_e2e_stage1.py` passed (1 passed in 0.86s).
+
+- [x] **1.8. Anti-Stub Verification**:
+  - `scripts/check_no_stubs.py`: Scans `core`, `api`, `mcp_server`, `dashboard` for forbidden stubs (`TODO`, `FIXME`, placeholder dicts, `In production, invokes...`). Verifies definition and external call for all 11 live contour functions.
+  - Verification: Passes 100% cleanly.
 
 ---
 
-## Part C: Phase 7 — Tracking & Scheduler (`phase-7-tracking`)
+## Stage 2: Interfaces, Security, Dashboard & Full Consistency (2.1 – 2.8)
 
-- [x] C1. Create branch `phase-7-tracking` from `phase-6-news`.
-- [x] C2. TOA tier snapshotting by budget (~393 credits/30d), QuotaGuard cost tracking, degradation ladder.
-- [x] C3. Match results fallback (football-data for top-5, TOA `/scores` for UCL).
-- [x] C4. `user_bets` tracking and settlement by official final score across all markets.
-- [x] C5. Pre-kickoff CLV calculation against closing fair market matrix (`clv_source="fair_market_matrix"` / `"pinnacle_correct_score"`).
-- [x] C6. Metrics & statistics (P/L, ROI with variance warning, CLV, hit rate, 95% bootstrap CI).
-- [x] C7. APScheduler tasks with `--dry-run` mode.
-- [x] C8. Unit tests (`tests/test_tracking.py`, `tests/test_scheduler.py`).
-- [x] C9. Self-review report `reports/self_review_phase7.md`.
-- [x] C10. Push & verify green CI (Run `40254479322` success: lint-type-test in 1m16s, docker-arm64 in 6m50s).
+- [x] **2.1. Secrets & CI**:
+  - `core/http.py`: `register_runtime_secrets()` registers all runtime secrets from `.env`.
+  - Entrypoints updated to call `register_runtime_secrets()`: `api.main`, `mcp_server.server`, `core.scheduler.main`, `core.news.__main__`, `core.tracking.__main__`, `core.value.__main__`.
+  - `.github/workflows/ci.yml`:
+    - Added `v3-*` branch trigger.
+    - Secrets scan made case-insensitive with allowlist for code patterns (`sec.api_secret_token`, `your-secret-api-token`) and scanning for `tvly-`, `AIza`, `BSA`.
+    - Added step `Check no stubs` running `uv run python scripts/check_no_stubs.py` before pytest.
+    - Added step `Mypy (strict on core)`.
+  - `tests/test_http_secrets.py`: Unit tests verifying redaction of Gemini keys, Brave tokens, Tavily keys, and custom secret tokens.
 
----
+- [x] **2.2. Line Shopping Report**:
+  - `reports/pl_line_shopping.md`: Completed report with summary metrics, per-match comparison, synthetic MaxC margin compression, and disclaimer on synthetic fixture.
 
-## Part D: Phase 8 — API & MCP (`phase-8-api-mcp`)
+- [x] **2.3. Health Endpoint Security & Pacing**:
+  - `api/routes/health.py`:
+    - Returns `status: "degraded"` when DB or essential tables are inaccessible.
+    - Returns `toa_credits_remaining: null` on error (never 0).
+    - Omits `database_url` (returns `null`).
+    - Sources pacing state from backend (`evaluate_degradation_state` in `core.scheduler.pacing`).
+  - Verification: `tests/test_api.py` includes health failure and public endpoint checks.
 
-- [x] D1. Create branch `phase-8-api-mcp` from `phase-7-tracking`.
-- [x] D2. FastAPI (`api/`): Endpoints for matches, fair prices, fortuna eval, user bets, performance, health.
-- [x] D3. Bearer token auth via `API_SECRET_TOKEN` (all endpoints except `/health`).
-- [x] D4. MCP Server (`mcp_server/`) on official Python SDK `mcp` with tools for Hermes Agent.
-- [x] D5. Documentation `docs/hermes-setup.md`.
-- [x] D6. Unit tests (`tests/test_api.py`, `tests/test_mcp.py`).
-- [x] D7. Self-review report `reports/self_review_phase8.md`.
-- [x] D8. Push & verify green CI (Run `40258335876` success: lint-type-test in 1m37s, docker-arm64 in 5m34s).
+- [x] **2.4. MCP Server Validation & Enhancements**:
+  - `mcp_server/server.py`:
+    - `record_user_bet`: Validates market and canonical outcome key, rejects past-kickoff bets (`now >= commence_time`), auto-populates `p_fair_at_placement`.
+    - `get_news_brief`: Handles team query ambiguity by returning candidates, includes caveat $\kappa_{\text{high}} = 0.20$.
+  - Verification: `tests/test_mcp.py` (10 passed).
 
----
+- [x] **2.5. FastMCP Tools**:
+  - All 6 tools verified: `get_upcoming_matches`, `get_match_fair_prices`, `evaluate_fortuna_odds`, `record_user_bet`, `get_user_performance`, `get_news_brief`.
 
-## Part E: Phase 9 — Dashboard & Final Summary (`phase-9-dashboard`)
+- [x] **2.6. API Security & Config**:
+  - `api/main.py`: CORS explicit origins `["http://localhost:8501", "http://127.0.0.1:8501"]` or `CORS_ORIGINS`; `allow_credentials=False` if wildcard; `/docs` behind `ENABLE_API_DOCS` flag.
 
-- [x] E1. Create branch `phase-9-dashboard` from `phase-8-api-mcp`.
-- [x] E2. Streamlit dashboard (`dashboard/`): 5 pages communicating strictly via REST API (`dashboard/api_client.py`).
-- [x] E3. AppTest / API mock tests (`tests/test_dashboard.py` — 9 passed, architectural zero-DB check).
-- [x] E4. Self-review report `reports/self_review_phase9.md`.
-- [x] E5. Push & verify green CI (Run `40259695001` success: lint-type-test in 1m25s, docker-arm64 in 5m54s).
-- [x] E6. Final report `reports/SUMMARY_v3.md` and chat summary.
+- [x] **2.7. Dashboard Alignment & Unit Contract**:
+  - `dashboard/app.py`: Full SPEC §11 responsible gaming disclaimer.
+  - `dashboard/views/stats.py`: Formats ROI as `f"{roi:+.1f}%"` directly from percentage returned by API; verified via TestClient contract test.
+  - `dashboard/views/status.py`: Degradation banner sourced directly from `/health` (`pacing_stage`, `pacing_degraded`, without hardcoded 380 threshold).
+  - `dashboard/views/fortuna.py`: "🟢 ВЫШЕ справедливой" badge based on `price_above_fair`.
+
+- [x] **2.8. Stage 2 E2E Integration Test**:
+  - `tests/test_e2e_stage2.py`: Verifies multi-channel consistency across REST API (FastAPI TestClient), MCP tools in-process, and Streamlit Dashboard (AppTest). All channels report identical settled bets, turnover, P/L, ROI, and sample size warnings.
+  - Verification: `tests/test_e2e_stage2.py` passed (1 passed in 2.05s).

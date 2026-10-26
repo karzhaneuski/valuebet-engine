@@ -861,7 +861,7 @@ reports/backtest/4b_hybrid_market_1x2.json, reports/backtest/4b_hybrid_all_marke
      - The word "рекомендация" (recommendation) and recommended bet sizing (Kelly criterion) are removed from user output.
 4. **User Bet Tracking & Transparent Settlement**:
    - Users record their own actual placed bets (`user_bets` table).
-   - The engine automatically calculates the closing line value (CLV) against the fair market price from the latest market snapshot strictly prior to kickoff ($\text{CLV}_{\text{fair}} = \text{odds}_{\text{placed}} \cdot p_{\text{fair, closing}} - 1$).
+   - The engine automatically calculates the closing line value (CLV) against the fair market price from the latest market snapshot strictly prior to kickoff ($\text{CLV}_{\text{fair}} = \text{odds}_{\text{placed}} \cdot p_{\text{fair, closing}} + p_{\text{push}} \cdot 1.0 - 1.0$).
    - Realized bet P/L and CLV statistics (by league, market, timeframe, with bootstrap confidence intervals) provide an honest audit of user decision quality.
 5. **Dixon-Coles Standby Role & Anomaly Detection**:
    - Dixon-Coles model remains an emergency zero-alpha fallback when sharp market odds are entirely missing.
@@ -870,5 +870,38 @@ reports/backtest/4b_hybrid_market_1x2.json, reports/backtest/4b_hybrid_all_marke
    - Explicit disclaimer in CLI, API, MCP, and Dashboard: the tool provides analytical calculations and does not guarantee betting profit; historical validation shows no systematic alpha when betting solely against Fortuna.
 7. **Research Branch: Polish Bookmakers Line Shopping**:
    - An experimental research script outside the primary betting loop evaluates quotes across legal Polish bookmakers (`data/manual/pl_books/*.txt`) against Pinnacle devigged totals to quantify synthetic line shopping opportunities.
+8. **Теневой режим отложен**:
+   - Теневой режим модели (вариант `shadow_llm`) отложен до накопления реальной выборки (минимум 100 матчей) в теневом логе.
+   - В кодовой базе сохранена схема базы данных (таблица `llm_calls`, колонка `variant` в `recommendations`) и архитектурная заготовка для фазы 10.
+   - До накопления репрезентативной эмпирической выборки теневые оценки не вычисляются и не влияют на боевой контур.
 
-**Reason**: Empirical results of Phases 4, 4b, 5 (`reports/fortuna_margin_study.md`, `reports/soft_vs_sharp_totals.md`, `reports/phase5_report.md`); project owner product pivot decision for SPEC v3.
+---
+
+## 2026-10-26 — SPEC v3 Implementation Details & Autonomous Verification
+
+**Decision**:
+1. **Database Schema & Enums Alignment**:
+   - Expanded `RECO_MARKETS` to include `team_totals` and `h2h`.
+   - Expanded `ODD_MARKETS` to include `h2h`.
+   - Expanded `CLV_SOURCES` to include `fair_market_matrix`, `pinnacle_correct_score`, and `football_data_closing`.
+   - Migration `596dfc9c3bf1_add_h2h_market_and_clv_sources.py` added and verified via `alembic upgrade head` and `alembic check`.
+2. **TOA Snapshot Tier Windows & Budget Pacing**:
+   - Free `/events` polling monitors schedule and kickoff postponements (>15 min shift flags `postponed_suspected`, triggers T-4 recheck).
+   - Paid odds snapshots (`job_poll_odds_snapshots`) capture both `totals` and `h2h` in T-24 (23–25h) and T-3 (2.5–3.5h) windows with 15m delay tolerance and 1 retry.
+   - Budget pacing thresholds enforced: 425 credits (cap correct score to 5/wk), 440 credits (disable T-3 h2h), 450 credits (hard stop).
+3. **News Pipeline & LLM Security**:
+   - Direct prompt-injection defense via `<untrusted_news_data>` delimiters with strict stripping of injection tags in inputs (`_sanitize_untrusted_input`).
+   - Gemini API authentication uses `x-goog-api-key` HTTP header (never query parameters).
+   - Failed LLM calls are logged in `llm_calls` table with `ERROR: <msg>`.
+   - Post-verification step `verify_and_sanitize_brief` detects prohibited betting recommendations and replaces them with neutral templates.
+   - Empty news returns exact template: `"По матчу {home_team} — {away_team} подтверждённых данных о составах нет."`.
+4. **Transparent Bet Tracking & CLV Computation**:
+   - Settlement logic in `core/tracking/settlement.py` correctly parses all markets and outcome keys, handling pushes for integer totals and `inny` score overflows.
+   - Pre-kickoff CLV is calculated against the latest fair market matrix strictly prior to kickoff.
+   - Post-kickoff bet placement is strictly rejected across REST API, MCP tools, and CLI.
+5. **Unified Unit Contract**:
+   - REST API returns percentage values directly (e.g. `roi: -20.0`), dashboard formats them as `f"{roi:+.1f}%"` without redundant multiplication.
+6. **Zero Forbidden Stubs**:
+   - Verified via `scripts/check_no_stubs.py`: 0 stubs across all core, api, mcp, dashboard modules. All 11 live contour functions are fully implemented and called externally.
+
+**Reason**: Fully autonomous implementation and verification of SPEC v3 and Phases 6–9.
