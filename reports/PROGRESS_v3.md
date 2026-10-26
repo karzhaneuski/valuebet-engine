@@ -99,5 +99,5 @@
 - [x] E2. Streamlit dashboard (`dashboard/`): 5 pages communicating strictly via REST API (`dashboard/api_client.py`).
 - [x] E3. AppTest / API mock tests (`tests/test_dashboard.py` — 9 passed, architectural zero-DB check).
 - [x] E4. Self-review report `reports/self_review_phase9.md`.
-- [ ] E5. Push & verify green CI.
-- [ ] E6. Final report `reports/SUMMARY_v3.md` and chat summary.
+- [x] E5. Push & verify green CI (Run `40259695001` success: lint-type-test in 1m25s, docker-arm64 in 5m54s).
+- [x] E6. Final report `reports/SUMMARY_v3.md` and chat summary.
