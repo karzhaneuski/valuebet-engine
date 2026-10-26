@@ -31,12 +31,15 @@ _SECRET_VALUE_PATTERNS = [
 ]
 
 # generic KEY=VALUE / "KEY": "VALUE" forms for all our env names
-_ENV_NAMES = ("ODDS_API_KEY|API_FOOTBALL_KEY|TAVILY_API_KEY|"
-              "BRAVE_SEARCH_API_KEY|GEMINI_API_KEY|API_TOKEN|"
-              "api_?key|apiKey|token")
+_ENV_NAMES = (
+    r"\b(ODDS_API_KEY|API_FOOTBALL_KEY|TAVILY_API_KEY|"
+    r"BRAVE_SEARCH_API_KEY|GEMINI_API_KEY|API_SECRET_TOKEN|API_TOKEN|"
+    r"api_?key|apiKey|token)\b"
+)
 ASSIGNMENT_PATTERN = re.compile(
-    r"(" + _ENV_NAMES + r")[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9._\-]{20,}",
-    re.IGNORECASE)
+    _ENV_NAMES + r"[\"']?\s*[:=]\s*[\"']?(?!your-|test-|example-|sec\.)[A-Za-z0-9._\-]{20,}",
+    re.IGNORECASE,
+)
 
 _redact_values: list[str] = []
 

@@ -43,7 +43,7 @@ flowchart LR
       ],
       "env": {
         "DATABASE_URL": "sqlite:////tmp/v3.db",
-        "API_SECRET_TOKEN": "your-secret-api-token"
+        "API_SECRET_TOKEN": "<API_SECRET_TOKEN>"
       }
     }
   }

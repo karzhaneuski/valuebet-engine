@@ -19,8 +19,8 @@ def get_expected_token() -> str:
     if env_token:
         return env_token.strip()
     sec = Secrets()
-    token = sec.api_secret_token or sec.api_token
-    return token.strip() if token else ""
+    conf_token = sec.api_secret_token or sec.api_token
+    return conf_token.strip() if conf_token else ""
 
 
 def verify_bearer_token(
