@@ -89,7 +89,7 @@
 - [x] D5. Documentation `docs/hermes-setup.md`.
 - [x] D6. Unit tests (`tests/test_api.py`, `tests/test_mcp.py`).
 - [x] D7. Self-review report `reports/self_review_phase8.md`.
-- [ ] D8. Push & verify green CI.
+- [x] D8. Push & verify green CI (Run `40258335876` success: lint-type-test in 1m37s, docker-arm64 in 5m34s).
 
 ---
 
