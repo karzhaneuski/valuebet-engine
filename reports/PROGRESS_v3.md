@@ -59,7 +59,9 @@
 - [x] B7. Flag "новость свежее снимка рынка" comparing `published_at` against market snapshot timestamp.
 - [x] B8. Unit tests with mocked providers (`tests/test_news.py`, `tests/test_llm.py`).
 - [x] B9. Self-review report `reports/self_review_phase6.md`.
-- [ ] B10. Push & verify green CI.
+- [x] B10. Push & verify green CI.
+  - Commit: `45100b7` (`Phase 6: implement news extraction, LLM provider, search clients, and freshness check`).
+  - GitHub Actions run: `40252703190` (`success` - lint-type-test 1m19s, docker-arm64 7m4s).
 
 ---
 
