@@ -21,16 +21,17 @@ def db_url(tmp_path):
     return url
 
 
-def _set_used(db_url: str, used: int) -> None:
+def _set_used(db_url: str, used: int, now: dt.datetime | None = None) -> None:
+    now_dt = now or dt.datetime.now(dt.UTC)
     with session_scope(db_url) as s:
-        period = dt.datetime.now(dt.UTC).strftime("%Y-%m")
+        period = now_dt.strftime("%Y-%m")
         row = s.scalars(select(QuotaCounter).where(
             QuotaCounter.provider == "toa",
             QuotaCounter.period == period)).first()
         if row is None:
             s.add(QuotaCounter(provider="toa", period=period,
                                credits_used=used,
-                               updated_at_utc=dt.datetime.now(dt.UTC)))
+                               updated_at_utc=now_dt))
         else:
             row.credits_used = used
 
@@ -118,16 +119,18 @@ def test_fail_keeps_reservation_conservative(db_url) -> None:
 def test_pacing_state_injectable_clock(db_url) -> None:
     config = load_config()
     guard = QuotaGuard(db_url, config)
-    _set_used(db_url, 100)
+    _set_used(db_url, 100, now=dt.datetime(2026, 10, 2, 12, tzinfo=dt.UTC))
     # day 2 of a 31-day month: projection 100/2*31 = 1550 > 475 -> degrade
     assert guard.pacing_state(now=dt.datetime(2026, 10, 2, 12,
                                               tzinfo=dt.UTC)) == "degrade"
     # same usage late in the month: projection ~103 -> ok
     assert guard.pacing_state(now=dt.datetime(2026, 10, 30, 12,
                                               tzinfo=dt.UTC)) == "ok"
-    _set_used(db_url, 0)
+    _set_used(db_url, 0, now=dt.datetime(2026, 10, 30, 12, tzinfo=dt.UTC))
     with session_scope(db_url) as s:
-        row = s.scalars(select(QuotaCounter)).one()
+        row = s.scalars(select(QuotaCounter).where(
+            QuotaCounter.provider == "toa",
+            QuotaCounter.period == "2026-10")).one()
         row.credits_used = config.odds_policy.hard_stop_credits
     assert guard.pacing_state(now=dt.datetime(2026, 10, 30, 12,
                                               tzinfo=dt.UTC)) == "stop"
