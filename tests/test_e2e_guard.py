@@ -62,17 +62,14 @@ def _check_file_for_forbidden_construction(path: Path) -> list[str]:
     "path",
     [
         pytest.param(p, id=p.name)
-        if p.name != "test_e2e_stage2.py"
-        else pytest.param(
-            p,
-            id=p.name,
-            marks=pytest.mark.xfail(strict=True, reason="stage2 is rewritten in the next job"),
-        )
         for p in sorted(TESTS_DIR.glob("test_e2e_*.py"))
-    ],
+    ]
+    + [pytest.param(TESTS_DIR / "e2e_support.py", id="e2e_support.py")],
 )
 def test_e2e_guard(path: Path) -> None:
     violations = _check_file_for_forbidden_construction(path)
-    assert not violations, f"Forbidden direct constructions found in {path.name}:\n" + "\n".join(violations)
+    assert not violations, (
+        f"Forbidden direct constructions found in {path.name}:\n" + "\n".join(violations)
+    )
 
 

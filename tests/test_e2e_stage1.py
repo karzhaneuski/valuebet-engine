@@ -22,16 +22,11 @@ import datetime as dt
 from decimal import Decimal
 from pathlib import Path
 
-import httpx
-import pandas as pd
 import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select
 
-import core.ingest.odds_api
 from core.config import load_config
-from core.ingest.understat import UnderstatLoader
-from core.orm import Base, Match, QuotaCounter, Team, TeamAlias, UserBet
+from core.orm import Match, UserBet
 from core.scheduler.tasks import (
     job_poll_events,
     job_poll_odds_snapshots,
@@ -44,166 +39,37 @@ from core.value.engine import evaluate_fortuna_prices
 from core.value.fair_matrix import build_fair_matrix
 from core.value.fortuna_input import parse_fortuna_text
 from core.value.persistence import load_market_inputs_for_match
+from tests.e2e_support import (
+    DEFAULT_KICKOFF,
+    DEFAULT_MATCH_EID,
+    ClockPatcher,
+    build_toa_handler,
+    create_toa_client,
+    create_understat_loader,
+    init_e2e_db,
+)
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 REAL_FORTUNA_FILE = FIXTURES_DIR / "fortuna_barcelona_real_2026-10-25.txt"
-
-
-class FakeUnderstatReader:
-    """Fake Understat reader returning pandas schedule frame."""
-
-    def __init__(self, kickoff_time: dt.datetime, understat_league: str | None = None) -> None:
-        self.kickoff_time = kickoff_time
-        self.understat_league = understat_league
-
-    def read_schedule(self, **_: object) -> pd.DataFrame:
-        cols = [
-            "game_id",
-            "home_team",
-            "away_team",
-            "date",
-            "is_result",
-            "home_goals",
-            "away_goals",
-            "home_xg",
-            "away_xg",
-        ]
-        if self.understat_league == "ESP-La Liga":
-            return pd.DataFrame([
-                {
-                    "game_id": 99901,
-                    "home_team": "Barcelona",
-                    "away_team": "Real Madrid",
-                    "date": pd.Timestamp(self.kickoff_time.replace(tzinfo=None)),
-                    "is_result": True,
-                    "home_goals": 2,
-                    "away_goals": 1,
-                    "home_xg": 2.15,
-                    "away_xg": 1.10,
-                }
-            ])
-        return pd.DataFrame(columns=cols)
 
 
 def test_e2e_stage1_full_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # 0. Setup isolated file-based SQLite database in tmp_path shared across participants
     db_file = tmp_path / "e2e_stage1.db"
     db_url = f"sqlite:///{db_file}"
-    engine = create_engine(db_url, connect_args={"check_same_thread": False})
-    Base.metadata.create_all(engine)
-    sm = sessionmaker(bind=engine, expire_on_commit=False)
+    kickoff_utc = DEFAULT_KICKOFF
+    match_eid = DEFAULT_MATCH_EID
+    sm = init_e2e_db(db_url, kickoff_utc=kickoff_utc)
     cfg = load_config()
-
-    kickoff_utc = dt.datetime(2026, 10, 25, 20, 0, tzinfo=dt.UTC)
-    now_base = kickoff_utc - dt.timedelta(hours=24)
-    match_eid = "ev_barca_real_20261025"
-    commence_str = kickoff_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    with sm() as session:
-        # Seed teams & quotas
-        session.add(
-            QuotaCounter(
-                provider="toa",
-                period=kickoff_utc.strftime("%Y-%m"),
-                credits_used=0,
-                updated_at_utc=now_base,
-            )
-        )
-        barca = Team(name="Barcelona", league="la_liga")
-        real = Team(name="Real Madrid", league="la_liga")
-        session.add_all([barca, real])
-        session.flush()
-
-        session.add_all([
-            TeamAlias(team_id=barca.id, source="toa", alias="Barcelona"),
-            TeamAlias(team_id=real.id, source="toa", alias="Real Madrid"),
-            TeamAlias(team_id=barca.id, source="understat", alias="Barcelona"),
-            TeamAlias(team_id=real.id, source="understat", alias="Real Madrid"),
-        ])
-        session.commit()
 
     # Current odds state served by mock transport
     current_odds_tier: str = "T-24"
-
-    def toa_handler(request: httpx.Request) -> httpx.Response:
-        url_path = request.url.path
-        if url_path == "/v4/sports/soccer_spain_la_liga/events":
-            events_data = [
-                {
-                    "id": match_eid,
-                    "sport_key": "soccer_spain_la_liga",
-                    "commence_time": commence_str,
-                    "home_team": "Barcelona",
-                    "away_team": "Real Madrid",
-                }
-            ]
-            return httpx.Response(
-                200,
-                json=events_data,
-                headers={"x-requests-remaining": "495", "x-requests-last": "0"},
-            )
-        elif url_path.endswith("/events"):
-            return httpx.Response(
-                200,
-                json=[],
-                headers={"x-requests-remaining": "495", "x-requests-last": "0"},
-            )
-        elif url_path == "/v4/sports/soccer_spain_la_liga/odds":
-            price_over = 1.952 if current_odds_tier == "T-24" else 1.930
-            price_under = 1.952 if current_odds_tier == "T-24" else 1.970
-            price_home = 2.100 if current_odds_tier == "T-24" else 2.050
-            price_draw = 3.500 if current_odds_tier == "T-24" else 3.550
-            price_away = 3.400 if current_odds_tier == "T-24" else 3.500
-
-            odds_data = [
-                {
-                    "id": match_eid,
-                    "sport_key": "soccer_spain_la_liga",
-                    "commence_time": commence_str,
-                    "home_team": "Barcelona",
-                    "away_team": "Real Madrid",
-                    "bookmakers": [
-                        {
-                            "key": "pinnacle",
-                            "title": "Pinnacle",
-                            "markets": [
-                                {
-                                    "key": "totals",
-                                    "outcomes": [
-                                        {"name": "Over", "price": price_over, "point": 2.5},
-                                        {"name": "Under", "price": price_under, "point": 2.5},
-                                    ],
-                                },
-                                {
-                                    "key": "h2h",
-                                    "outcomes": [
-                                        {"name": "Barcelona", "price": price_home},
-                                        {"name": "Draw", "price": price_draw},
-                                        {"name": "Real Madrid", "price": price_away},
-                                    ],
-                                },
-                            ],
-                        }
-                    ],
-                }
-            ]
-            return httpx.Response(
-                200,
-                json=odds_data,
-                headers={"x-requests-remaining": "490", "x-requests-last": "2"},
-            )
-        elif url_path == "/v4/sports/soccer_uefa_champs_league/scores":
-            return httpx.Response(
-                200,
-                json=[],
-                headers={"x-requests-remaining": "488", "x-requests-last": "2"},
-            )
-        else:
-            pytest.fail(f"Unexpected TOA request URL: {request.url}")
-
-    mock_transport = httpx.MockTransport(toa_handler)
-    http_client = httpx.Client(transport=mock_transport)
-    toa_client = core.ingest.odds_api.OddsApiClient(db_url, cfg, "k", client=http_client)
+    toa_handler = build_toa_handler(
+        kickoff_utc=kickoff_utc,
+        match_eid=match_eid,
+        get_odds_tier=lambda: current_odds_tier,
+    )
+    toa_client = create_toa_client(db_url, cfg, toa_handler)
 
     # Step 1 (T-48h): Create scheduled match via job_poll_events
     t_48 = kickoff_utc - dt.timedelta(hours=48)
@@ -225,14 +91,9 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     # Step 2 (T-24h): Poll snapshots (totals + h2h) via job_poll_odds_snapshots
     current_odds_tier = "T-24"
     t_24 = kickoff_utc - dt.timedelta(hours=24)
-    current_time = t_24
+    clock = ClockPatcher(monkeypatch)
+    clock.set_now(t_24)
 
-    class MockDatetime(dt.datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return current_time
-
-    monkeypatch.setattr(core.ingest.odds_api.dt, "datetime", MockDatetime)
     poll_t24_res = job_poll_odds_snapshots(
         sm,
         client=toa_client,
@@ -293,7 +154,7 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     # Step 6 (T-3h): Poll final closing snapshot via job_poll_odds_snapshots
     current_odds_tier = "T-3"
     t_3 = kickoff_utc - dt.timedelta(hours=3)
-    current_time = t_3
+    clock.set_now(t_3)
     poll_t3_res = job_poll_odds_snapshots(
         sm,
         client=toa_client,
@@ -312,11 +173,7 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     # Step 8: Match finishes -> sync official Result via job_refresh_history
     t_post = kickoff_utc + dt.timedelta(hours=3)
-    understat_loader = UnderstatLoader(
-        db_url,
-        cfg,
-        reader_factory=lambda lg, se: FakeUnderstatReader(kickoff_utc, understat_league=lg),
-    )
+    understat_loader = create_understat_loader(db_url, cfg, kickoff_utc=kickoff_utc)
     hist_res = job_refresh_history(
         session_factory=sm,
         understat_loader=understat_loader,
@@ -326,7 +183,7 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     )
     assert hist_res["status"] == "success"
 
-    # Verify exactly ONE Match row exists, status is "finished", and MatchStat + Result belong to it
+    # Verify exactly ONE Match row exists, status is finished, and MatchStat + Result belong to it
     with sm() as session:
         from core.orm import MatchStat, Result
 
