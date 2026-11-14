@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Self
 
 import httpx
 import pandas as pd
@@ -214,8 +214,18 @@ class ClockPatcher:
 
         class MockDatetime(dt.datetime):
             @classmethod
-            def now(cls, tz: Any = None) -> dt.datetime:
-                return outer.current_time
+            def now(cls, tz: dt.tzinfo | None = None) -> Self:
+                current = outer.current_time
+                return cls(
+                    current.year,
+                    current.month,
+                    current.day,
+                    current.hour,
+                    current.minute,
+                    current.second,
+                    current.microsecond,
+                    tzinfo=current.tzinfo,
+                )
 
         class MockDateModule:
             def __getattr__(self, name: str) -> Any:
