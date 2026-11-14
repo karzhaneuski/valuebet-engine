@@ -240,8 +240,6 @@ def test_e2e_stage2_multichannel_consistency(
         results = list(session.scalars(select(Result)).all())
         assert len(bets) == 2, f"Expected 2 bets, found {len(bets)}"
         assert len(results) == 1, f"Expected 1 result, found {len(results)}"
-        res = results[0]
-        assert False, f"Result: match_id={res.match_id}, h={res.home_goals}, a={res.away_goals}, bets: {[(b.id, b.match_id, b.status) for b in bets]}"
 
     settle_rep = job_settle_matches_and_clv(sm, config=cfg, dry_run=False, now=t_post)
     assert settle_rep["settled_bets"] == 2

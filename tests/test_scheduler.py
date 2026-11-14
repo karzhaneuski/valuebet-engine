@@ -122,7 +122,7 @@ def test_job_settle_matches_and_clv(db_session_factory: sessionmaker[Session]) -
 
         match = Match(
             league="epl",
-            season="2026-2027",
+            season=2026,
             kickoff_source="toa",
             home_team_id=t1.id,
             away_team_id=t2.id,

@@ -148,7 +148,7 @@ MOCK_MATCHES_DATA: dict[str, Any] = {
         {
             "id": 101,
             "league": "epl",
-            "season": "2026-2027",
+            "season": 2026,
             "date_utc": "2026-10-26T18:00:00Z",
             "home_team": "Arsenal",
             "away_team": "Chelsea",

@@ -117,7 +117,7 @@ def test_dedup_slots_and_repeated_runs() -> None:
             s.add(
                 Match(
                     league="la_liga",
-                    season="2026-2027",
+                    season=2026,
                     home_team_id=teams[i * 2].id,
                     away_team_id=teams[i * 2 + 1].id,
                     date_utc=ko.date(),
@@ -234,7 +234,7 @@ def test_t3_day_degradation_collapses_to_one_daily_call() -> None:
             s.add(
                 Match(
                     league="la_liga",
-                    season="2026-2027",
+                    season=2026,
                     home_team_id=teams[i * 2].id,
                     away_team_id=teams[i * 2 + 1].id,
                     date_utc=ko.date(),
@@ -313,7 +313,7 @@ def _add_match(
         session.add_all([home, away])
         session.flush()
         match = Match(
-            league=league, season="2026-2027", home_team_id=home.id, away_team_id=away.id,
+            league=league, season=2026, home_team_id=home.id, away_team_id=away.id,
             date_utc=ko.date(), commence_time_utc=ko, status="scheduled",
             kickoff_source="toa" if linked else "understat_placeholder",
             toa_event_id=event["id"] if linked else None,
