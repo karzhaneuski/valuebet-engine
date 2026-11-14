@@ -23,14 +23,16 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import httpx
+import pandas as pd
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from core.config import load_config
-from core.ingest.odds_api import EventsReport
-from core.ingest.understat import UnderstatReport, UnderstatRow
-from core.orm import Base, Match, MatchStat, OddsSnapshot, QuotaCounter, Team, TeamAlias, UserBet
+from core.ingest.odds_api import OddsApiClient
+from core.ingest.understat import UnderstatLoader
+from core.orm import Base, Match, QuotaCounter, Team, TeamAlias, UserBet
 from core.scheduler.tasks import (
     job_poll_events,
     job_poll_odds_snapshots,
@@ -48,185 +50,33 @@ FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 REAL_FORTUNA_FILE = FIXTURES_DIR / "fortuna_barcelona_real_2026-10-25.txt"
 
 
-class E2EFakeTOAClient:
-    """Fake TOA client for live pipeline execution."""
+class FakeUnderstatReader:
+    """Fake Understat reader returning pandas schedule frame."""
 
-    def __init__(self, sm: sessionmaker[Session], match_time: dt.datetime) -> None:
-        self.sm = sm
-        self.match_time = match_time
-        self.calls: list[dict[str, Any]] = []
+    def __init__(self, kickoff_time: dt.datetime) -> None:
+        self.kickoff_time = kickoff_time
 
-    def fetch_events(self, sport_key: str) -> list[dict[str, Any]]:
-        return [
+    def read_schedule(self, **_: object) -> pd.DataFrame:
+        return pd.DataFrame([
             {
-                "id": "ev_barca_real_20261025",
-                "sport_key": sport_key,
-                "commence_time": self.match_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "game_id": 99901,
                 "home_team": "Barcelona",
                 "away_team": "Real Madrid",
+                "date": pd.Timestamp(self.kickoff_time.replace(tzinfo=None)),
+                "is_result": True,
+                "home_goals": 2,
+                "away_goals": 1,
+                "home_xg": 2.15,
+                "away_xg": 1.10,
             }
-        ]
-
-    def apply_events(
-        self,
-        sport_key: str,
-        events: list[dict[str, Any]],
-        league_slug: str,
-        season: int,
-        now: dt.datetime,
-    ) -> EventsReport:
-        report = EventsReport()
-        with self.sm() as session:
-            barca = session.scalar(select(Team).where(Team.name == "Barcelona"))
-            real = session.scalar(select(Team).where(Team.name == "Real Madrid"))
-            assert barca is not None and real is not None
-
-            m = session.scalar(select(Match).where(Match.toa_event_id == "ev_barca_real_20261025"))
-            if m is None:
-                m = Match(
-                    league=league_slug,
-                    season=f"{season}-{season+1}",
-                    home_team_id=barca.id,
-                    away_team_id=real.id,
-                    home_team=barca,
-                    away_team=real,
-                    date_utc=self.match_time.date(),
-                    commence_time_utc=self.match_time,
-                    kickoff_source="toa",
-                    status="scheduled",
-                    toa_event_id="ev_barca_real_20261025",
-                )
-                session.add(m)
-                report.events_seen += 1
-            session.commit()
-        return report
-
-    def snapshot_sport_odds(
-        self, sport_key: str, tier: str, markets: list[str] | None = None
-    ) -> dict[str, Any]:
-        self.calls.append({"sport_key": sport_key, "tier": tier, "markets": markets})
-        with self.sm() as session:
-            m = session.scalar(select(Match).where(Match.toa_event_id == "ev_barca_real_20261025"))
-            assert m is not None
-
-            capture_time = (
-                self.match_time - dt.timedelta(hours=24)
-                if tier == "T-24"
-                else self.match_time - dt.timedelta(hours=3)
-            )
-
-            # Pinnacle totals 2.5
-            session.add(
-                OddsSnapshot(
-                    toa_sport_key=sport_key,
-                    toa_event_id=m.toa_event_id,
-                    match_id=m.id,
-                    bookmaker="pinnacle",
-                    market="totals",
-                    line=Decimal("2.5"),
-                    outcome="Over",
-                    price=Decimal("1.952" if tier == "T-24" else "1.930"),
-                    tier=tier,
-                    planned_offset_min=1440 if tier == "T-24" else 180,
-                    actual_offset_min=1440 if tier == "T-24" else 180,
-                    source="toa",
-                    captured_at_utc=capture_time,
-                )
-            )
-            session.add(
-                OddsSnapshot(
-                    toa_sport_key=sport_key,
-                    toa_event_id=m.toa_event_id,
-                    match_id=m.id,
-                    bookmaker="pinnacle",
-                    market="totals",
-                    line=Decimal("2.5"),
-                    outcome="Under",
-                    price=Decimal("1.952" if tier == "T-24" else "1.970"),
-                    tier=tier,
-                    planned_offset_min=1440 if tier == "T-24" else 180,
-                    actual_offset_min=1440 if tier == "T-24" else 180,
-                    source="toa",
-                    captured_at_utc=capture_time,
-                )
-            )
-            # Pinnacle h2h
-            for outcome, price_t24, price_t3 in [
-                ("Home", "2.100", "2.050"),
-                ("Draw", "3.500", "3.550"),
-                ("Away", "3.400", "3.500"),
-            ]:
-                session.add(
-                    OddsSnapshot(
-                        toa_sport_key=sport_key,
-                        toa_event_id=m.toa_event_id,
-                        match_id=m.id,
-                        bookmaker="pinnacle",
-                        market="h2h",
-                        line=None,
-                        outcome=outcome,
-                        price=Decimal(price_t24 if tier == "T-24" else price_t3),
-                        tier=tier,
-                        planned_offset_min=1440 if tier == "T-24" else 180,
-                        actual_offset_min=1440 if tier == "T-24" else 180,
-                        source="toa",
-                        captured_at_utc=capture_time,
-                    )
-                )
-            session.commit()
-        return {"rows": 5, "credits": 2}
+        ])
 
 
-class E2EFakeUnderstatLoader:
-    """Fake Understat loader for official score sync."""
-
-    def __init__(self, sm: sessionmaker[Session]) -> None:
-        self.sm = sm
-
-    def schedule_rows(self, slug: str, year: int) -> list[UnderstatRow]:
-        return [
-            UnderstatRow(
-                understat_id="99901",
-                naive_start=dt.datetime(2026, 10, 25, 20, 0),
-                home="Barcelona",
-                away="Real Madrid",
-                home_goals=2,
-                away_goals=1,
-                home_xg=2.15,
-                away_xg=1.10,
-                is_result=True,
-                league_slug=slug,
-                season=year,
-            )
-        ]
-
-    def upsert_schedule(self, rows: list[UnderstatRow]) -> UnderstatReport:
-        report = UnderstatReport()
-        with self.sm() as session:
-            m = session.scalar(select(Match).where(Match.toa_event_id == "ev_barca_real_20261025"))
-            assert m is not None
-            session.add(
-                MatchStat(
-                    match_id=m.id,
-                    source="understat",
-                    home_goals=2,
-                    away_goals=1,
-                    home_xg=2.15,
-                    away_xg=1.10,
-                )
-            )
-            session.commit()
-            report.stats_written = 1
-        return report
-
-
-def test_e2e_stage1_full_lifecycle() -> None:
-    # 0. Setup in-memory isolated database
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+def test_e2e_stage1_full_lifecycle(tmp_path: Path) -> None:
+    # 0. Setup isolated file-based SQLite database in tmp_path shared across participants
+    db_file = tmp_path / "e2e_stage1.db"
+    db_url = f"sqlite:///{db_file}"
+    engine = create_engine(db_url, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     sm = sessionmaker(bind=engine, expire_on_commit=False)
     cfg = load_config()
@@ -249,17 +99,104 @@ def test_e2e_stage1_full_lifecycle() -> None:
         session.add_all([
             TeamAlias(team_id=barca.id, source="toa", alias="Barcelona"),
             TeamAlias(team_id=real.id, source="toa", alias="Real Madrid"),
+            TeamAlias(team_id=barca.id, source="understat", alias="Barcelona"),
+            TeamAlias(team_id=real.id, source="understat", alias="Real Madrid"),
         ])
         session.commit()
 
-    kickoff_utc = dt.datetime(2026, 10, 25, 20, 0, tzinfo=dt.UTC)
-    fake_toa = E2EFakeTOAClient(sm, kickoff_utc)
+    now_base = dt.datetime.now(dt.UTC).replace(microsecond=0)
+    kickoff_utc = now_base + dt.timedelta(hours=24)
+    match_eid = "ev_barca_real_20261025"
+    commence_str = kickoff_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Current odds state served by mock transport
+    current_odds_tier: str = "T-24"
+
+    def toa_handler(request: httpx.Request) -> httpx.Response:
+        url_path = request.url.path
+        if url_path == "/v4/sports/soccer_spain_la_liga/events":
+            events_data = [
+                {
+                    "id": match_eid,
+                    "sport_key": "soccer_spain_la_liga",
+                    "commence_time": commence_str,
+                    "home_team": "Barcelona",
+                    "away_team": "Real Madrid",
+                }
+            ]
+            return httpx.Response(
+                200,
+                json=events_data,
+                headers={"x-requests-remaining": "495", "x-requests-last": "0"},
+            )
+        elif url_path.endswith("/events"):
+            return httpx.Response(
+                200,
+                json=[],
+                headers={"x-requests-remaining": "495", "x-requests-last": "0"},
+            )
+        elif url_path == "/v4/sports/soccer_spain_la_liga/odds":
+            price_over = 1.952 if current_odds_tier == "T-24" else 1.930
+            price_under = 1.952 if current_odds_tier == "T-24" else 1.970
+            price_home = 2.100 if current_odds_tier == "T-24" else 2.050
+            price_draw = 3.500 if current_odds_tier == "T-24" else 3.550
+            price_away = 3.400 if current_odds_tier == "T-24" else 3.500
+
+            odds_data = [
+                {
+                    "id": match_eid,
+                    "sport_key": "soccer_spain_la_liga",
+                    "commence_time": commence_str,
+                    "home_team": "Barcelona",
+                    "away_team": "Real Madrid",
+                    "bookmakers": [
+                        {
+                            "key": "pinnacle",
+                            "title": "Pinnacle",
+                            "markets": [
+                                {
+                                    "key": "totals",
+                                    "outcomes": [
+                                        {"name": "Over", "price": price_over, "point": 2.5},
+                                        {"name": "Under", "price": price_under, "point": 2.5},
+                                    ],
+                                },
+                                {
+                                    "key": "h2h",
+                                    "outcomes": [
+                                        {"name": "Barcelona", "price": price_home},
+                                        {"name": "Draw", "price": price_draw},
+                                        {"name": "Real Madrid", "price": price_away},
+                                    ],
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ]
+            return httpx.Response(
+                200,
+                json=odds_data,
+                headers={"x-requests-remaining": "490", "x-requests-last": "2"},
+            )
+        elif url_path == "/v4/sports/soccer_uefa_champs_league/scores":
+            return httpx.Response(
+                200,
+                json=[],
+                headers={"x-requests-remaining": "488", "x-requests-last": "2"},
+            )
+        else:
+            pytest.fail(f"Unexpected TOA request URL: {request.url}")
+
+    mock_transport = httpx.MockTransport(toa_handler)
+    http_client = httpx.Client(transport=mock_transport)
+    toa_client = OddsApiClient(db_url, cfg, "k", client=http_client)
 
     # Step 1 (T-48h): Create scheduled match via job_poll_events
     t_48 = kickoff_utc - dt.timedelta(hours=48)
     events_res = job_poll_events(
         sm,
-        client=fake_toa,  # type: ignore[arg-type]
+        client=toa_client,
         config=cfg,
         now=t_48,
     )
@@ -267,16 +204,17 @@ def test_e2e_stage1_full_lifecycle() -> None:
     assert events_res["events_seen"] == 1
 
     with sm() as session:
-        match = session.scalar(select(Match).where(Match.toa_event_id == "ev_barca_real_20261025"))
+        match = session.scalar(select(Match).where(Match.toa_event_id == match_eid))
         assert match is not None
         assert match.status == "scheduled"
         match_id = match.id
 
     # Step 2 (T-24h): Poll snapshots (totals + h2h) via job_poll_odds_snapshots
+    current_odds_tier = "T-24"
     t_24 = kickoff_utc - dt.timedelta(hours=24)
     poll_t24_res = job_poll_odds_snapshots(
         sm,
-        client=fake_toa,  # type: ignore[arg-type]
+        client=toa_client,
         config=cfg,
         now=t_24,
     )
@@ -285,7 +223,7 @@ def test_e2e_stage1_full_lifecycle() -> None:
 
     # Step 3 (T-24h): Calculate fair prices from pre-kickoff market inputs
     with sm() as session:
-        inputs = load_market_inputs_for_match(session, match_id, as_of=t_24)
+        inputs = load_market_inputs_for_match(session, match_id)
         assert not inputs.is_empty()
         assert inputs.source == "toa_snapshot"
 
@@ -332,10 +270,11 @@ def test_e2e_stage1_full_lifecycle() -> None:
         bet_id = bet.id
 
     # Step 6 (T-3h): Poll final closing snapshot via job_poll_odds_snapshots
+    current_odds_tier = "T-3"
     t_3 = kickoff_utc - dt.timedelta(hours=3)
     poll_t3_res = job_poll_odds_snapshots(
         sm,
-        client=fake_toa,  # type: ignore[arg-type]
+        client=toa_client,
         config=cfg,
         now=t_3,
     )
@@ -351,10 +290,15 @@ def test_e2e_stage1_full_lifecycle() -> None:
 
     # Step 8: Match finishes -> sync official Result via job_refresh_history
     t_post = kickoff_utc + dt.timedelta(hours=3)
-    fake_understat = E2EFakeUnderstatLoader(sm)
+    understat_loader = UnderstatLoader(
+        db_url,
+        cfg,
+        reader_factory=lambda lg, se: FakeUnderstatReader(kickoff_utc),
+    )
     hist_res = job_refresh_history(
         session_factory=sm,
-        understat_loader=fake_understat,  # type: ignore[arg-type]
+        understat_loader=understat_loader,
+        toa_client=toa_client,
         config=cfg,
         now=t_post,
     )
@@ -365,8 +309,41 @@ def test_e2e_stage1_full_lifecycle() -> None:
     assert settle_report["settled_bets"] == 1
     assert settle_report["clv_calculated"] == 1
 
-    # Step 10: Verify settled bet and performance metrics
+    # Step 10: Verify assertions:
+    # - Snapshots for both tiers (T-24 and T-3) exist in DB
+    # - MatchStat and official Result exist in DB
+    # - CLV before kickoff (None) and after settlement (calculated)
+    # - Portfolio performance statistics
     with sm() as session:
+        from core.orm import MatchStat, OddsSnapshot, Result
+
+        snaps_t24 = list(
+            session.scalars(
+                select(OddsSnapshot).where(
+                    OddsSnapshot.match_id == match_id, OddsSnapshot.tier == "T-24"
+                )
+            ).all()
+        )
+        snaps_t3 = list(
+            session.scalars(
+                select(OddsSnapshot).where(
+                    OddsSnapshot.match_id == match_id, OddsSnapshot.tier == "T-3"
+                )
+            ).all()
+        )
+        assert len(snaps_t24) == 5
+        assert len(snaps_t3) == 5
+
+        match_stat = session.scalar(select(MatchStat).where(MatchStat.match_id == match_id))
+        assert match_stat is not None
+        assert match_stat.home_goals == 2
+        assert match_stat.away_goals == 1
+
+        official_res = session.scalar(select(Result).where(Result.match_id == match_id))
+        assert official_res is not None
+        assert official_res.home_goals == 2
+        assert official_res.away_goals == 1
+
         settled_bet = session.get(UserBet, bet_id)
         assert settled_bet is not None
         assert settled_bet.status == "won"
@@ -382,5 +359,6 @@ def test_e2e_stage1_full_lifecycle() -> None:
         assert metrics.push_bets == 0
         assert metrics.hit_rate == 1.0
         assert metrics.total_pnl == Decimal("9.00")
+        assert metrics.total_stake == Decimal("1.00")
         assert metrics.roi == 9.0
         assert metrics.avg_clv == float(settled_bet.clv_fair)
