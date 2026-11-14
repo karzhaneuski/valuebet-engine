@@ -21,16 +21,15 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
 
 import httpx
 import pandas as pd
 import pytest
 from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
+import core.ingest.odds_api
 from core.config import load_config
-from core.ingest.odds_api import OddsApiClient
 from core.ingest.understat import UnderstatLoader
 from core.orm import Base, Match, QuotaCounter, Team, TeamAlias, UserBet
 from core.scheduler.tasks import (
@@ -53,26 +52,40 @@ REAL_FORTUNA_FILE = FIXTURES_DIR / "fortuna_barcelona_real_2026-10-25.txt"
 class FakeUnderstatReader:
     """Fake Understat reader returning pandas schedule frame."""
 
-    def __init__(self, kickoff_time: dt.datetime) -> None:
+    def __init__(self, kickoff_time: dt.datetime, understat_league: str | None = None) -> None:
         self.kickoff_time = kickoff_time
+        self.understat_league = understat_league
 
     def read_schedule(self, **_: object) -> pd.DataFrame:
-        return pd.DataFrame([
-            {
-                "game_id": 99901,
-                "home_team": "Barcelona",
-                "away_team": "Real Madrid",
-                "date": pd.Timestamp(self.kickoff_time.replace(tzinfo=None)),
-                "is_result": True,
-                "home_goals": 2,
-                "away_goals": 1,
-                "home_xg": 2.15,
-                "away_xg": 1.10,
-            }
-        ])
+        cols = [
+            "game_id",
+            "home_team",
+            "away_team",
+            "date",
+            "is_result",
+            "home_goals",
+            "away_goals",
+            "home_xg",
+            "away_xg",
+        ]
+        if self.understat_league == "ESP-La Liga":
+            return pd.DataFrame([
+                {
+                    "game_id": 99901,
+                    "home_team": "Barcelona",
+                    "away_team": "Real Madrid",
+                    "date": pd.Timestamp(self.kickoff_time.replace(tzinfo=None)),
+                    "is_result": True,
+                    "home_goals": 2,
+                    "away_goals": 1,
+                    "home_xg": 2.15,
+                    "away_xg": 1.10,
+                }
+            ])
+        return pd.DataFrame(columns=cols)
 
 
-def test_e2e_stage1_full_lifecycle(tmp_path: Path) -> None:
+def test_e2e_stage1_full_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # 0. Setup isolated file-based SQLite database in tmp_path shared across participants
     db_file = tmp_path / "e2e_stage1.db"
     db_url = f"sqlite:///{db_file}"
@@ -81,14 +94,19 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path) -> None:
     sm = sessionmaker(bind=engine, expire_on_commit=False)
     cfg = load_config()
 
+    kickoff_utc = dt.datetime(2026, 10, 25, 20, 0, tzinfo=dt.UTC)
+    now_base = kickoff_utc - dt.timedelta(hours=24)
+    match_eid = "ev_barca_real_20261025"
+    commence_str = kickoff_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
     with sm() as session:
         # Seed teams & quotas
         session.add(
             QuotaCounter(
                 provider="toa",
-                period=dt.datetime.now(dt.UTC).strftime("%Y-%m"),
+                period=kickoff_utc.strftime("%Y-%m"),
                 credits_used=0,
-                updated_at_utc=dt.datetime.now(dt.UTC),
+                updated_at_utc=now_base,
             )
         )
         barca = Team(name="Barcelona", league="la_liga")
@@ -103,11 +121,6 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path) -> None:
             TeamAlias(team_id=real.id, source="understat", alias="Real Madrid"),
         ])
         session.commit()
-
-    now_base = dt.datetime.now(dt.UTC).replace(microsecond=0)
-    kickoff_utc = now_base + dt.timedelta(hours=24)
-    match_eid = "ev_barca_real_20261025"
-    commence_str = kickoff_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # Current odds state served by mock transport
     current_odds_tier: str = "T-24"
@@ -190,7 +203,7 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path) -> None:
 
     mock_transport = httpx.MockTransport(toa_handler)
     http_client = httpx.Client(transport=mock_transport)
-    toa_client = OddsApiClient(db_url, cfg, "k", client=http_client)
+    toa_client = core.ingest.odds_api.OddsApiClient(db_url, cfg, "k", client=http_client)
 
     # Step 1 (T-48h): Create scheduled match via job_poll_events
     t_48 = kickoff_utc - dt.timedelta(hours=48)
@@ -212,6 +225,14 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path) -> None:
     # Step 2 (T-24h): Poll snapshots (totals + h2h) via job_poll_odds_snapshots
     current_odds_tier = "T-24"
     t_24 = kickoff_utc - dt.timedelta(hours=24)
+    current_time = t_24
+
+    class MockDatetime(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return current_time
+
+    monkeypatch.setattr(core.ingest.odds_api.dt, "datetime", MockDatetime)
     poll_t24_res = job_poll_odds_snapshots(
         sm,
         client=toa_client,
@@ -272,6 +293,7 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path) -> None:
     # Step 6 (T-3h): Poll final closing snapshot via job_poll_odds_snapshots
     current_odds_tier = "T-3"
     t_3 = kickoff_utc - dt.timedelta(hours=3)
+    current_time = t_3
     poll_t3_res = job_poll_odds_snapshots(
         sm,
         client=toa_client,
@@ -293,7 +315,7 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path) -> None:
     understat_loader = UnderstatLoader(
         db_url,
         cfg,
-        reader_factory=lambda lg, se: FakeUnderstatReader(kickoff_utc),
+        reader_factory=lambda lg, se: FakeUnderstatReader(kickoff_utc, understat_league=lg),
     )
     hist_res = job_refresh_history(
         session_factory=sm,
@@ -303,6 +325,24 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path) -> None:
         now=t_post,
     )
     assert hist_res["status"] == "success"
+
+    # Verify exactly ONE Match row exists, status is "finished", and MatchStat + Result belong to it
+    with sm() as session:
+        from core.orm import MatchStat, Result
+
+        all_matches = list(session.scalars(select(Match)).all())
+        assert len(all_matches) == 1
+        assert all_matches[0].id == match_id
+        assert all_matches[0].league == "la_liga"
+        assert all_matches[0].status == "finished"
+
+        m_stats = list(session.scalars(select(MatchStat)).all())
+        assert len(m_stats) == 1
+        assert m_stats[0].match_id == match_id
+
+        m_results = list(session.scalars(select(Result)).all())
+        assert len(m_results) == 1
+        assert m_results[0].match_id == match_id
 
     # Step 9: Run settlement and CLV job via job_settle_matches_and_clv
     settle_report = job_settle_matches_and_clv(sm, config=cfg, dry_run=False, now=t_post)
