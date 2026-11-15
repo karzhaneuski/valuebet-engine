@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -213,10 +214,11 @@ class UnderstatLoader:
                 exc_str = str(exc)
                 exc_trunc = exc_str[:200]
                 is_json_err = (
-                    isinstance(exc, (ValueError, KeyError))
+                    isinstance(exc, ValueError)
                     and ("json" in type(exc).__name__.lower() or "json" in exc_str.lower())
                 )
-                if isinstance(exc, KeyError) or is_json_err:
+                if is_json_err:
+                    self._clean_poisoned_cache()
                     err_msg = (
                         f"Understat unavailable for {league_slug} {season}: "
                         f"{type(exc).__name__}: {exc_trunc}"
@@ -241,6 +243,32 @@ class UnderstatLoader:
         raise UnderstatUnavailableError(
             f"Understat schedule download failed for {league_slug} {season}: {last_error}"
         )
+
+    def _clean_poisoned_cache(self) -> None:
+        """Remove invalid JSON files (.json suffix) from loader's own cache dir."""
+        if self._reader_factory is not None or self._cache_dir is None:
+            return
+        try:
+            cache_path = self._cache_dir.resolve()
+            if not cache_path.is_dir():
+                return
+            for child in cache_path.iterdir():
+                # Only files with .json suffix
+                if child.name.endswith(".json") and not child.is_symlink() and child.is_file():
+                    child_resolved = child.resolve()
+                    # Ensure path is strictly inside cache_path, never outside
+                    if child_resolved != cache_path and cache_path in child_resolved.parents:
+                        try:
+                            with child_resolved.open("r", encoding="utf-8") as f:
+                                json.load(f)
+                        except Exception:
+                            child_resolved.unlink()
+                            logger.info(
+                                "understat.cache.removed_poisoned_file",
+                                file=child_resolved.name,
+                            )
+        except Exception as err:
+            logger.warning("understat.cache.clean_failed", error=str(err))
 
     @staticmethod
     def _row_from_archive(a: ArchiveRow, league_slug: str,

@@ -385,3 +385,240 @@ def test_second_run_zero_result_rows_updated(tmp_path: Path) -> None:
     assert res2["status"] == "success"
     assert res2["results_inserted"] == 0
     assert res2["results_updated"] == 0
+
+
+def test_unrelated_error_propagates_not_masked_as_outage(tmp_path: Path) -> None:
+    """Unrelated error (e.g. AttributeError or ZeroDivisionError) makes job_refresh_history raise,
+    not return 'source_unavailable'."""
+    db_url, sm = make_test_db(tmp_path)
+    seed_teams(sm)
+    cfg = load_config()
+
+    class BuggyReader:
+        def __init__(self, league: str, season: int) -> None:
+            pass
+
+        def read_schedule(self) -> pd.DataFrame:
+            raise ZeroDivisionError("division by zero in custom code")
+
+    loader = UnderstatLoader(
+        db_url=db_url,
+        config=cfg,
+        reader_factory=lambda lg, se: BuggyReader(lg, se),
+    )
+
+    with pytest.raises(ZeroDivisionError, match="division by zero"):
+        job_refresh_history(
+            session_factory=sm,
+            understat_loader=loader,
+            config=cfg,
+            now=FIXED_NOW,
+            on_source_error="stop",
+        )
+
+
+def test_schedule_rows_keyerror_after_required_columns_propagates(tmp_path: Path) -> None:
+    """KeyError raised while mapping a row after REQUIRED_COLUMNS check stays a KeyError."""
+    db_url, _ = make_test_db(tmp_path)
+    cfg = load_config()
+
+    cols = [
+        "game_id",
+        "home_team",
+        "away_team",
+        "date",
+        "is_result",
+        "home_goals",
+        "away_goals",
+        "home_xg",
+        "away_xg",
+    ]
+
+    class ExplodingSeries(pd.Series):
+        def __getitem__(self, key):
+            if key == "home_team":
+                raise KeyError("unrelated_missing_item_lookup")
+            return super().__getitem__(key)
+
+    class CustomDf(pd.DataFrame):
+        def reset_index(self, **kwargs):
+            return self
+
+        def iterrows(self):
+            row_data = {
+                "game_id": 1,
+                "home_team": "Home",
+                "away_team": "Away",
+                "date": pd.Timestamp("2026-11-01 20:00:00"),
+                "is_result": False,
+                "home_goals": None,
+                "away_goals": None,
+                "home_xg": None,
+                "away_xg": None,
+            }
+            yield 0, ExplodingSeries(row_data)
+
+    df = CustomDf(columns=cols)
+
+    class ReaderWithBadRow:
+        def __init__(self, league: str, season: int) -> None:
+            pass
+
+        def read_schedule(self) -> pd.DataFrame:
+            return df
+
+    loader = UnderstatLoader(
+        db_url=db_url,
+        config=cfg,
+        reader_factory=lambda lg, se: ReaderWithBadRow(lg, se),
+    )
+
+    with pytest.raises(KeyError, match="unrelated_missing_item_lookup"):
+        loader.schedule_rows("la_liga", 2026)
+
+
+def test_manual_ingest_path_creates_result_and_second_run_updates_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Manual ingest creates Result for finished match; second run updates nothing."""
+    import argparse
+
+    from core.db import session_scope
+    from core.ingest import __main__ as ingest_main
+    from core.ingest.results import populate_results
+
+    db_url, sm = make_test_db(tmp_path)
+    seed_teams(sm)
+    cfg = load_config()
+
+    monkeypatch.setattr(ingest_main, "_db_url", lambda: db_url)
+    monkeypatch.setattr(ingest_main, "load_config", lambda: cfg)
+
+    df = pd.DataFrame([
+        {
+            "game_id": 301,
+            "home_team": "Barcelona",
+            "away_team": "Real Madrid",
+            "date": pd.Timestamp("2026-11-08 20:00:00"),
+            "is_result": True,
+            "home_goals": 2,
+            "away_goals": 1,
+            "home_xg": 1.5,
+            "away_xg": 0.8,
+        }
+    ])
+
+    class StaticReader:
+        def __init__(self, league: str, season: int) -> None:
+            pass
+
+        def read_schedule(self) -> pd.DataFrame:
+            return df
+
+    # We also mock UnderstatLoader inside ingest_main to use StaticReader
+    class MockUnderstatLoader(UnderstatLoader):
+        def __init__(self, db_url_arg: str, config_arg: Any, **kwargs: Any) -> None:
+            super().__init__(
+                db_url=db_url_arg,
+                config=config_arg,
+                reader_factory=lambda lg, se: StaticReader(lg, se),
+                **kwargs,
+            )
+
+    monkeypatch.setattr(ingest_main, "UnderstatLoader", MockUnderstatLoader)
+
+    import core.ingest.football_data as fd_module
+
+    class FakeFDLoader:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def download(self, slug: str, season: int) -> None:
+            pass
+
+        def parse(self, slug: str, season: int) -> list[Any]:
+            return []
+
+        def upsert(self, rows: list[Any]) -> fd_module.FdReport:
+            return fd_module.FdReport()
+
+    monkeypatch.setattr(ingest_main, "FootballDataLoader", FakeFDLoader)
+    monkeypatch.setattr(ingest_main, "TOP5", ["la_liga"])
+
+    report_path = tmp_path / "backfill_report.json"
+
+    def fake_path(p: Any) -> Path:
+        return report_path if "backfill_report.json" in str(p) else tmp_path / p
+
+    monkeypatch.setattr("core.ingest.__main__.Path", fake_path)
+
+    # Run 1
+    args = argparse.Namespace(seasons=[2026], lineups_since=None, lineups_only=False)
+    ingest_main.cmd_backfill(args)
+
+    with session_scope(db_url) as session:
+        m = session.scalar(select(Match).where(Match.understat_id == 301))
+        assert m is not None
+        assert m.status == "finished"
+        r = session.scalar(select(Result).where(Result.match_id == m.id))
+        assert r is not None
+        assert r.home_goals == 2
+        assert r.away_goals == 1
+
+        # Second run of populate_results updates nothing
+        ins, upd = populate_results(session)
+        assert ins == 0
+        assert upd == 0
+
+
+def test_poisoned_cache_cleaned_on_invalid_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When schedule_rows raises UnderstatUnavailableError because of invalid JSON,
+    remove cache files in loader's cache dir that are not valid JSON (.json suffix only)."""
+    db_url, _ = make_test_db(tmp_path)
+    cfg = load_config()
+
+    cache_dir = tmp_path / "understat_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    valid_file = cache_dir / "valid_data.json"
+    valid_file.write_text('{"status": "ok"}', encoding="utf-8")
+
+    html_file = cache_dir / "leagues.json"
+    html_file.write_text(
+        "<html><head><title>503 Service Unavailable</title></head></html>",
+        encoding="utf-8",
+    )
+
+    # In UnderstatLoader, if reader_factory is None, creates soccerdata.Understat
+    # We mock soccerdata.Understat so read_schedule raises ValueError with "json" in message
+    import sys
+    import types
+
+    fake_soccerdata = types.ModuleType("soccerdata")
+
+    class FakeUnderstatSD:
+        def __init__(self, leagues: Any = None, seasons: Any = None, data_dir: Any = None) -> None:
+            pass
+
+        def read_schedule(self) -> pd.DataFrame:
+            raise ValueError("Expecting value: line 1 column 1 (char 0) JSONDecodeError")
+
+    fake_soccerdata.Understat = FakeUnderstatSD  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "soccerdata", fake_soccerdata)
+
+    loader = UnderstatLoader(
+        db_url=db_url,
+        config=cfg,
+        cache_dir=cache_dir,
+        reader_factory=None,
+    )
+
+    with pytest.raises(UnderstatUnavailableError):
+        loader.schedule_rows("la_liga", 2026)
+
+    # After failure, html file must be deleted, valid file must remain
+    assert not html_file.exists()
+    assert valid_file.exists()
+

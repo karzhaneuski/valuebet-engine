@@ -21,13 +21,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from core.config import AppConfig, Secrets, load_config
 from core.ingest.odds_api import OddsApiClient
-from core.ingest.understat import UnderstatLoader
+from core.ingest.results import populate_results
+from core.ingest.understat import UnderstatLoader, UnderstatUnavailableError
 from core.llm.provider import GeminiProvider
 from core.news.extractor import extract_player_news
 from core.news.search import SearchClient, TavilySearchClient, search_news_for_match
 from core.orm import (
     Match,
-    MatchStat,
     OddsPollAttempt,
     OddsSnapshot,
     PlayerAvailability,
@@ -124,7 +124,7 @@ def job_refresh_history(
                             touched_match_ids.update(matches)
             leagues_done.append(league.slug)
             sources_used[league.slug] = "understat"
-        except Exception as exc:
+        except UnderstatUnavailableError as exc:
             err_text = str(exc)[:200]
             logger.warning(
                 "Understat history sync failed for league %s: %s",
@@ -195,51 +195,9 @@ def job_refresh_history(
 
     # 3. Populate Result rows from MatchStat for finished matches, update status and clear postponed
     with session_factory() as session:
-        # MatchStat rows that have a finished score
-        stats = list(
-            session.scalars(
-                select(MatchStat).where(
-                    MatchStat.home_goals.is_not(None),
-                    MatchStat.away_goals.is_not(None),
-                )
-            ).all()
-        )
-        for st in stats:
-            res = session.scalar(select(Result).where(Result.match_id == st.match_id))
-            if res is None:
-                session.add(
-                    Result(
-                        match_id=st.match_id,
-                        home_goals=st.home_goals,
-                        away_goals=st.away_goals,
-                        source=st.source,
-                        settled_at_utc=curr_now,
-                    )
-                )
-                results_inserted += 1
-            elif st.match_id in touched_match_ids:
-                assert st.home_goals is not None and st.away_goals is not None
-                new_home = int(st.home_goals)
-                new_away = int(st.away_goals)
-                score_changed = res.home_goals != new_home or res.away_goals != new_away
-                source_changed = res.source != st.source
-                if score_changed or source_changed:
-                    res.home_goals = new_home
-                    res.away_goals = new_away
-                    res.source = st.source
-                    res.settled_at_utc = curr_now
-                    results_updated += 1
-
-        scheduled_matches = list(
-            session.scalars(
-                select(Match).where(Match.status.in_(["scheduled", "postponed_suspected"]))
-            ).all()
-        )
-        for match in scheduled_matches:
-            res = session.scalar(select(Result).where(Result.match_id == match.id))
-            if res is not None and res.home_goals is not None and res.away_goals is not None:
-                match.status = "finished"
-                updated_count += 1
+        ins, upd = populate_results(session, touched_match_ids=touched_match_ids, now=curr_now)
+        results_inserted += ins
+        results_updated += upd
         session.commit()
 
     overall_status = "partial" if failed_leagues else "success"
