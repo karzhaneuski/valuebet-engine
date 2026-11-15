@@ -28,7 +28,7 @@ AS_OF = dt.datetime(2026, 3, 6, 12, 0, tzinfo=UTC)
 @pytest.fixture()
 def db_url(tmp_path):
     url = f"sqlite:///{tmp_path}/bt.db"
-    Base.metadata.create_all(get_engine(url))
+    Base.metadata.create_all(get_engine(url, create=True))
     with session_scope(url) as s:
         teams = {n: Team(name=n, league="premier_league") for n in
                  ("Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta")}

@@ -17,7 +17,7 @@ from core.orm import ApiQuotaUsage, Base, QuotaCounter
 @pytest.fixture()
 def db_url(tmp_path):
     url = f"sqlite:///{tmp_path}/quota.db"
-    Base.metadata.create_all(get_engine(url))
+    Base.metadata.create_all(get_engine(url, create=True))
     return url
 
 

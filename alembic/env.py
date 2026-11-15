@@ -42,7 +42,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    engine = get_engine(database_url())
+    engine = get_engine(database_url(), create=True)
     with engine.connect() as connection:
         # batch ALTERs on SQLite require disabled FK enforcement while
         # tables are rebuilt; a foreign_key_check afterwards proves the

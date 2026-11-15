@@ -21,7 +21,7 @@ NOW = dt.datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
 
 def make_db(tmp_path):
     url = f"sqlite:///{tmp_path}/rev.db"
-    Base.metadata.create_all(get_engine(url))
+    Base.metadata.create_all(get_engine(url, create=True))
     return url
 
 

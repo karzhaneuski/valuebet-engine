@@ -13,7 +13,7 @@ from core.orm import Base, Match, Team
 
 def make_db(tmp_path):
     url = f"sqlite:///{tmp_path}/cli.db"
-    Base.metadata.create_all(get_engine(url))
+    Base.metadata.create_all(get_engine(url, create=True))
     return url
 
 

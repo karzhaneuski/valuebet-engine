@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -25,6 +27,27 @@ def health_check(db: Session = Depends(get_db)) -> HealthResponse:
     cfg = load_config()
     db_connected = False
     status_str = "ok"
+
+    return _run_health_check(db, cfg, db_connected, status_str)
+
+
+def _run_health_check(
+    db: Session | None, cfg: Any, db_connected: bool, status_str: str
+) -> HealthResponse:
+
+    if db is None:
+        return HealthResponse(
+            status="unhealthy",
+            version="0.3.0",
+            database_connected=False,
+            database_url_redacted=None,
+            last_odds_snapshot_utc=None,
+            toa_credits_remaining=None,
+            search_quota={},
+            pacing_stage=0,
+            pacing_degraded=False,
+            pacing_actions=[],
+        )
 
     try:
         db.execute(text("SELECT 1"))

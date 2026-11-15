@@ -11,9 +11,10 @@ from core.db import get_session_factory
 
 
 def get_db() -> Iterator[Session]:
-    """Yield a transactional database session for each request."""
+    """Yield a transactional database session for each request, or raise DatabaseMissingError."""
     cfg = load_config()
     factory = get_session_factory(cfg.database.url)
+
     session = factory()
     try:
         yield session

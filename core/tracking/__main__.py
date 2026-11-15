@@ -15,10 +15,11 @@ import datetime as dt
 import sys
 from decimal import Decimal
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from core.config import load_config
+from core.db import get_engine
 from core.http import register_runtime_secrets
 from core.logging import configure, get_logger
 from core.orm import Match, UserBet
@@ -257,7 +258,7 @@ def main() -> None:
 
     args = parser.parse_args()
     cfg = load_config()
-    engine = create_engine(cfg.database.url)
+    engine = get_engine(cfg.database.url)
     session_factory = sessionmaker(bind=engine)
 
     if args.entity == "bet":

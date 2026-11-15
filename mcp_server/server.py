@@ -130,6 +130,13 @@ def get_match_fair_prices(match_id: int) -> str:
         p_inny = max(0.0, 1.0 - p_grid)
         fo_inny = f"{1.0 / p_inny:.2f}" if p_inny > 0.001 else "—"
 
+        rho_val = cfg.fair_matrix.rho
+        kappa_val = cfg.fair_matrix.kappa_high
+        disclaimer = (
+            f"Оговорки: ρ={rho_val:g}, κ_high={kappa_val:.2f} от 2:2, "
+            "девигованный рынок острых букмекеров."
+        )
+
         lines = [
             f"Справедливые котировки: {h} — {a} (ID {match_id})",
             f"• 1X2: 1: {fo_1} (P={p_1:.1%}) | X: {fo_x} (P={p_x:.1%}) | 2: {fo_2} (P={p_2:.1%})",
@@ -137,7 +144,7 @@ def get_match_fair_prices(match_id: int) -> str:
             f"• Обе забьют: Да: {fo_by} (P={p_by:.1%}) | Нет: {fo_bn} (P={p_bn:.1%})",
             f"• Топ-3 счёта: {', '.join(top3)}",
             f"• Исход 'inny' (>4 голов): {fo_inny} (P={p_inny:.1%})",
-            "Оговорки: ρ=0, κ_high=1.05 от 2:2, девигованный рынок острых букмекеров.",
+            disclaimer,
         ]
         return "\n".join(lines)
 

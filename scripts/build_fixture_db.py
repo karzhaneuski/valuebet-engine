@@ -25,7 +25,7 @@ def main() -> None:
     from core.config import load_config
 
     url = load_config().database.url
-    Base.metadata.create_all(get_engine(url))
+    Base.metadata.create_all(get_engine(url, create=True))
     day = dt.timedelta(days=3)
     start = dt.datetime(2025, 8, 1, 15, 0, tzinfo=dt.UTC)
     with session_scope(url) as s:

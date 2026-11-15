@@ -16,7 +16,7 @@ from core.orm import Base, LlmCall, Match, OddsSnapshot, Recommendation, Team, T
 @pytest.fixture()
 def db_url(tmp_path):
     url = f"sqlite:///{tmp_path}/test.db"
-    Base.metadata.create_all(get_engine(url))
+    Base.metadata.create_all(get_engine(url, create=True))
     return url
 
 
