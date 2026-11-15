@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Callable
-from typing import Any
 
 import httpx
 import pandas as pd
@@ -207,8 +206,7 @@ def create_understat_loader(
 class ClockPatcher:
     """Holds the current time and hands out a clock callable."""
 
-    def __init__(self, monkeypatch: Any = None) -> None:
-        self.monkeypatch = monkeypatch
+    def __init__(self) -> None:
         self.current_time = dt.datetime(2026, 10, 24, 20, 0, tzinfo=dt.UTC)
 
     def clock(self) -> dt.datetime:

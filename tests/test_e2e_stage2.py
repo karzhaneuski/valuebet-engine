@@ -59,8 +59,17 @@ DASHBOARD_APP_PATH = str(Path(__file__).parent.parent / "dashboard" / "app.py")
 AUTH_HEADER = {"Authorization": "Bearer test-e2e-token"}
 
 
+@pytest.fixture
+def clean_clock_and_overrides() -> Iterator[None]:
+    try:
+        yield
+    finally:
+        rest_app.dependency_overrides.clear()
+        mcp_set_clock(None)
+
+
 def test_e2e_stage2_multichannel_consistency(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clean_clock_and_overrides: None
 ) -> None:
     # 0. Setup isolated file-based SQLite database in tmp_path shared across participants
     db_file = tmp_path / "e2e_stage2.db"
@@ -99,7 +108,7 @@ def test_e2e_stage2_multichannel_consistency(
 
     rest_app.dependency_overrides[get_db] = _override_db
 
-    clock = ClockPatcher(monkeypatch)
+    clock = ClockPatcher()
     rest_app.dependency_overrides[get_clock] = lambda: clock.clock
     mcp_set_clock(clock.clock)
 
@@ -298,5 +307,3 @@ def test_e2e_stage2_multichannel_consistency(
         warning_texts = [w.value for w in at.warning]
         assert any("статистически недостаточна" in w for w in warning_texts)
 
-    rest_app.dependency_overrides.clear()
-    mcp_set_clock(None)

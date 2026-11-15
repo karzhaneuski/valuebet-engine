@@ -64,7 +64,7 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     # Current odds state served by mock transport
     current_odds_tier: str = "T-24"
-    clock = ClockPatcher(monkeypatch)
+    clock = ClockPatcher()
     toa_handler = build_toa_handler(
         kickoff_utc=kickoff_utc,
         match_eid=match_eid,

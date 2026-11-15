@@ -7,6 +7,7 @@ import datetime as dt
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import httpx
 from fastapi.testclient import TestClient
@@ -20,6 +21,7 @@ from core.clock import system_clock, today_date
 from core.config import load_config
 from core.ingest.odds_api import OddsApiClient
 from core.orm import Base, Match, OddsSnapshot, Team
+from core.scheduler.tasks import job_poll_events
 from mcp_server.server import (
     get_upcoming_matches,
 )
@@ -144,10 +146,10 @@ def test_api_route_clock_dependency_returns_data_for_overridden_date(monkeypatch
         finally:
             sess.close()
 
-    rest_app.dependency_overrides[get_db] = _override_db
-    rest_app.dependency_overrides[get_clock] = lambda: (lambda: fixed_now)
-
     try:
+        rest_app.dependency_overrides[get_db] = _override_db
+        rest_app.dependency_overrides[get_clock] = lambda: (lambda: fixed_now)
+
         with TestClient(rest_app) as client:
             resp = client.get("/matches?status=scheduled&days=3", headers=AUTH_HEADER)
             assert resp.status_code == 200
@@ -205,12 +207,54 @@ def test_mcp_tool_uses_provided_clock(monkeypatch) -> None:
         session.add(m)
         session.commit()
 
-    mcp_set_clock(lambda: fixed_now)
     try:
+        mcp_set_clock(lambda: fixed_now)
         res = get_upcoming_matches(days=2)
         assert "Alpha — Beta" in res
     finally:
         mcp_set_clock(None)
+
+
+def test_job_odds_api_client_clock_injection(monkeypatch) -> None:
+    """Calling a job without now constructs client with clock None (uses system_clock),
+
+    and with now=X the client's clock returns X.
+    """
+    constructed_clocks: list[Any] = []
+    real_init = OddsApiClient.__init__
+
+    def spy_init(self: OddsApiClient, *args: Any, **kwargs: Any) -> None:
+        constructed_clocks.append(kwargs.get("clock"))
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(OddsApiClient, "__init__", spy_init)
+    monkeypatch.setattr(
+        "core.scheduler.tasks.Secrets",
+        lambda: type("MockSecrets", (), {"odds_api_key": "test_key"})(),
+    )
+    monkeypatch.setattr(OddsApiClient, "fetch_events", lambda self, sport_key: [])
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    sm = sessionmaker(bind=engine, expire_on_commit=False)
+
+    # 1. Calling job without `now` -> constructed with clock None (client._clock is system_clock)
+    constructed_clocks.clear()
+    job_poll_events(sm)
+    assert len(constructed_clocks) == 1
+    assert constructed_clocks[0] is None
+
+    # 2. Calling job with `now=X` -> client's clock returns X
+    constructed_clocks.clear()
+    custom_now = dt.datetime(2026, 10, 20, 15, 30, tzinfo=dt.UTC)
+    job_poll_events(sm, now=custom_now)
+    assert len(constructed_clocks) == 1
+    assert constructed_clocks[0] is not None
+    assert constructed_clocks[0]() == custom_now
 
 
 def test_guard_no_direct_clock_reads() -> None:
