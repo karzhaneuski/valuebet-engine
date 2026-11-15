@@ -19,6 +19,7 @@ from core.db import session_scope
 from core.http import register_secret_values
 from core.ingest.football_data import FootballDataLoader
 from core.ingest.odds_api import OddsApiClient
+from core.ingest.results import populate_results
 from core.ingest.understat import UnderstatLoader
 from core.logging import configure, get_logger
 from core.orm import Match, MatchLineup
@@ -61,6 +62,8 @@ def cmd_backfill(args: argparse.Namespace) -> None:
                         us.backfill_archive(slug, season)  # one-time download
                     us_rows = us.schedule_rows(slug, season)
                     us_r = us.upsert_schedule(us_rows)
+                    with session_scope(db) as s:
+                        populate_results(s)
                     report["understat"].append(
                         {"league": slug, "season": season,
                          "created": us_r.matches_created,

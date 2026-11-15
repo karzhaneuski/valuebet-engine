@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,12 +27,17 @@ from core.db import session_scope
 from core.ingest.aliases import AliasMatch, AliasMatcher
 from core.ingest.understat_archive import ArchiveRow, archive_rows, is_archived, store_archive
 from core.logging import get_logger
-from core.orm import Match, MatchLineup, MatchStat, Result, Team, TeamAlias
+from core.orm import Match, MatchLineup, MatchStat, Team, TeamAlias
 
 logger = get_logger("ingest.understat")
 
 # soccerdata league code -> our league slug (from config)
 LINEUP_SLEEP_S = 1.0
+
+
+class UnderstatUnavailableError(RuntimeError):
+    """Raised when Understat fails due to network outage, invalid JSON, or missing keys."""
+    pass
 
 
 def is_network_error(exc: BaseException) -> bool:
@@ -162,6 +168,10 @@ class UnderstatLoader:
                                           league.understat_league, season)]
         attempts = self._config.ingest.retry_attempts
         last_error = ""
+        REQUIRED_COLUMNS = {
+            "game_id", "home_team", "away_team", "date", "is_result",
+            "home_goals", "away_goals", "home_xg", "away_xg"
+        }
         for attempt in range(1, attempts + 1):
             try:
                 if self._reader_factory is not None:
@@ -172,7 +182,14 @@ class UnderstatLoader:
                     reader = soccerdata.Understat(
                         leagues=[league.understat_league], seasons=[season],
                         data_dir=self._cache_dir)
-                sched = reader.read_schedule().reset_index()
+                raw_sched = reader.read_schedule()
+                sched = raw_sched.reset_index()
+                missing = REQUIRED_COLUMNS - set(sched.columns)
+                if missing:
+                    raise UnderstatUnavailableError(
+                        f"Understat returned missing expected keys {sorted(missing)} "
+                        f"for {league_slug} {season}"
+                    )
                 rows: list[UnderstatRow] = []
                 for _, r in sched.iterrows():
                     rows.append(UnderstatRow(
@@ -191,15 +208,30 @@ class UnderstatLoader:
                         if r["is_result"] and r["away_xg"] is not None else None,
                     ))
                 return rows
+            except UnderstatUnavailableError:
+                raise
             except Exception as exc:
+                exc_str = str(exc)
+                exc_trunc = exc_str[:200]
+                is_json_err = (
+                    isinstance(exc, ValueError)
+                    and ("json" in type(exc).__name__.lower() or "json" in exc_str.lower())
+                )
+                if is_json_err:
+                    self._clean_poisoned_cache()
+                    err_msg = (
+                        f"Understat unavailable for {league_slug} {season}: "
+                        f"{type(exc).__name__}: {exc_trunc}"
+                    )
+                    raise UnderstatUnavailableError(err_msg) from exc
                 if not is_network_error(exc):
                     raise
-                last_error = f"{type(exc).__name__}: {exc}"[:300]
+                last_error = f"{type(exc).__name__}: {exc_trunc}"
                 if attempt == attempts:
                     logger.error("understat.schedule.exhausted",
                                  league=league_slug, season=season,
                                  attempts=attempts, error=last_error)
-                    raise RuntimeError(
+                    raise UnderstatUnavailableError(
                         f"Understat schedule download failed for {league_slug} "
                         f"{season} after {attempts} attempts: {last_error}"
                     ) from exc
@@ -208,9 +240,35 @@ class UnderstatLoader:
                                attempt=attempt, attempts=attempts,
                                error=last_error)
                 time.sleep(self._config.ingest.retry_backoff_s * attempt)
-        raise RuntimeError(
+        raise UnderstatUnavailableError(
             f"Understat schedule download failed for {league_slug} {season}: {last_error}"
         )
+
+    def _clean_poisoned_cache(self) -> None:
+        """Remove invalid JSON files (.json suffix) from loader's own cache dir."""
+        if self._reader_factory is not None or self._cache_dir is None:
+            return
+        try:
+            cache_path = self._cache_dir.resolve()
+            if not cache_path.is_dir():
+                return
+            for child in cache_path.iterdir():
+                # Only files with .json suffix
+                if child.name.endswith(".json") and not child.is_symlink() and child.is_file():
+                    child_resolved = child.resolve()
+                    # Ensure path is strictly inside cache_path, never outside
+                    if child_resolved != cache_path and cache_path in child_resolved.parents:
+                        try:
+                            with child_resolved.open("r", encoding="utf-8") as f:
+                                json.load(f)
+                        except Exception:
+                            child_resolved.unlink()
+                            logger.info(
+                                "understat.cache.removed_poisoned_file",
+                                file=child_resolved.name,
+                            )
+        except Exception as err:
+            logger.warning("understat.cache.clean_failed", error=str(err))
 
     @staticmethod
     def _row_from_archive(a: ArchiveRow, league_slug: str,
@@ -369,20 +427,6 @@ class UnderstatLoader:
                         existing.home_xg = row.home_xg  # type: ignore[assignment]
                         existing.away_xg = row.away_xg  # type: ignore[assignment]
                         report.stats_updated += 1
-
-                    # Ensure official Result is written/updated
-                    res = s.scalars(select(Result).where(Result.match_id == match.id)).first()
-                    if res is None:
-                        s.add(Result(
-                            match_id=match.id,
-                            home_goals=row.home_goals,
-                            away_goals=row.away_goals,
-                            source="understat",
-                            settled_at_utc=dt.datetime.now(dt.UTC),
-                        ))
-                    else:
-                        res.home_goals = row.home_goals
-                        res.away_goals = row.away_goals
         return report
 
     def upsert_lineups(self, match: Match, rows: list[dict]) -> int:
