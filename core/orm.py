@@ -236,6 +236,20 @@ class OddsSnapshot(Base):
     captured_at_utc: Mapped[dt.datetime] = mapped_column(UTCDateTime)
 
 
+class OddsPollAttempt(Base):
+    __tablename__ = "odds_poll_attempts"
+    __table_args__ = (
+        Index("ix_odds_poll_attempts_match_slot_tier", "match_id", "slot", "tier"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
+    slot: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+    tier: Mapped[str] = mapped_column(sa_enum(*ODD_TIERS, name="odd_tier"))
+    status: Mapped[str] = mapped_column(sa_enum("ok", "empty", "error", name="poll_attempt_status"))
+    ts: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+
+
 # --- availability & prefilter ----------------------------------------------
 
 class PlayerAvailability(Base):

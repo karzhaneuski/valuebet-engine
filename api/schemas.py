@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 class MatchSummary(BaseModel):
     id: int
     league: str
-    season: str
+    season: int
     home_team: str
     away_team: str
     date_utc: dt.date

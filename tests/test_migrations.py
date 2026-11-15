@@ -12,8 +12,8 @@ REPO = Path(__file__).resolve().parents[1]
 
 EXPECTED_TABLES = {
     "teams", "team_aliases", "matches", "match_stats", "odds_snapshots",
-    "player_availability", "prefilter_decisions", "recommendations",
-    "results", "api_quota_usage", "quota_counters", "llm_calls",
+    "odds_poll_attempts", "player_availability", "prefilter_decisions",
+    "recommendations", "results", "api_quota_usage", "quota_counters", "llm_calls",
 }
 
 
@@ -38,6 +38,13 @@ def test_upgrade_head_and_downgrade(tmp_path) -> None:
     assert "ix_matches_date_league" in match_idx
     uq = {c["name"] for c in insp.get_unique_constraints("team_aliases")}
     assert "uq_team_alias_source_alias" in uq
+
+    columns = {column["name"]: column for column in insp.get_columns("odds_poll_attempts")}
+    assert not columns["status"]["nullable"]
+
+    run_alembic(url, "downgrade", "-1")
+    after_one_step = set(inspect(get_engine(url)).get_table_names())
+    assert after_one_step == tables - {"odds_poll_attempts"}
 
     run_alembic(url, "downgrade", "base")
     tables_after = set(inspect(get_engine(url)).get_table_names())

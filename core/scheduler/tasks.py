@@ -16,7 +16,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from core.config import AppConfig, Secrets, load_config
@@ -25,7 +25,15 @@ from core.ingest.understat import UnderstatLoader
 from core.llm.provider import GeminiProvider
 from core.news.extractor import extract_player_news
 from core.news.search import SearchClient, TavilySearchClient, search_news_for_match
-from core.orm import Match, MatchStat, OddsSnapshot, PlayerAvailability, Result, UserBet
+from core.orm import (
+    Match,
+    MatchStat,
+    OddsPollAttempt,
+    OddsSnapshot,
+    PlayerAvailability,
+    Result,
+    UserBet,
+)
 from core.scheduler.pacing import evaluate_degradation_state, get_toa_credits_used
 from core.tracking.clv import calculate_user_bet_clv
 from core.tracking.settlement import settle_user_bet
@@ -207,6 +215,8 @@ def job_poll_odds_snapshots(
         for match in scheduled:
             if not match.commence_time_utc:
                 continue
+            if not match.toa_event_id:
+                continue
             ko_utc = (
                 match.commence_time_utc
                 if match.commence_time_utc.tzinfo
@@ -284,12 +294,41 @@ def job_poll_odds_snapshots(
                     if already_polled is not None:
                         continue
 
+                    sport_leagues = [
+                        league.slug for league in cfg.leagues
+                        if league.toa_sport_key == sport_key
+                    ]
+                    attempts_for_slot = (
+                        select(OddsPollAttempt.match_id)
+                        .join(Match, Match.id == OddsPollAttempt.match_id)
+                        .where(Match.league.in_(sport_leagues), OddsPollAttempt.tier == tier)
+                    )
+                    if tier == "T-3" and t3_slot_to_day:
+                        attempts_for_slot = attempts_for_slot.where(
+                            OddsPollAttempt.slot.between(start_of_day, end_of_day),
+                        )
+                    else:
+                        attempts_for_slot = attempts_for_slot.where(OddsPollAttempt.slot == ko_utc)
+                    # One row per match per completed polling cycle. Count errors for a
+                    # single match, so a shared request never looks like multiple retries.
+                    completed = session.scalar(
+                        attempts_for_slot.group_by(OddsPollAttempt.match_id)
+                        .having(
+                            (func.count(case((OddsPollAttempt.status.in_(("ok", "empty")), 1))) > 0)
+                            | (func.count(OddsPollAttempt.id) >= 2)
+                        )
+                        .limit(1)
+                    )
+                    if completed is not None:
+                        continue
+
                     markets = (
                         ["totals"] if (tier == "T-3" and disable_t3_h2h) else ["totals", "h2h"]
                     )
                     slot_key = ko_utc.date() if (tier == "T-3" and t3_slot_to_day) else ko_utc
                     qualifying_polls.append({
                         "match_id": match.id,
+                        "slot": ko_utc,
                         "sport_key": sport_key,
                         "tier": tier,
                         "slot_key": slot_key,
@@ -305,8 +344,11 @@ def job_poll_odds_snapshots(
                 "credits_used": credits_used,
             }
 
-        # Deduplicate polling by (sport_key, tier, slot_key) to avoid redundant paid calls
-        seen_keys: set[tuple[str, str, Any]] = set()
+        # Each group shares one request and its result across all qualifying matches.
+        groups: dict[tuple[str, str, dt.date | dt.datetime], list[dict[str, Any]]] = {}
+        for poll in qualifying_polls:
+            group_key = (poll["sport_key"], poll["tier"], poll["slot_key"])
+            groups.setdefault(group_key, []).append(poll)
         total_snapshots_taken = 0
 
         api_client = client
@@ -315,34 +357,38 @@ def job_poll_odds_snapshots(
             assert key is not None
             api_client = OddsApiClient(db_url=cfg.database.url, config=cfg, api_key=key)
 
-        for poll in qualifying_polls:
-            s_key = poll["sport_key"]
-            tr = poll["tier"]
-            sl_key = poll["slot_key"]
-            mkts = poll["markets"]
-            group_key = (s_key, tr, sl_key)
-            if group_key in seen_keys:
-                continue
-            seen_keys.add(group_key)
-
-            # 1 retry with 5s delay on network / HTTP errors
-            attempts = 0
-            while attempts < 2:
-                attempts += 1
+        for (sport_key, tier, _), group in groups.items():
+            status = "error"
+            # Keep the existing immediate retry. Persist one outcome for the tick
+            # so a failed group can retry on one later eligible tick.
+            for attempt in (1, 2):
                 try:
-                    res = api_client.snapshot_sport_odds(sport_key=s_key, tier=tr, markets=mkts)
-                    total_snapshots_taken += res.get("rows", 0)
+                    report = api_client.snapshot_sport_odds(
+                        sport_key=sport_key, tier=tier, markets=group[0]["markets"],
+                    )
+                    rows = report.get("rows", 0)
+                    total_snapshots_taken += rows
+                    status = "ok" if rows else "empty"
                     break
                 except Exception as exc:
                     logger.warning(
                         "Snapshot polling failed for %s (%s, attempt %s/2): %s",
-                        s_key,
-                        tr,
-                        attempts,
+                        sport_key,
+                        tier,
+                        attempt,
                         exc,
                     )
-                    if attempts < 2:
+                    if attempt == 1:
                         time.sleep(5)
+
+            session.add_all(
+                OddsPollAttempt(
+                    match_id=poll["match_id"], slot=poll["slot"], tier=tier, ts=curr_now,
+                    status=status,
+                )
+                for poll in group
+            )
+            session.commit()
 
         return {
             "status": "success",

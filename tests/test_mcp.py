@@ -64,7 +64,7 @@ def mcp_test_db(monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
     m1 = Match(
         id=201,
         league="epl",
-        season="2026-2027",
+        season=2026,
         date_utc=today + dt.timedelta(days=1),
         home_team_id=1,
         away_team_id=2,
@@ -77,7 +77,7 @@ def mcp_test_db(monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
     m2 = Match(
         id=202,
         league="epl",
-        season="2026-2027",
+        season=2026,
         date_utc=today + dt.timedelta(days=2),
         home_team_id=3,
         away_team_id=1,

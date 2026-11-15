@@ -13,23 +13,19 @@ from __future__ import annotations
 import datetime as dt
 from collections.abc import Iterator
 from contextlib import contextmanager
-from decimal import Decimal
 from pathlib import Path
-from typing import Any
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 from streamlit.testing.v1 import AppTest
 
 from api.db import get_db
 from api.main import app as rest_app
 from core.config import load_config
-from core.ingest.odds_api import EventsReport
-from core.ingest.understat import UnderstatReport, UnderstatRow
-from core.orm import Base, Match, MatchStat, OddsSnapshot, QuotaCounter, Team, TeamAlias
+from core.orm import Match
 from core.scheduler.tasks import (
     job_poll_events,
     job_poll_odds_snapshots,
@@ -44,6 +40,15 @@ from mcp_server.server import (
     get_user_performance,
     record_user_bet,
 )
+from tests.e2e_support import (
+    DEFAULT_KICKOFF,
+    DEFAULT_MATCH_EID,
+    ClockPatcher,
+    build_toa_handler,
+    create_toa_client,
+    create_understat_loader,
+    init_e2e_db,
+)
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 REAL_FORTUNA_FILE = FIXTURES_DIR / "fortuna_barcelona_real_2026-10-25.txt"
@@ -51,183 +56,15 @@ DASHBOARD_APP_PATH = str(Path(__file__).parent.parent / "dashboard" / "app.py")
 AUTH_HEADER = {"Authorization": "Bearer test-e2e-token"}
 
 
-class Stage2FakeTOAClient:
-    """Mock TOA client for Stage 2 E2E pipeline."""
-
-    def __init__(self, sm: sessionmaker[Session], match_time: dt.datetime) -> None:
-        self.sm = sm
-        self.match_time = match_time
-        self.calls: list[dict[str, Any]] = []
-
-    def fetch_events(self, sport_key: str) -> list[dict[str, Any]]:
-        return [
-            {
-                "id": "ev_stage2_elclasico",
-                "sport_key": sport_key,
-                "commence_time": self.match_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "home_team": "Barcelona",
-                "away_team": "Real Madrid",
-            }
-        ]
-
-    def apply_events(
-        self,
-        sport_key: str,
-        events: list[dict[str, Any]],
-        league_slug: str,
-        season: int,
-        now: dt.datetime,
-    ) -> EventsReport:
-        report = EventsReport()
-        with self.sm() as session:
-            barca = session.scalar(select(Team).where(Team.name == "Barcelona"))
-            real = session.scalar(select(Team).where(Team.name == "Real Madrid"))
-            assert barca is not None and real is not None
-
-            m = session.scalar(select(Match).where(Match.toa_event_id == "ev_stage2_elclasico"))
-            if m is None:
-                m = Match(
-                    league=league_slug,
-                    season=f"{season}-{season+1}",
-                    home_team_id=barca.id,
-                    away_team_id=real.id,
-                    home_team=barca,
-                    away_team=real,
-                    date_utc=self.match_time.date(),
-                    commence_time_utc=self.match_time,
-                    kickoff_source="toa",
-                    status="scheduled",
-                    toa_event_id="ev_stage2_elclasico",
-                )
-                session.add(m)
-                report.events_seen += 1
-            session.commit()
-        return report
-
-    def snapshot_sport_odds(
-        self, sport_key: str, tier: str, markets: list[str] | None = None
-    ) -> dict[str, Any]:
-        self.calls.append({"sport_key": sport_key, "tier": tier, "markets": markets})
-        with self.sm() as session:
-            m = session.scalar(select(Match).where(Match.toa_event_id == "ev_stage2_elclasico"))
-            assert m is not None
-
-            capture_time = (
-                self.match_time - dt.timedelta(hours=24)
-                if tier == "T-24"
-                else self.match_time - dt.timedelta(hours=3)
-            )
-
-            # Pinnacle totals 2.5
-            session.add(
-                OddsSnapshot(
-                    toa_sport_key=sport_key,
-                    toa_event_id=m.toa_event_id,
-                    match_id=m.id,
-                    bookmaker="pinnacle",
-                    market="totals",
-                    line=Decimal("2.5"),
-                    outcome="Over",
-                    price=Decimal("1.952"),
-                    tier=tier,
-                    planned_offset_min=1440 if tier == "T-24" else 180,
-                    actual_offset_min=1440 if tier == "T-24" else 180,
-                    source="toa",
-                    captured_at_utc=capture_time,
-                )
-            )
-            session.add(
-                OddsSnapshot(
-                    toa_sport_key=sport_key,
-                    toa_event_id=m.toa_event_id,
-                    match_id=m.id,
-                    bookmaker="pinnacle",
-                    market="totals",
-                    line=Decimal("2.5"),
-                    outcome="Under",
-                    price=Decimal("1.952"),
-                    tier=tier,
-                    planned_offset_min=1440 if tier == "T-24" else 180,
-                    actual_offset_min=1440 if tier == "T-24" else 180,
-                    source="toa",
-                    captured_at_utc=capture_time,
-                )
-            )
-            # Pinnacle h2h
-            for outcome, price in [("Home", "2.100"), ("Draw", "3.500"), ("Away", "3.400")]:
-                session.add(
-                    OddsSnapshot(
-                        toa_sport_key=sport_key,
-                        toa_event_id=m.toa_event_id,
-                        match_id=m.id,
-                        bookmaker="pinnacle",
-                        market="h2h",
-                        line=None,
-                        outcome=outcome,
-                        price=Decimal(price),
-                        tier=tier,
-                        planned_offset_min=1440 if tier == "T-24" else 180,
-                        actual_offset_min=1440 if tier == "T-24" else 180,
-                        source="toa",
-                        captured_at_utc=capture_time,
-                    )
-                )
-            session.commit()
-        return {"rows": 5, "credits": 2}
-
-
-class Stage2FakeUnderstatLoader:
-    """Mock Understat loader for Stage 2 score sync."""
-
-    def __init__(self, sm: sessionmaker[Session]) -> None:
-        self.sm = sm
-
-    def schedule_rows(self, slug: str, year: int) -> list[UnderstatRow]:
-        return [
-            UnderstatRow(
-                understat_id="99902",
-                naive_start=dt.datetime(2026, 10, 25, 20, 0),
-                home="Barcelona",
-                away="Real Madrid",
-                home_goals=2,
-                away_goals=1,
-                home_xg=2.15,
-                away_xg=1.10,
-                is_result=True,
-                league_slug=slug,
-                season=year,
-            )
-        ]
-
-    def upsert_schedule(self, rows: list[UnderstatRow]) -> UnderstatReport:
-        report = UnderstatReport()
-        with self.sm() as session:
-            m = session.scalar(select(Match).where(Match.toa_event_id == "ev_stage2_elclasico"))
-            assert m is not None
-            session.add(
-                MatchStat(
-                    match_id=m.id,
-                    source="understat",
-                    home_goals=2,
-                    away_goals=1,
-                    home_xg=2.15,
-                    away_xg=1.10,
-                )
-            )
-            session.commit()
-            report.stats_written = 1
-        return report
-
-
-def test_e2e_stage2_multichannel_consistency(monkeypatch) -> None:
-    # 0. Setup isolated in-memory database
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
-    sm = sessionmaker(bind=engine, expire_on_commit=False)
+def test_e2e_stage2_multichannel_consistency(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 0. Setup isolated file-based SQLite database in tmp_path shared across participants
+    db_file = tmp_path / "e2e_stage2.db"
+    db_url = f"sqlite:///{db_file}"
+    kickoff_utc = DEFAULT_KICKOFF
+    match_eid = DEFAULT_MATCH_EID
+    sm = init_e2e_db(db_url, kickoff_utc=kickoff_utc)
     cfg = load_config()
 
     monkeypatch.setenv("API_SECRET_TOKEN", "test-e2e-token")
@@ -259,57 +96,48 @@ def test_e2e_stage2_multichannel_consistency(monkeypatch) -> None:
 
     rest_app.dependency_overrides[get_db] = _override_db
 
-    # Seed teams & quotas
-    with sm() as session:
-        session.add(
-            QuotaCounter(
-                provider="toa",
-                period=dt.datetime.now(dt.UTC).strftime("%Y-%m"),
-                credits_used=0,
-                updated_at_utc=dt.datetime.now(dt.UTC),
-            )
-        )
-        barca = Team(name="Barcelona", league="la_liga")
-        real = Team(name="Real Madrid", league="la_liga")
-        session.add_all([barca, real])
-        session.flush()
-
-        session.add_all([
-            TeamAlias(team_id=barca.id, source="toa", alias="Barcelona"),
-            TeamAlias(team_id=real.id, source="toa", alias="Real Madrid"),
-        ])
-        session.commit()
-
-    kickoff_utc = dt.datetime.now(dt.UTC) + dt.timedelta(hours=20)
-    fake_toa = Stage2FakeTOAClient(sm, kickoff_utc)
+    # Odds handler setup
+    current_odds_tier: str = "T-24"
+    toa_handler = build_toa_handler(
+        kickoff_utc=kickoff_utc,
+        match_eid=match_eid,
+        get_odds_tier=lambda: current_odds_tier,
+    )
+    toa_client = create_toa_client(db_url, cfg, toa_handler)
 
     # Step 1: Create scheduled match via job_poll_events
     t_48 = kickoff_utc - dt.timedelta(hours=48)
-    job_poll_events(
+    events_res = job_poll_events(
         sm,
-        client=fake_toa,  # type: ignore[arg-type]
+        client=toa_client,
         config=cfg,
         now=t_48,
     )
+    assert events_res["status"] == "success"
 
     with sm() as session:
-        match = session.scalar(select(Match).where(Match.toa_event_id == "ev_stage2_elclasico"))
+        match = session.scalar(select(Match).where(Match.toa_event_id == match_eid))
         assert match is not None
         match_id = match.id
 
     # Step 2: Poll pre-kickoff Pinnacle snapshots via job_poll_odds_snapshots
+    clock = ClockPatcher(monkeypatch)
+    current_odds_tier = "T-24"
     t_24 = kickoff_utc - dt.timedelta(hours=24)
+    clock.set_now(t_24)
     job_poll_odds_snapshots(
         sm,
-        client=fake_toa,  # type: ignore[arg-type]
+        client=toa_client,
         config=cfg,
         now=t_24,
     )
 
+    current_odds_tier = "T-3"
     t_3 = kickoff_utc - dt.timedelta(hours=3)
+    clock.set_now(t_3)
     job_poll_odds_snapshots(
         sm,
-        client=fake_toa,  # type: ignore[arg-type]
+        client=toa_client,
         config=cfg,
         now=t_3,
     )
@@ -393,15 +221,25 @@ def test_e2e_stage2_multichannel_consistency(monkeypatch) -> None:
     assert "Ставка успешно записана:" in mcp_bet2
     assert "over 2.5" in mcp_bet2
 
-    # 3. Match finishes and official Result syncs via job_refresh_history
+    # Step 3: Match finishes and official Result syncs via job_refresh_history
     t_post = kickoff_utc + dt.timedelta(hours=3)
-    fake_understat = Stage2FakeUnderstatLoader(sm)
-    job_refresh_history(
+    clock.set_now(t_post)
+    understat_loader = create_understat_loader(db_url, cfg, kickoff_utc=kickoff_utc)
+    hist_res = job_refresh_history(
         session_factory=sm,
-        understat_loader=fake_understat,  # type: ignore[arg-type]
+        understat_loader=understat_loader,
+        toa_client=toa_client,
         config=cfg,
         now=t_post,
     )
+    assert hist_res["status"] == "success"
+
+    with sm() as session:
+        from core.orm import Result, UserBet
+        bets = list(session.scalars(select(UserBet)).all())
+        results = list(session.scalars(select(Result)).all())
+        assert len(bets) == 2, f"Expected 2 bets, found {len(bets)}"
+        assert len(results) == 1, f"Expected 1 result, found {len(results)}"
 
     settle_rep = job_settle_matches_and_clv(sm, config=cfg, dry_run=False, now=t_post)
     assert settle_rep["settled_bets"] == 2

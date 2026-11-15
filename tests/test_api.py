@@ -46,7 +46,7 @@ def session_factory() -> Iterator[sessionmaker[Session]]:
     m1 = Match(
         id=101,
         league="epl",
-        season="2026-2027",
+        season=2026,
         date_utc=today + dt.timedelta(days=1),
         home_team_id=1,
         away_team_id=2,
@@ -59,7 +59,7 @@ def session_factory() -> Iterator[sessionmaker[Session]]:
     m2 = Match(
         id=102,
         league="epl",
-        season="2026-2027",
+        season=2026,
         date_utc=today + dt.timedelta(days=2),
         home_team_id=3,
         away_team_id=4,

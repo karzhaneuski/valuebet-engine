@@ -195,7 +195,7 @@ def test_calculate_user_bet_clv_from_closing_odds(db_session: Session) -> None:
 
     match = Match(
         league="epl",
-        season="2026-2027",
+        season=2026,
         kickoff_source="toa",
         home_team_id=t1.id,
         away_team_id=t2.id,
@@ -343,7 +343,7 @@ def test_job_refresh_history_records_result_and_settles_team_totals() -> None:
         ko = dt.datetime(2026, 10, 25, 16, 30, tzinfo=dt.UTC)
         match = Match(
             league="premier_league",
-            season="2026-2027",
+            season=2026,
             home_team_id=arsenal.id,
             away_team_id=chelsea.id,
             home_team=arsenal,
