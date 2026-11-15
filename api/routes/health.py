@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from api.db import get_db
 from api.schemas import HealthResponse
 from core.config import load_config
-from core.db import DatabaseMissingError
 from core.news.search import get_current_period_utc
 from core.orm import Match, OddsSnapshot, QuotaCounter
 from core.scheduler.pacing import evaluate_degradation_state
@@ -20,7 +19,7 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health", response_model=HealthResponse)
-def health_check(request: Request) -> HealthResponse:
+def health_check(db: Session = Depends(get_db)) -> HealthResponse:
     """Public health-check endpoint: database connection, snapshot timestamp, and quota counters.
 
     Does NOT require authentication.
@@ -29,33 +28,7 @@ def health_check(request: Request) -> HealthResponse:
     db_connected = False
     status_str = "ok"
 
-    db: Session | None = None
-    generator: Any = None
-
-    # Check for test dependency overrides first
-    override = request.app.dependency_overrides.get(get_db)
-    if override is not None:
-        val = override()
-        if hasattr(val, "__iter__") and not hasattr(val, "execute"):
-            try:
-                db = next(val)
-                generator = val
-            except StopIteration:
-                db = None
-        else:
-            db = val
-    else:
-        try:
-            generator = get_db()
-            db = next(generator)
-        except DatabaseMissingError:
-            db = None
-
-    try:
-        return _run_health_check(db, cfg, db_connected, status_str)
-    finally:
-        if generator is not None and hasattr(generator, "close"):
-            generator.close()
+    return _run_health_check(db, cfg, db_connected, status_str)
 
 
 def _run_health_check(

@@ -11,6 +11,7 @@ from sqlalchemy import inspect, select
 from api.main import app as api_app
 from core.db import DatabaseMissingError, get_engine, reset_engine, session_scope
 from core.orm import Base, Team
+from scripts.build_fixture_db import main as build_fixture_db_main
 
 
 def test_missing_database_raises_and_does_not_create(tmp_path: Path) -> None:
@@ -154,3 +155,27 @@ def test_api_route_returns_503_when_database_file_missing(
     assert str(tmp_path) not in raw_text
     assert str(db_file) not in raw_text
     assert not db_file.exists()
+
+
+def test_build_fixture_db_creates_file_and_checks_on_missing_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """build_fixture_db creates non-empty DB; checks on missing DB raises DatabaseMissingError."""
+    # 1. Opening a missing path in python -m core.ingest checks style raises DatabaseMissingError
+    missing_file = tmp_path / "missing_check.db"
+    missing_url = f"sqlite:///{missing_file}"
+    reset_engine()
+    with pytest.raises(DatabaseMissingError), session_scope(missing_url):
+        pass
+    assert not missing_file.exists()
+
+    # 2. build_fixture_db.main() creates a fresh non-empty db
+    fixture_file = tmp_path / "fixture.db"
+    fixture_url = f"sqlite:///{fixture_file}"
+    reset_engine()
+    monkeypatch.setenv("DATABASE_URL", fixture_url)
+
+    assert not fixture_file.exists()
+    build_fixture_db_main()
+    assert fixture_file.exists()
+    assert fixture_file.stat().st_size > 0

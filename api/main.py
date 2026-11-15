@@ -19,6 +19,7 @@ from api.routes.fortuna import router as fortuna_router
 from api.routes.health import router as health_router
 from api.routes.matches import router as matches_router
 from api.routes.tracking import router as tracking_router
+from api.schemas import HealthResponse
 from core.db import DatabaseMissingError
 from core.http import register_runtime_secrets
 from core.logging import configure, get_logger
@@ -43,6 +44,21 @@ app = FastAPI(
 async def database_missing_exception_handler(
     request: Request, exc: DatabaseMissingError
 ) -> JSONResponse:
+    if request.url.path == "/health":
+        payload = HealthResponse(
+            status="unhealthy",
+            version="0.3.0",
+            database_connected=False,
+            database_url_redacted=None,
+            last_odds_snapshot_utc=None,
+            toa_credits_remaining=None,
+            search_quota={},
+            pacing_stage=0,
+            pacing_degraded=False,
+            pacing_actions=[],
+        ).model_dump(mode="json")
+        return JSONResponse(status_code=200, content=payload)
+
     return JSONResponse(
         status_code=503,
         content={
