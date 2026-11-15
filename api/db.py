@@ -6,8 +6,14 @@ from collections.abc import Iterator
 
 from sqlalchemy.orm import Session
 
+from core.clock import Clock, system_clock
 from core.config import load_config
 from core.db import get_session_factory
+
+
+def get_clock() -> Clock:
+    """Provide the system clock dependency for FastAPI routes."""
+    return system_clock
 
 
 def get_db() -> Iterator[Session]:

@@ -184,7 +184,12 @@ def job_refresh_history(
         if client is None:
             key = Secrets().odds_api_key
             if key:
-                client = OddsApiClient(db_url=cfg.database.url, config=cfg, api_key=key)
+                client = OddsApiClient(
+                    db_url=cfg.database.url,
+                    config=cfg,
+                    api_key=key,
+                    clock=lambda: curr_now,
+                )
         if client is not None:
             try:
                 scores = client.fetch_scores(days_from=3)
@@ -409,7 +414,12 @@ def job_poll_odds_snapshots(
         if api_client is None:
             key = Secrets().odds_api_key
             assert key is not None
-            api_client = OddsApiClient(db_url=cfg.database.url, config=cfg, api_key=key)
+            api_client = OddsApiClient(
+                db_url=cfg.database.url,
+                config=cfg,
+                api_key=key,
+                clock=lambda: curr_now,
+            )
 
         for (sport_key, tier, _), group in groups.items():
             status = "error"
@@ -479,7 +489,12 @@ def job_poll_events(
         key = Secrets().odds_api_key
         if not key:
             return {"status": "skipped", "reason": "no_api_key"}
-        api_client = OddsApiClient(db_url=cfg.database.url, config=cfg, api_key=key)
+        api_client = OddsApiClient(
+            db_url=cfg.database.url,
+            config=cfg,
+            api_key=key,
+            clock=lambda: curr_now,
+        )
 
     current_season = curr_now.year
     for league in cfg.leagues:

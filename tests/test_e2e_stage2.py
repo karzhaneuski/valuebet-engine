@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from streamlit.testing.v1 import AppTest
 
-from api.db import get_db
+from api.db import get_clock, get_db
 from api.main import app as rest_app
 from core.config import load_config
 from core.orm import Match
@@ -39,6 +39,9 @@ from mcp_server.server import (
     get_upcoming_matches,
     get_user_performance,
     record_user_bet,
+)
+from mcp_server.server import (
+    set_clock as mcp_set_clock,
 )
 from tests.e2e_support import (
     DEFAULT_KICKOFF,
@@ -96,6 +99,10 @@ def test_e2e_stage2_multichannel_consistency(
 
     rest_app.dependency_overrides[get_db] = _override_db
 
+    clock = ClockPatcher(monkeypatch)
+    rest_app.dependency_overrides[get_clock] = lambda: clock.clock
+    mcp_set_clock(clock.clock)
+
     # Odds handler setup
     current_odds_tier: str = "T-24"
     toa_handler = build_toa_handler(
@@ -103,10 +110,11 @@ def test_e2e_stage2_multichannel_consistency(
         match_eid=match_eid,
         get_odds_tier=lambda: current_odds_tier,
     )
-    toa_client = create_toa_client(db_url, cfg, toa_handler)
+    toa_client = create_toa_client(db_url, cfg, toa_handler, clock=clock.clock)
 
     # Step 1: Create scheduled match via job_poll_events
     t_48 = kickoff_utc - dt.timedelta(hours=48)
+    clock.set_now(t_48)
     events_res = job_poll_events(
         sm,
         client=toa_client,
@@ -121,7 +129,6 @@ def test_e2e_stage2_multichannel_consistency(
         match_id = match.id
 
     # Step 2: Poll pre-kickoff Pinnacle snapshots via job_poll_odds_snapshots
-    clock = ClockPatcher(monkeypatch)
     current_odds_tier = "T-24"
     t_24 = kickoff_utc - dt.timedelta(hours=24)
     clock.set_now(t_24)
@@ -292,3 +299,4 @@ def test_e2e_stage2_multichannel_consistency(
         assert any("статистически недостаточна" in w for w in warning_texts)
 
     rest_app.dependency_overrides.clear()
+    mcp_set_clock(None)

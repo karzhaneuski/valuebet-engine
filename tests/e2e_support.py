@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Callable
-from typing import Any, Self
+from typing import Any
 
 import httpx
 import pandas as pd
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-import core.ingest.odds_api
 from core.config import AppConfig
 from core.ingest.odds_api import OddsApiClient
 from core.ingest.understat import UnderstatLoader
@@ -184,11 +183,12 @@ def create_toa_client(
     db_url: str,
     cfg: AppConfig,
     handler: Callable[[httpx.Request], httpx.Response],
+    clock: Callable[[], dt.datetime] | None = None,
 ) -> OddsApiClient:
-    """Instantiate OddsApiClient with mock transport."""
+    """Instantiate OddsApiClient with mock transport and optional clock."""
     mock_transport = httpx.MockTransport(handler)
     http_client = httpx.Client(transport=mock_transport)
-    return OddsApiClient(db_url, cfg, "k", client=http_client)
+    return OddsApiClient(db_url, cfg, "k", client=http_client, clock=clock)
 
 
 def create_understat_loader(
@@ -205,45 +205,17 @@ def create_understat_loader(
 
 
 class ClockPatcher:
-    """Patches datetime / date across modules to return fixed current time."""
+    """Holds the current time and hands out a clock callable."""
 
-    def __init__(self, monkeypatch: Any) -> None:
+    def __init__(self, monkeypatch: Any = None) -> None:
         self.monkeypatch = monkeypatch
         self.current_time = dt.datetime(2026, 10, 24, 20, 0, tzinfo=dt.UTC)
-        outer = self
 
-        class MockDatetime(dt.datetime):
-            @classmethod
-            def now(cls, tz: dt.tzinfo | None = None) -> Self:
-                current = outer.current_time
-                return cls(
-                    current.year,
-                    current.month,
-                    current.day,
-                    current.hour,
-                    current.minute,
-                    current.second,
-                    current.microsecond,
-                    tzinfo=current.tzinfo,
-                )
+    def clock(self) -> dt.datetime:
+        return self.current_time
 
-        class MockDateModule:
-            def __getattr__(self, name: str) -> Any:
-                if name == "today":
-                    return lambda: outer.current_time.date()
-                return getattr(dt.date, name)
-
-        class MockDtModule:
-            date = MockDateModule()
-            datetime = MockDatetime
-
-            def __getattr__(self, name: str) -> Any:
-                return getattr(dt, name)
-
-        mock_module = MockDtModule()
-        self.monkeypatch.setattr(core.ingest.odds_api.dt, "datetime", MockDatetime)
-        self.monkeypatch.setattr("api.routes.matches.dt", mock_module)
-        self.monkeypatch.setattr("mcp_server.server.dt", mock_module)
+    def __call__(self) -> dt.datetime:
+        return self.current_time
 
     def set_now(self, now: dt.datetime) -> None:
         self.current_time = now

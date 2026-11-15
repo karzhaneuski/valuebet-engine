@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.auth import verify_bearer_token
-from api.db import get_db
+from api.db import get_clock, get_db
 from api.schemas import (
     BootstrapCI,
     PerformanceResponse,
@@ -19,6 +19,7 @@ from api.schemas import (
     UserBetItem,
     UserBetListResponse,
 )
+from core.clock import Clock
 from core.orm import Match, UserBet
 from core.tracking.clv import evaluate_fair_probs_for_bet
 from core.tracking.stats import compute_performance_metrics
@@ -82,6 +83,7 @@ def _bet_to_item(bet: UserBet, db: Session) -> UserBetItem:
 def record_user_bet(
     request: UserBetCreate,
     db: Session = Depends(get_db),
+    clock: Clock = Depends(get_clock),
     auth_token: str = Depends(verify_bearer_token),
 ) -> UserBetItem:
     """Record a bet placed by the user."""
@@ -98,7 +100,7 @@ def record_user_bet(
             detail=f"Матч с ID {request.match_id} не найден в базе данных",
         )
 
-    now = dt.datetime.now(dt.UTC)
+    now = clock()
     placed_time = request.placed_at_utc or now
     if placed_time.tzinfo is None:
         placed_time = placed_time.replace(tzinfo=dt.UTC)
@@ -186,6 +188,7 @@ def list_user_bets(
 def get_user_performance(
     period: str = Query("all", description="Period filter (all, month, season)"),
     db: Session = Depends(get_db),
+    clock: Clock = Depends(get_clock),
     auth_token: str = Depends(verify_bearer_token),
 ) -> PerformanceResponse:
     """Calculate transparent performance metrics (P/L, ROI, average CLV, 95% bootstrap CIs).
@@ -193,7 +196,7 @@ def get_user_performance(
     Strictly displays negative ROI and sample size warnings when sample size < 100 bets.
     """
     stmt = select(UserBet)
-    now = dt.datetime.now(dt.UTC)
+    now = clock()
 
     if period == "month":
         month_ago = now - dt.timedelta(days=30)
