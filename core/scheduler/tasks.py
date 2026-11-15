@@ -14,7 +14,7 @@ import datetime as dt
 import logging
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -51,6 +51,10 @@ def job_refresh_history(
     config: AppConfig | None = None,
     now: dt.datetime | None = None,
     dry_run: bool = False,
+    on_source_error: Literal["stop", "fallback"] = "stop",
+    leagues: list[str] | None = None,
+    season: int | None = None,
+    since: dt.date | None = None,
 ) -> dict[str, Any]:
     """Daily refresh of historical match results, xG, and UCL scores.
 
@@ -63,44 +67,119 @@ def job_refresh_history(
     logger.info("Executing job_refresh_history (dry_run=%s)", dry_run)
 
     if dry_run:
-        return {"status": "dry_run", "updated_results": 0}
+        return {
+            "status": "dry_run",
+            "updated_results": 0,
+            "results_inserted": 0,
+            "results_updated": 0,
+            "leagues_done": [],
+            "sources_used": {},
+        }
+
+    # Validate leagues filter if supplied
+    all_cfg_slugs = {lg.slug for lg in cfg.leagues}
+    if leagues is not None:
+        for slug in leagues:
+            if slug not in all_cfg_slugs:
+                raise ValueError(f"Unknown league slug: {slug!r}")
+
+    season_year = season if season is not None else (
+        curr_now.year if curr_now.month >= 7 else curr_now.year - 1
+    )
 
     updated_count = 0
+    results_inserted = 0
+    results_updated = 0
+    leagues_done: list[str] = []
+    sources_used: dict[str, str] = {}
+    failed_leagues: dict[str, str] = {}
+    touched_match_ids: set[int] = set()
 
     # 1. Primary: Understat results + xG
     loader = understat_loader or UnderstatLoader(db_url=cfg.database.url, config=cfg)
-    season_year = curr_now.year if curr_now.month >= 7 else curr_now.year - 1
-    for league in cfg.leagues:
-        if league.understat_league:
-            try:
-                rows = loader.schedule_rows(league.slug, season_year)
-                if rows:
-                    report = loader.upsert_schedule(rows)
-                    updated_count += report.stats_written + report.stats_updated
-            except Exception as exc:
-                logger.warning(
-                    "Understat history sync failed for league %s: %s; "
-                    "falling back to football-data",
-                    league.slug,
-                    exc,
-                )
-                try:
-                    from core.ingest.football_data import FootballDataLoader
+    target_leagues = [
+        lg for lg in cfg.leagues
+        if lg.understat_league and (leagues is None or lg.slug in leagues)
+    ]
 
-                    fd_loader = FootballDataLoader(db_url=cfg.database.url, config=cfg)
-                    fd_loader.download(league.slug, season_year)
-                    fd_rows = fd_loader.parse(league.slug, season_year)
-                    fd_loader.upsert(fd_rows)
-                except Exception as fd_exc:
-                    logger.warning(
-                        "Football-data fallback also failed for league %s: %s",
-                        league.slug,
-                        fd_exc,
-                    )
+    for league in target_leagues:
+        try:
+            rows = loader.schedule_rows(league.slug, season_year)
+            if since is not None:
+                rows = [r for r in rows if r.naive_start.date() >= since]
+            if rows:
+                report = loader.upsert_schedule(rows)
+                updated_count += report.stats_written + report.stats_updated
+                if report.stats_written > 0 or report.stats_updated > 0:
+                    with session_factory() as session:
+                        u_ids = [
+                            int(r.understat_id)
+                            for r in rows
+                            if r.is_result and r.home_goals is not None
+                        ]
+                        if u_ids:
+                            matches = session.scalars(
+                                select(Match.id).where(Match.understat_id.in_(u_ids))
+                            ).all()
+                            touched_match_ids.update(matches)
+            leagues_done.append(league.slug)
+            sources_used[league.slug] = "understat"
+        except Exception as exc:
+            err_text = str(exc)[:200]
+            logger.warning(
+                "Understat history sync failed for league %s: %s",
+                league.slug,
+                exc,
+            )
+            if on_source_error == "stop":
+                return {
+                    "status": "source_unavailable",
+                    "source": "understat",
+                    "league": league.slug,
+                    "error": err_text,
+                    "leagues_done": leagues_done,
+                    "updated_results": updated_count,
+                    "results_inserted": results_inserted,
+                    "results_updated": results_updated,
+                    "sources_used": sources_used,
+                }
+            # Fallback path
+            failed_leagues[league.slug] = "understat"
+            try:
+                from core.ingest.football_data import FootballDataLoader
+
+                fd_loader = FootballDataLoader(db_url=cfg.database.url, config=cfg)
+                fd_loader.download(league.slug, season_year)
+                fd_rows = fd_loader.parse(league.slug, season_year)
+                if since is not None:
+                    fd_rows = [r for r in fd_rows if r.date >= since]
+                fd_report = fd_loader.upsert(fd_rows)
+                updated_count += fd_report.stats_written + fd_report.stats_updated
+                if fd_report.stats_written > 0 or fd_report.stats_updated > 0:
+                    with session_factory() as session:
+                        fd_dates = [r.date for r in fd_rows]
+                        if fd_dates:
+                            matches = session.scalars(
+                                select(Match.id).where(
+                                    Match.league == league.slug,
+                                    Match.season == season_year,
+                                    Match.date_utc.in_(fd_dates),
+                                )
+                            ).all()
+                            touched_match_ids.update(matches)
+                leagues_done.append(league.slug)
+                sources_used[league.slug] = "football-data"
+            except Exception as fd_exc:
+                logger.warning(
+                    "Football-data fallback also failed for league %s: %s",
+                    league.slug,
+                    fd_exc,
+                )
+                failed_leagues[league.slug] = "football-data"
 
     # 2. UCL results via TOA /scores (window <= 72h)
     ucl_league = next((lg for lg in cfg.leagues if getattr(lg, "ucl", False)), None)
-    if ucl_league:
+    if ucl_league and (leagues is None or ucl_league.slug in leagues):
         client = toa_client
         if client is None:
             key = Secrets().odds_api_key
@@ -116,6 +195,7 @@ def job_refresh_history(
 
     # 3. Populate Result rows from MatchStat for finished matches, update status and clear postponed
     with session_factory() as session:
+        # MatchStat rows that have a finished score
         stats = list(
             session.scalars(
                 select(MatchStat).where(
@@ -136,12 +216,19 @@ def job_refresh_history(
                         settled_at_utc=curr_now,
                     )
                 )
-            else:
+                results_inserted += 1
+            elif st.match_id in touched_match_ids:
                 assert st.home_goals is not None and st.away_goals is not None
-                res.home_goals = int(st.home_goals)
-                res.away_goals = int(st.away_goals)
-                if res.settled_at_utc is None:
+                new_home = int(st.home_goals)
+                new_away = int(st.away_goals)
+                score_changed = res.home_goals != new_home or res.away_goals != new_away
+                source_changed = res.source != st.source
+                if score_changed or source_changed:
+                    res.home_goals = new_home
+                    res.away_goals = new_away
+                    res.source = st.source
                     res.settled_at_utc = curr_now
+                    results_updated += 1
 
         scheduled_matches = list(
             session.scalars(
@@ -155,7 +242,16 @@ def job_refresh_history(
                 updated_count += 1
         session.commit()
 
-    return {"status": "success", "updated_results": updated_count}
+    overall_status = "partial" if failed_leagues else "success"
+    return {
+        "status": overall_status,
+        "updated_results": updated_count,
+        "results_inserted": results_inserted,
+        "results_updated": results_updated,
+        "leagues_done": leagues_done,
+        "sources_used": sources_used,
+        "failed_sources": failed_leagues,
+    }
 
 
 def job_poll_odds_snapshots(
