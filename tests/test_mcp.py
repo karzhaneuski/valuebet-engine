@@ -124,6 +124,9 @@ def test_get_upcoming_matches(mcp_test_db: Session) -> None:
 
 
 def test_get_match_fair_prices_success(mcp_test_db: Session) -> None:
+    from core.config import load_config
+
+    cfg = load_config()
     res = get_match_fair_prices(201)
     assert "Справедливые котировки: Arsenal — Chelsea" in res
     assert "1X2:" in res
@@ -131,6 +134,8 @@ def test_get_match_fair_prices_success(mcp_test_db: Session) -> None:
     assert "Обе забьют:" in res
     assert "inny" in res
     assert "ρ=0" in res
+    assert f"κ_high={cfg.fair_matrix.kappa_high:.2f}" in res
+    assert "1.05" not in res
 
 
 def test_get_match_fair_prices_not_found(mcp_test_db: Session) -> None:

@@ -174,8 +174,10 @@ def test_build_fixture_db_creates_file_and_checks_on_missing_raises(
     fixture_url = f"sqlite:///{fixture_file}"
     reset_engine()
     monkeypatch.setenv("DATABASE_URL", fixture_url)
+    monkeypatch.chdir(tmp_path)
 
     assert not fixture_file.exists()
     build_fixture_db_main()
     assert fixture_file.exists()
     assert fixture_file.stat().st_size > 0
+    assert (tmp_path / "reports/ingest/events_report.json").exists()

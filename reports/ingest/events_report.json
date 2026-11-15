@@ -1,1 +1,72 @@
-{"bundesliga": {"events": 0, "created": 0, "kickoffs_updated": 0, "postponed_suspected": 0, "un_suspected": 0, "teams_created": [], "unmatched": []}}
+{
+  "premier_league": {
+    "events": 20,
+    "created": 0,
+    "kickoffs_updated": 1,
+    "postponed_suspected": 0,
+    "un_suspected": 0,
+    "teams_created": [],
+    "unmatched": []
+  },
+  "la_liga": {
+    "events": 19,
+    "created": 0,
+    "kickoffs_updated": 5,
+    "postponed_suspected": 0,
+    "un_suspected": 0,
+    "teams_created": [],
+    "unmatched": []
+  },
+  "serie_a": {
+    "events": 19,
+    "created": 0,
+    "kickoffs_updated": 0,
+    "postponed_suspected": 0,
+    "un_suspected": 0,
+    "teams_created": [],
+    "unmatched": []
+  },
+  "bundesliga": {
+    "events": 17,
+    "created": 0,
+    "kickoffs_updated": 2,
+    "postponed_suspected": 0,
+    "un_suspected": 0,
+    "teams_created": [],
+    "unmatched": []
+  },
+  "ligue_1": {
+    "events": 17,
+    "created": 0,
+    "kickoffs_updated": 5,
+    "postponed_suspected": 0,
+    "un_suspected": 0,
+    "teams_created": [],
+    "unmatched": []
+  },
+  "ucl": {
+    "events": 18,
+    "created": 18,
+    "kickoffs_updated": 0,
+    "postponed_suspected": 0,
+    "un_suspected": 0,
+    "teams_created": [
+      "Galatasaray",
+      "Shakhtar Donetsk",
+      "Sporting Lisbon",
+      "Bod\u00f8/Glimt",
+      "Feyenoord",
+      "LASK",
+      "\u0160K Slovan Bratislava",
+      "AEK Athens",
+      "Fenerbahce",
+      "Slavia Praha",
+      "PSV Eindhoven",
+      "Club Brugge",
+      "Porto",
+      "Viking FK",
+      "Sabah FK"
+    ],
+    "unmatched": []
+  }
+}
