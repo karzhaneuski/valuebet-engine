@@ -16,7 +16,7 @@ RECON = Path(__file__).resolve().parents[1] / "reports/recon/odds_budget.json"
 
 def make_db(tmp_path):
     url = f"sqlite:///{tmp_path}/seed.db"
-    Base.metadata.create_all(get_engine(url))
+    Base.metadata.create_all(get_engine(url, create=True))
     return url
 
 

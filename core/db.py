@@ -7,7 +7,6 @@ module and config.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -56,11 +55,9 @@ def _resolve_sqlite_path(url: str) -> Path | None:
 def _ensure_database_accessible(url: str, create: bool = False) -> None:
     """Check that SQLite database file exists and is non-empty unless create opt-in is allowed.
 
-    Creation opt-in is permitted if `create=True` or the environment variable
-    `VALUEBET_ALLOW_DB_CREATE` is set to a truthy value ('1', 'true', 'yes').
+    Creation opt-in is permitted if `create=True`.
     """
-    allow_create_env = os.environ.get("VALUEBET_ALLOW_DB_CREATE", "").strip().lower()
-    if create or allow_create_env in ("1", "true", "yes"):
+    if create:
         return
 
     path = _resolve_sqlite_path(url)
@@ -104,7 +101,6 @@ def get_engine(url: str, create: bool = False) -> Engine:
     Parameters:
         url: Database URL string.
         create: If True, allow connecting to / creating a new or empty SQLite file.
-            Can also be enabled via VALUEBET_ALLOW_DB_CREATE=1 environment variable.
     """
     global _engine, _session_factory
     _ensure_database_accessible(url, create=create)

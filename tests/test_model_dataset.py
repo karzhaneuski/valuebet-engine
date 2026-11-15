@@ -27,7 +27,7 @@ AS_OF = dt.datetime(2026, 10, 24, 12, 0, tzinfo=dt.UTC)
 @pytest.fixture()
 def db_url(tmp_path):
     url = f"sqlite:///{tmp_path}/model-test.db"
-    Base.metadata.create_all(get_engine(url))
+    Base.metadata.create_all(get_engine(url, create=True))
     return url
 
 

@@ -22,7 +22,7 @@ BASE = "https://api.the-odds-api.com/v4"
 
 def make_client(tmp_path):
     url = f"sqlite:///{tmp_path}/toa.db"
-    Base.metadata.create_all(get_engine(url))
+    Base.metadata.create_all(get_engine(url, create=True))
     config = load_config()
     return url, config, OddsApiClient(url, config, "test-key")
 

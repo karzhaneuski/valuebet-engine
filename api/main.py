@@ -11,13 +11,15 @@ from __future__ import annotations
 
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from api.routes.fortuna import router as fortuna_router
 from api.routes.health import router as health_router
 from api.routes.matches import router as matches_router
 from api.routes.tracking import router as tracking_router
+from core.db import DatabaseMissingError
 from core.http import register_runtime_secrets
 from core.logging import configure, get_logger
 
@@ -35,6 +37,19 @@ app = FastAPI(
     redoc_url="/redoc" if enable_docs else None,
     openapi_url="/openapi.json" if enable_docs else None,
 )
+
+
+@app.exception_handler(DatabaseMissingError)
+async def database_missing_exception_handler(
+    request: Request, exc: DatabaseMissingError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "database unavailable",
+            "reason": "SQLite database file missing or uninitialized",
+        },
+    )
 
 # Enable CORS for dashboard / web clients
 cors_env = os.environ.get("CORS_ORIGINS", "").strip()

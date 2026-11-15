@@ -17,7 +17,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "fd_e0_2526.csv"
 
 def make_db(tmp_path):
     url = f"sqlite:///{tmp_path}/fd.db"
-    Base.metadata.create_all(get_engine(url))
+    Base.metadata.create_all(get_engine(url, create=True))
     return url
 
 

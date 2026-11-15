@@ -63,20 +63,19 @@ def test_opt_in_creation_works_with_create_flag(tmp_path: Path) -> None:
     assert "teams" in tables
 
 
-def test_opt_in_creation_works_with_env_var(
+def test_env_var_does_not_allow_creation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Opt-in creation via VALUEBET_ALLOW_DB_CREATE=1 creates the file."""
+    """Setting VALUEBET_ALLOW_DB_CREATE=1 does NOT allow creation (bypass removed)."""
     db_file = tmp_path / "opt_in_env.db"
     url = f"sqlite:///{db_file}"
     reset_engine()
     monkeypatch.setenv("VALUEBET_ALLOW_DB_CREATE", "1")
 
-    engine = get_engine(url)
-    Base.metadata.create_all(engine)
+    with pytest.raises(DatabaseMissingError):
+        get_engine(url)
 
-    assert db_file.exists()
-    assert db_file.stat().st_size > 0
+    assert not db_file.exists()
 
 
 def test_in_memory_database_always_allowed() -> None:
@@ -126,4 +125,32 @@ def test_api_health_unhealthy_when_database_file_missing(
     data = resp.json()
     assert data["status"] == "unhealthy"
     assert data["database_connected"] is False
+    assert not db_file.exists()
+
+
+def test_api_route_returns_503_when_database_file_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When DB file is missing, /matches returns 503, creates no file, and leaks no paths."""
+    db_file = tmp_path / "missing_matches.db"
+    url = f"sqlite:///{db_file}"
+    reset_engine()
+    monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setenv("API_SECRET_TOKEN", "test-token")
+
+    api_app.dependency_overrides.clear()
+    client = TestClient(api_app, raise_server_exceptions=False)
+    resp = client.get(
+        "/matches",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert resp.status_code == 503
+    data = resp.json()
+    assert data["detail"] == "database unavailable"
+    assert "reason" in data
+    # Response contains no traceback and no filesystem path
+    raw_text = resp.text
+    assert "Traceback" not in raw_text
+    assert str(tmp_path) not in raw_text
+    assert str(db_file) not in raw_text
     assert not db_file.exists()

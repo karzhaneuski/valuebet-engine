@@ -17,7 +17,7 @@ UTC = dt.UTC
 
 def make_db(tmp_path):
     url = f"sqlite:///{tmp_path}/lineups.db"
-    Base.metadata.create_all(get_engine(url))
+    Base.metadata.create_all(get_engine(url, create=True))
     return url
 
 
