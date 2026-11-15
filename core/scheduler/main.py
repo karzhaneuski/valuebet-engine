@@ -17,10 +17,10 @@ from typing import Any
 from apscheduler.schedulers.background import BackgroundScheduler  # type: ignore[import-untyped]
 from fastapi import FastAPI, HTTPException, Request
 from fastapi import status as http_status
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from core.config import AppConfig, Secrets, load_config
+from core.db import get_engine
 from core.http import register_runtime_secrets
 from core.logging import configure, get_logger
 from core.scheduler.tasks import (
@@ -49,7 +49,7 @@ def get_db_factory(cfg: AppConfig | None = None) -> sessionmaker[Session]:
     global _session_factory, _cfg
     if _session_factory is None:
         _cfg = cfg or load_config()
-        engine = create_engine(_cfg.database.url)
+        engine = get_engine(_cfg.database.url)
         _session_factory = sessionmaker(bind=engine)
     return _session_factory
 

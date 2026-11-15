@@ -17,7 +17,7 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health", response_model=HealthResponse)
-def health_check(db: Session = Depends(get_db)) -> HealthResponse:
+def health_check(db: Session | None = Depends(get_db)) -> HealthResponse:
     """Public health-check endpoint: database connection, snapshot timestamp, and quota counters.
 
     Does NOT require authentication.
@@ -25,6 +25,20 @@ def health_check(db: Session = Depends(get_db)) -> HealthResponse:
     cfg = load_config()
     db_connected = False
     status_str = "ok"
+
+    if db is None:
+        return HealthResponse(
+            status="unhealthy",
+            version="0.3.0",
+            database_connected=False,
+            database_url_redacted=None,
+            last_odds_snapshot_utc=None,
+            toa_credits_remaining=None,
+            search_quota={},
+            pacing_stage=0,
+            pacing_degraded=False,
+            pacing_actions=[],
+        )
 
     try:
         db.execute(text("SELECT 1"))

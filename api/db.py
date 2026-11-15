@@ -7,13 +7,18 @@ from collections.abc import Iterator
 from sqlalchemy.orm import Session
 
 from core.config import load_config
-from core.db import get_session_factory
+from core.db import DatabaseMissingError, get_session_factory
 
 
-def get_db() -> Iterator[Session]:
-    """Yield a transactional database session for each request."""
+def get_db() -> Iterator[Session | None]:
+    """Yield a transactional database session for each request, or None if DB is missing."""
     cfg = load_config()
-    factory = get_session_factory(cfg.database.url)
+    try:
+        factory = get_session_factory(cfg.database.url)
+    except DatabaseMissingError:
+        yield None
+        return
+
     session = factory()
     try:
         yield session

@@ -25,10 +25,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from sqlalchemy import create_engine, select  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from core.config import load_config  # noqa: E402
+from core.db import get_engine  # noqa: E402
 from core.orm import OddsSnapshot, PrematchOdds  # noqa: E402
 from core.value.persistence import find_matches_by_query  # noqa: E402
 
@@ -440,7 +441,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     db_url = args.db_url or os.environ.get("DATABASE_URL") or default_db
 
-    engine = create_engine(db_url)
+    engine = get_engine(db_url)
 
     # Resolve input files
     input_files: list[Path] = []

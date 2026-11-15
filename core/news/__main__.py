@@ -11,10 +11,11 @@ import argparse
 import datetime as dt
 import sys
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from core.config import load_config
+from core.db import get_engine
 from core.http import register_runtime_secrets
 from core.llm.provider import GeminiProvider
 from core.logging import configure, get_logger
@@ -57,7 +58,7 @@ def find_match(
 
 def run_brief_cli(args: argparse.Namespace) -> int:
     cfg = load_config()
-    engine = create_engine(cfg.database.url)
+    engine = get_engine(cfg.database.url)
     session_factory = sessionmaker(bind=engine)
 
     with session_factory() as session:
