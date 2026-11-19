@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.matching import search_matches_by_query
+from core.clock import Clock, system_clock, today_date
 from core.config import load_config
 from core.db import session_scope
 from core.http import register_runtime_secrets
@@ -33,6 +34,19 @@ from core.value.persistence import load_market_inputs_for_match
 
 register_runtime_secrets()
 mcp = FastMCP("valuebet-engine")
+
+_clock_provider: Clock = system_clock
+
+
+def get_clock() -> Clock:
+    """Return the active clock callable for MCP tools."""
+    return _clock_provider
+
+
+def set_clock(clock: Clock | None) -> None:
+    """Set the active clock callable for MCP tools (pass None to reset to system_clock)."""
+    global _clock_provider
+    _clock_provider = clock or system_clock
 
 
 def _check_lines_exist(session: Session, match_id: int) -> bool:
@@ -51,7 +65,7 @@ def get_upcoming_matches(days: int = 3, league: str | None = None) -> str:
     """Retrieve upcoming football matches within specified horizon (days) and optional league."""
     cfg = load_config()
     with session_scope(cfg.database.url) as session:
-        today = dt.date.today()
+        today = today_date(_clock_provider)
         max_date = today + dt.timedelta(days=days)
 
         stmt = (
@@ -271,7 +285,7 @@ def record_user_bet(
                 f"{', '.join(sorted(allowed_markets))}."
             )
 
-        now = dt.datetime.now(dt.UTC)
+        now = _clock_provider()
         if match.commence_time_utc:
             ko = (
                 match.commence_time_utc
@@ -342,7 +356,7 @@ def get_user_performance(period: str = "all") -> str:
     cfg = load_config()
     with session_scope(cfg.database.url) as session:
         stmt = select(UserBet)
-        now = dt.datetime.now(dt.UTC)
+        now = _clock_provider()
 
         if period == "month":
             stmt = stmt.where(UserBet.placed_at_utc >= now - dt.timedelta(days=30))

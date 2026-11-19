@@ -64,15 +64,17 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     # Current odds state served by mock transport
     current_odds_tier: str = "T-24"
+    clock = ClockPatcher()
     toa_handler = build_toa_handler(
         kickoff_utc=kickoff_utc,
         match_eid=match_eid,
         get_odds_tier=lambda: current_odds_tier,
     )
-    toa_client = create_toa_client(db_url, cfg, toa_handler)
+    toa_client = create_toa_client(db_url, cfg, toa_handler, clock=clock.clock)
 
     # Step 1 (T-48h): Create scheduled match via job_poll_events
     t_48 = kickoff_utc - dt.timedelta(hours=48)
+    clock.set_now(t_48)
     events_res = job_poll_events(
         sm,
         client=toa_client,
@@ -91,7 +93,6 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     # Step 2 (T-24h): Poll snapshots (totals + h2h) via job_poll_odds_snapshots
     current_odds_tier = "T-24"
     t_24 = kickoff_utc - dt.timedelta(hours=24)
-    clock = ClockPatcher(monkeypatch)
     clock.set_now(t_24)
 
     poll_t24_res = job_poll_odds_snapshots(

@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.auth import verify_bearer_token
-from api.db import get_db
+from api.db import get_clock, get_db
 from api.matching import search_matches_by_query
 from api.schemas import (
     BTTSOdds,
@@ -24,6 +24,7 @@ from api.schemas import (
     TeamTotalsItem,
     TotalsLinePrice,
 )
+from core.clock import Clock, today_date
 from core.config import load_config
 from core.news.extractor import NewsItem
 from core.news.freshness import get_freshness_warnings
@@ -83,6 +84,7 @@ def list_matches(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    clock: Clock = Depends(get_clock),
     auth_token: str = Depends(verify_bearer_token),
 ) -> MatchListResponse:
     """Retrieve football matches with market lines status and filtering."""
@@ -97,7 +99,7 @@ def list_matches(
         if league:
             stmt = stmt.where(Match.league == league)
         if status_filter == "scheduled":
-            today = dt.date.today()
+            today = today_date(clock)
             max_date = today + dt.timedelta(days=days)
             stmt = stmt.where(Match.date_utc >= today, Match.date_utc <= max_date)
 

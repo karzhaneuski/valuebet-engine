@@ -19,6 +19,7 @@ from typing import Any, Literal
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from core.clock import Clock
 from core.config import AppConfig, Secrets, load_config
 from core.ingest.odds_api import OddsApiClient
 from core.ingest.results import populate_results
@@ -42,6 +43,13 @@ from core.value.persistence import load_market_inputs_for_match
 from core.value.prefilter import CandidateMatch, filter_candidates
 
 logger = logging.getLogger(__name__)
+
+
+def _clock_for(now: dt.datetime | None) -> Clock | None:
+    if now is None:
+        return None
+    return lambda: now
+
 
 
 def job_refresh_history(
@@ -184,7 +192,12 @@ def job_refresh_history(
         if client is None:
             key = Secrets().odds_api_key
             if key:
-                client = OddsApiClient(db_url=cfg.database.url, config=cfg, api_key=key)
+                client = OddsApiClient(
+                    db_url=cfg.database.url,
+                    config=cfg,
+                    api_key=key,
+                    clock=_clock_for(now),
+                )
         if client is not None:
             try:
                 scores = client.fetch_scores(days_from=3)
@@ -409,7 +422,12 @@ def job_poll_odds_snapshots(
         if api_client is None:
             key = Secrets().odds_api_key
             assert key is not None
-            api_client = OddsApiClient(db_url=cfg.database.url, config=cfg, api_key=key)
+            api_client = OddsApiClient(
+                db_url=cfg.database.url,
+                config=cfg,
+                api_key=key,
+                clock=_clock_for(now),
+            )
 
         for (sport_key, tier, _), group in groups.items():
             status = "error"
@@ -479,7 +497,12 @@ def job_poll_events(
         key = Secrets().odds_api_key
         if not key:
             return {"status": "skipped", "reason": "no_api_key"}
-        api_client = OddsApiClient(db_url=cfg.database.url, config=cfg, api_key=key)
+        api_client = OddsApiClient(
+            db_url=cfg.database.url,
+            config=cfg,
+            api_key=key,
+            clock=_clock_for(now),
+        )
 
     current_season = curr_now.year
     for league in cfg.leagues:

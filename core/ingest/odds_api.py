@@ -26,6 +26,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from core.clock import Clock, system_clock
 from core.config import AppConfig
 from core.db import session_scope
 from core.http import HttpError, redact_text, retry_call
@@ -66,12 +67,14 @@ def _to_int(value: str | None) -> int | None:
 
 class OddsApiClient:
     def __init__(self, db_url: str, config: AppConfig, api_key: str,
-                 client: httpx.Client | None = None) -> None:
+                 client: httpx.Client | None = None,
+                 clock: Clock | None = None) -> None:
         self._db_url = db_url
         self._config = config
         self._key = api_key
         self._http = client or httpx.Client(timeout=30.0)
         self.quota = QuotaGuard(db_url, config, provider="toa")
+        self._clock: Clock = clock or system_clock
 
     # --- HTTP plumbing ---------------------------------------------------------
 
@@ -130,7 +133,7 @@ class OddsApiClient:
                      now: dt.datetime | None = None) -> EventsReport:
         cfg = self._config.odds_policy.postponement
         report = EventsReport()
-        now = now or dt.datetime.now(dt.UTC)
+        now = now or self._clock()
         with session_scope(self._db_url) as s:
             matcher, names = self._matcher(s)
             roster = self._roster(s, league_slug, season)
@@ -276,7 +279,7 @@ class OddsApiClient:
                            market: str, tier: str,
                            only_event_id: str | None = None) -> int:
         events = body if isinstance(body, list) else [body]
-        now = dt.datetime.now(dt.UTC)
+        now = self._clock()
         windows = self._config.odds_policy.tier_windows
         half_only = self._config.totals_lines.half_lines_only
         dropped_lines = 0
@@ -371,7 +374,7 @@ class OddsApiClient:
                     commence = ev.get("commence_time")
                     kickoff = dt.datetime.fromisoformat(
                         commence.replace("Z", "+00:00")) \
-                        if commence else dt.datetime.now(dt.UTC)
+                        if commence else self._clock()
                     season = kickoff.year if kickoff.month >= 7 \
                         else kickoff.year - 1
                     home = self._ensure_toa_team(s, home_name, "ucl",
@@ -409,7 +412,7 @@ class OddsApiClient:
                 if existing is None:
                     s.add(Result(match_id=match.id, home_goals=hg,
                                  away_goals=ag, source="toa",
-                                 settled_at_utc=dt.datetime.now(dt.UTC)))
+                                 settled_at_utc=self._clock()))
                     written += 1
                 match.status = "finished"
         return {"completed_seen": sum(1 for e in body if e.get("completed")),
