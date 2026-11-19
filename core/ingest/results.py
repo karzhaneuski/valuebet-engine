@@ -4,12 +4,22 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.orm import Match, MatchStat, Result
 
 _CHUNK_SIZE = 500
+SOURCE_PRIORITY: tuple[str, ...] = ("football_data", "understat")
+_SOURCE_RANK = {src: idx for idx, src in enumerate(SOURCE_PRIORITY)}
+
+
+def _stat_sort_key(st: MatchStat) -> tuple[int, int]:
+    return (_SOURCE_RANK.get(st.source, len(SOURCE_PRIORITY)), st.id)
+
+
+def _select_winner(stats: list[MatchStat]) -> MatchStat:
+    return min(stats, key=_stat_sort_key)
 
 
 def populate_results(
@@ -22,14 +32,15 @@ def populate_results(
     Updates Match.status to 'finished' where a result exists.
     Returns (inserted, updated).
 
-    When a match has multiple MatchStat rows with non-null goals (e.g. from
-    different sources), rows are ordered by ``MatchStat.id`` ascending:
-    - If no Result exists yet, the first row creates the Result; if the match is
-      also in ``touched_match_ids``, subsequent rows may update it if their
-      score or source differs, so the last row (highest ``id``) wins.
-    - If a Result already exists and the match is in ``touched_match_ids``, each
-      row is applied in ``id`` order, counting each change and leaving the last
-      row's values in place.
+    When a match has multiple MatchStat rows with non-null goals, exactly one
+    winning row is chosen per match according to ``SOURCE_PRIORITY``
+    (``("football_data", "understat")``, where football-data is the official
+    result feed and Understat is the fallback). Unknown sources rank after
+    listed ones, and ties are broken by the lowest ``MatchStat.id``.
+    - Insert: a missing Result is created from the winning MatchStat row.
+    - Update: for matches in ``touched_match_ids`` that already have a Result,
+      the existing Result is compared against the winning MatchStat row only,
+      performing at most one update per match when the score or source differs.
     """
     curr_now = now or dt.datetime.now(dt.UTC)
     results_inserted = 0
@@ -51,30 +62,22 @@ def populate_results(
         ).all()
     )
 
-    new_results_by_match: dict[int, Result] = {}
+    missing_by_match: dict[int, list[MatchStat]] = {}
     for st in missing_stats:
-        assert st.home_goals is not None and st.away_goals is not None
-        new_home = int(st.home_goals)
-        new_away = int(st.away_goals)
-        existing = new_results_by_match.get(st.match_id)
-        if existing is None:
-            new_results_by_match[st.match_id] = Result(
-                match_id=st.match_id,
-                home_goals=new_home,
-                away_goals=new_away,
-                source=st.source,
-                settled_at_utc=curr_now,
-            )
-            results_inserted += 1
-        elif st.match_id in touched:
-            score_changed = existing.home_goals != new_home or existing.away_goals != new_away
-            source_changed = existing.source != st.source
-            if score_changed or source_changed:
-                existing.home_goals = new_home
-                existing.away_goals = new_away
-                existing.source = st.source
-                existing.settled_at_utc = curr_now
-                results_updated += 1
+        missing_by_match.setdefault(st.match_id, []).append(st)
+
+    new_results_by_match: dict[int, Result] = {}
+    for match_id, stats in missing_by_match.items():
+        winner = _select_winner(stats)
+        assert winner.home_goals is not None and winner.away_goals is not None
+        new_results_by_match[match_id] = Result(
+            match_id=match_id,
+            home_goals=int(winner.home_goals),
+            away_goals=int(winner.away_goals),
+            source=winner.source,
+            settled_at_utc=curr_now,
+        )
+        results_inserted += 1
 
     # 2. Update changed results: only for match ids in touched_match_ids that
     # already had a Result before step 1. Chunk by 500 to stay under SQLite's
@@ -92,38 +95,46 @@ def populate_results(
             )
             .order_by(MatchStat.id.asc())
         ).all()
+        grouped: dict[int, tuple[Result, list[MatchStat]]] = {}
         for st, res in rows:
-            assert st.home_goals is not None and st.away_goals is not None
-            new_home = int(st.home_goals)
-            new_away = int(st.away_goals)
+            entry = grouped.get(st.match_id)
+            if entry is None:
+                grouped[st.match_id] = (res, [st])
+            else:
+                entry[1].append(st)
+
+        for res, stats in grouped.values():
+            winner = _select_winner(stats)
+            assert winner.home_goals is not None and winner.away_goals is not None
+            new_home = int(winner.home_goals)
+            new_away = int(winner.away_goals)
             score_changed = res.home_goals != new_home or res.away_goals != new_away
-            source_changed = res.source != st.source
+            source_changed = res.source != winner.source
             if score_changed or source_changed:
                 res.home_goals = new_home
                 res.away_goals = new_away
-                res.source = st.source
+                res.source = winner.source
                 res.settled_at_utc = curr_now
                 results_updated += 1
 
     if new_results_by_match:
-        max_id = session.scalar(select(func.max(Result.id))) or 0
-        for offset, res_obj in enumerate(new_results_by_match.values(), start=1):
-            res_obj.id = max_id + offset
         session.add_all(new_results_by_match.values())
 
     # 3. Status update: one query selecting scheduled / postponed_suspected
     # matches that have a Result with both goals not null.
-    matches_to_finish = list(
-        session.scalars(
-            select(Match)
-            .join(Result, Result.match_id == Match.id)
-            .where(
-                Match.status.in_(["scheduled", "postponed_suspected"]),
-                Result.home_goals.is_not(None),
-                Result.away_goals.is_not(None),
-            )
-        ).all()
-    )
+    with session.no_autoflush:
+        matches_to_finish = list(
+            session.scalars(
+                select(Match)
+                .join(MatchStat, MatchStat.match_id == Match.id)
+                .where(
+                    Match.status.in_(["scheduled", "postponed_suspected"]),
+                    MatchStat.home_goals.is_not(None),
+                    MatchStat.away_goals.is_not(None),
+                )
+                .distinct()
+            ).all()
+        )
     for match in matches_to_finish:
         match.status = "finished"
 

@@ -270,48 +270,94 @@ def test_more_than_500_touched_ids_chunking(tmp_path: Path) -> None:
 
 
 def test_multiple_match_stat_rows_per_match_deterministic(tmp_path: Path) -> None:
-    """4) If a match has more than one MatchStat row with a score, behaviour is
-    deterministic and matches original row-by-row semantics ordered by MatchStat.id."""
+    """When a match has both sources with different scores, football_data wins;
+    a match with only understat gets the understat score; a second call with the
+    same rows and the match in touched_match_ids returns (0, 0) and does not
+    change settled_at_utc."""
     _, sm = make_test_db(tmp_path)
     with sm() as session:
         match_ids = seed_matches_and_stats(session, 2, with_stats=False)
         m1, m2 = match_ids[0], match_ids[1]
 
-        # Match 1: two stats, untouched on initial insert -> first by id wins, inserted=1, updated=0
-        # Match 2: two stats with different scores, touched on initial insert ->
-        # first inserts, second updates -> inserted=1, updated=1, last by id wins
         session.add_all(
             [
                 MatchStat(match_id=m1, source="understat", home_goals=1, away_goals=0),
                 MatchStat(match_id=m1, source="football_data", home_goals=2, away_goals=1),
-                MatchStat(match_id=m2, source="understat", home_goals=0, away_goals=0),
-                MatchStat(match_id=m2, source="football_data", home_goals=3, away_goals=2),
+                MatchStat(match_id=m2, source="understat", home_goals=3, away_goals=2),
             ]
         )
         session.commit()
 
     with sm() as session:
-        ins, upd = populate_results(session, touched_match_ids={m2}, now=FIXED_NOW)
+        ins, upd = populate_results(session, touched_match_ids={m1, m2}, now=FIXED_NOW)
         session.commit()
-        assert (ins, upd) == (2, 1)
+        assert (ins, upd) == (2, 0)
 
         r1 = session.scalar(select(Result).where(Result.match_id == m1))
         r2 = session.scalar(select(Result).where(Result.match_id == m2))
         assert r1 is not None and r2 is not None
-        assert (r1.home_goals, r1.away_goals, r1.source) == (1, 0, "understat")
-        assert (r2.home_goals, r2.away_goals, r2.source) == (3, 2, "football_data")
+        assert (r1.home_goals, r1.away_goals, r1.source) == (2, 1, "football_data")
+        assert (r2.home_goals, r2.away_goals, r2.source) == (3, 2, "understat")
+        initial_settled_1 = r1.settled_at_utc
+        initial_settled_2 = r2.settled_at_utc
 
-    # Now touch m1 when Result already exists: first stat (1, 0, understat) matches r1,
-    # second stat (2, 1, football_data) updates it -> updated=1, final is (2, 1, football_data).
     with sm() as session:
-        ins2, upd2 = populate_results(session, touched_match_ids={m1}, now=LATER_NOW)
+        ins2, upd2 = populate_results(session, touched_match_ids={m1, m2}, now=LATER_NOW)
         session.commit()
-        assert (ins2, upd2) == (0, 1)
+        assert (ins2, upd2) == (0, 0)
 
         r1_after = session.scalar(select(Result).where(Result.match_id == m1))
-        assert r1_after is not None
+        r2_after = session.scalar(select(Result).where(Result.match_id == m2))
+        assert r1_after is not None and r2_after is not None
         assert (r1_after.home_goals, r1_after.away_goals, r1_after.source) == (
             2,
             1,
             "football_data",
         )
+        assert r1_after.settled_at_utc == initial_settled_1
+        assert r2_after.settled_at_utc == initial_settled_2
+
+
+def test_separate_sessions_insert_distinct_ids(tmp_path: Path) -> None:
+    """Two populate_results calls on separate sessions inserting results for
+    different matches both succeed with distinct autoincrement ids."""
+    _, sm = make_test_db(tmp_path)
+    with sm() as session:
+        batch1_ids = seed_matches_and_stats(
+            session, 3, with_stats=True, prefix="BatchA", understat_base=10000
+        )
+        batch2_ids = seed_matches_and_stats(
+            session, 4, with_stats=False, prefix="BatchB", understat_base=20000
+        )
+
+    with sm() as session1:
+        ins1, upd1 = populate_results(session1, touched_match_ids=set(batch1_ids), now=FIXED_NOW)
+        session1.commit()
+        assert (ins1, upd1) == (3, 0)
+
+    with sm() as session_seed:
+        session_seed.add_all(
+            [
+                MatchStat(
+                    match_id=mid,
+                    source="football_data",
+                    home_goals=2,
+                    away_goals=0,
+                )
+                for mid in batch2_ids
+            ]
+        )
+        session_seed.commit()
+
+    with sm() as session2:
+        ins2, upd2 = populate_results(session2, touched_match_ids=set(batch2_ids), now=LATER_NOW)
+        session2.commit()
+        assert (ins2, upd2) == (4, 0)
+
+    with sm() as verify_session:
+        all_results = list(verify_session.scalars(select(Result)).all())
+        assert len(all_results) == 7
+        result_ids = [r.id for r in all_results]
+        assert all(rid is not None for rid in result_ids)
+        assert len(set(result_ids)) == 7
+        assert {r.match_id for r in all_results} == set(batch1_ids + batch2_ids)
