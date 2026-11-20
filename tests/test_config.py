@@ -45,7 +45,7 @@ def test_odds_policy_defaults(config: AppConfig) -> None:
     assert p.tier_windows.t48 == (40.0, 56.0)
     assert p.tier_windows.t24 == (18.0, 30.0)
     assert p.tier_windows.t3 == (1.0, 4.0)
-    assert p.active_tiers == ["t24", "t3"]      # T-48 disabled by default (Phase 4b B1)
+    assert p.active_tiers == ["t3"]             # T-24 disabled 2026-11-20 (decisions D-39)
     assert p.tier_markets["t24"] == ["totals", "h2h"]
     assert p.tier_markets["t3"] == ["totals", "h2h"]
     assert p.pinnacle_correct_score_max_weekly == 10

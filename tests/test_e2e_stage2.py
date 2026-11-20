@@ -78,6 +78,7 @@ def test_e2e_stage2_multichannel_consistency(
     match_eid = DEFAULT_MATCH_EID
     sm = init_e2e_db(db_url, kickoff_utc=kickoff_utc)
     cfg = load_config()
+    cfg.odds_policy.active_tiers = ["t24", "t3"]
 
     monkeypatch.setenv("API_SECRET_TOKEN", "test-e2e-token")
 

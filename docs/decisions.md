@@ -940,3 +940,17 @@ reports/backtest/4b_hybrid_market_1x2.json, reports/backtest/4b_hybrid_all_marke
    - Disabled Swagger/OpenAPI docs in production when `ENABLE_API_DOCS = False`.
 
 **Reason**: Elimination of stubs, alignment of TOA polling pacing with actual schedules, exact restoration of secrets patterns without regressions, and verification of analytical engine contracts.
+
+---
+
+## 2026-11-20 — D-39: TOA odds polling — keep only T-3 tier (disable T-24)
+
+**Decision**: In `config.yaml` (`odds_policy`), change `active_tiers` from `[t24, t3]` to `[t3]`, while keeping `tier_windows` and the `t24` entry of `tier_markets` unchanged in `config.yaml` and keeping the Pydantic defaults in `core/config.py` unchanged. `job_poll_odds_snapshots` checks `cfg.odds_policy.active_tiers` before scheduling tier polls.
+
+- **Why**: The TOA free quota (500 credits/month, hard stop 450) does not cover two polling tiers. The first real `/events` run linked 114 of 239 matches in the next 30 days and the estimate for those alone was 302 credits; with all matches linked it would be about 630 credits. Keeping only the T-3 tier preserves the closing line used for CLV within the free quota.
+- **What we lose**: No T-24 snapshot, so there is no line movement tracking between T-24 and T-3 and no early T-24 value check.
+- **How to revert**: Set `active_tiers: [t24, t3]` in `config.yaml` (one-line change, since `tier_windows` and `tier_markets.t24` remain in place).
+- **Unchanged**: The degradation ladder (`cap_correct_score_5_week`, `disable_t3_h2h`, `t3_slot_to_day`), `monthly_quota` (500), `hard_stop_credits` (450), pacing settings, and T-3 slot granularity (`slot`) stay unchanged.
+
+**Reason**: Owner decision (2026-11-20) after measuring real `/events` linkage and 30-day credit projection against the 500-credit monthly free tier (hard stop 450).
+
