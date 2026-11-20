@@ -101,7 +101,7 @@ risk_flags:
 
 odds_policy:
   tier_windows: { t48: [40, 56], t24: [18, 30], t3: [1, 4] }   # hours
-  active_tiers: [t24, t3]       # T-48 disabled by default (Phase 4b B1 budget)
+  active_tiers: [t3]            # T-24 disabled 2026-11-20: free TOA quota (decisions D-39)
   tier_markets:
     t24: [totals, h2h]
     t3: [totals, h2h]

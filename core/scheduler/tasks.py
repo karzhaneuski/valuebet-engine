@@ -278,6 +278,8 @@ def job_poll_odds_snapshots(
             ).all()
         )
 
+        active_tiers = {t.lower().replace("-", "") for t in cfg.odds_policy.active_tiers}
+
         qualifying_polls: list[dict[str, Any]] = []
         for match in scheduled:
             if not match.commence_time_utc:
@@ -295,7 +297,7 @@ def job_poll_odds_snapshots(
             offset_min: int | None = None
 
             # T-24 window: 23h to 25h (target 24h)
-            if 22.75 <= time_to_ko_h <= 25.25:
+            if "t24" in active_tiers and 22.75 <= time_to_ko_h <= 25.25:
                 tier = "T-24"
                 offset_min = round(abs(time_to_ko_h - 24.0) * 60)
                 if time_to_ko_h < 23.0 or time_to_ko_h > 25.0:
@@ -305,7 +307,7 @@ def job_poll_odds_snapshots(
                         offset_min,
                     )
             # T-3 window: 2.5h to 3.5h (target 3h)
-            elif 2.25 <= time_to_ko_h <= 3.75:
+            elif "t3" in active_tiers and 2.25 <= time_to_ko_h <= 3.75:
                 tier = "T-3"
                 offset_min = round(abs(time_to_ko_h - 3.0) * 60)
                 if time_to_ko_h < 2.5 or time_to_ko_h > 3.5:

@@ -100,6 +100,7 @@ def _setup_test_db(period: str | None = None) -> tuple[sessionmaker[Session], Ap
 
 def test_dedup_slots_and_repeated_runs() -> None:
     sm, cfg = _setup_test_db()
+    cfg.odds_policy.active_tiers = ["t24", "t3"]
 
     with sm() as s:
         teams = [Team(name=f"Team {i}", league="la_liga") for i in range(8)]
@@ -438,6 +439,7 @@ def test_real_client_empty_t3_slot_closes_the_degraded_sport_day(real_poll_db, t
 
 def test_real_client_four_matches_twelve_ticks_use_at_most_twelve_credits(real_poll_db, toa_events):
     url, sm, cfg = real_poll_db
+    cfg.odds_policy.active_tiers = ["t24", "t3"]
     now = dt.datetime(2026, 10, 24, 10, tzinfo=dt.UTC)
     epl = toa_events["soccer_epl"]
     ucl = toa_events["soccer_uefa_champs_league"][:1]
@@ -464,3 +466,39 @@ def test_real_client_four_matches_twelve_ticks_use_at_most_twelve_credits(real_p
         assert attempts == ["empty"] * 4
         credits = session.scalar(select(func.sum(ApiQuotaUsage.credits)))
         assert credits == 8
+
+
+def test_project_config_polls_only_t3_and_skips_t24_window(real_poll_db, toa_events):
+    url, sm, cfg = real_poll_db
+    assert cfg.odds_policy.active_tiers == ["t3"]
+    event = toa_events["soccer_epl"][0]
+    ko = dt.datetime(2026, 11, 21, 15, 0, tzinfo=dt.UTC)
+    match_id = _add_match(sm, event, ko)
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return _empty_odds([event])
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as http:
+        client = OddsApiClient(url, cfg, "k", client=http)
+        # Inside T-24 window (24h before KO), outside T-3 -> zero requests
+        res_t24 = job_poll_odds_snapshots(
+            sm, client=client, config=cfg, now=ko - dt.timedelta(hours=24),
+        )
+        assert res_t24["status"] == "success"
+        assert len(requests) == 0
+        with sm() as session:
+            assert session.scalar(select(func.count(OddsPollAttempt.id))) == 0
+
+        # Inside T-3 window (3h before KO) -> plans and executes T-3 poll
+        res_t3 = job_poll_odds_snapshots(
+            sm, client=client, config=cfg, now=ko - dt.timedelta(hours=3),
+        )
+        assert res_t3["status"] == "success"
+        assert len(requests) == 1
+        assert requests[0].url.path == "/v4/sports/soccer_epl/odds"
+        with sm() as session:
+            attempt = session.scalars(select(OddsPollAttempt)).one()
+            assert (attempt.match_id, attempt.tier, attempt.status) == (match_id, "T-3", "empty")
+

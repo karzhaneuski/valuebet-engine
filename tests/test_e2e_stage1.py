@@ -61,6 +61,7 @@ def test_e2e_stage1_full_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     match_eid = DEFAULT_MATCH_EID
     sm = init_e2e_db(db_url, kickoff_utc=kickoff_utc)
     cfg = load_config()
+    cfg.odds_policy.active_tiers = ["t24", "t3"]
 
     # Current odds state served by mock transport
     current_odds_tier: str = "T-24"
